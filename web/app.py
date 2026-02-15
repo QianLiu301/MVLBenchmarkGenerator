@@ -10,8 +10,10 @@ from pathlib import Path
 from flask import Flask, request, jsonify, send_from_directory, send_file
 from flask_cors import CORS
 
-# Read the port from environment variables (required for Render)
+# 从环境变量读取配置
 PORT = int(os.environ.get('PORT', 5001))
+DEBUG = os.environ.get('DEBUG', 'false').lower() == 'true'
+
 # Add src to path
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / 'src'))
@@ -176,6 +178,8 @@ if __name__ == '__main__':
     print("=" * 60)
     print(f"Project root: {PROJECT_ROOT}")
     print(f"Port: {PORT}")
+    print(f"Debug: {DEBUG}")
+    print(f"Tools: {simulation_runner.get_tools_status()}")
     print("=" * 60)
 
-    app.run(host='0.0.0.0', port=PORT, debug=False)  # debug=False for production
+    app.run(host='0.0.0.0', port=PORT, debug=DEBUG)
