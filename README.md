@@ -1,4 +1,4 @@
-<<<<<<< HEAD
+
 # MVL Benchmark Generator
 
 Generate Multi-Valued Logic (MVL) ALU Benchmarks using Large Language Models.
