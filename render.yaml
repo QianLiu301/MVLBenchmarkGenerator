@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: mvl-benchmark-generator
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python web/app.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11"
+      - key: PORT
+        value: "5001"
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: DEEPSEEK_API_KEY
+        sync: false
+      - key: MISTRAL_API_KEY
+        sync: false
+      - key: QWEN_API_KEY
+        sync: false
+      - key: TOGETHER_API_KEY
+        sync: false
