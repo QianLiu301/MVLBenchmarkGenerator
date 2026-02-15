@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # MVL Benchmark Generator
 
 Generate Multi-Valued Logic (MVL) ALU Benchmarks using Large Language Models.
@@ -31,3 +32,6 @@ This project is part of the research for ISMVL 2026:
 ## License
 
 © 2026 University of Bremen, Group of Computer Architecture (AGRA)
+=======
+# MVLBenchmarkGenerator
+>>>>>>> fec9935822cd191dc8aeea2e10584570dae803da
