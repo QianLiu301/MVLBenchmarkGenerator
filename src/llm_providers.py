@@ -227,8 +227,7 @@ class GeminiProvider(LLMProvider):
             "contents": [{"parts": [{"text": prompt}]}],
             "generationConfig": {
                 "maxOutputTokens": max_tokens,  # 调大 token 限制
-                "temperature": 0.4,  # 代码生成建议调低随机性
-                "stopSequences": []
+                "temperature": 0.4  # 代码生成建议调低随机性
             }
         }
 
@@ -239,6 +238,16 @@ class GeminiProvider(LLMProvider):
         try:
             proxies = self._get_proxies()
             response = requests.post(url, json=payload, timeout=60, proxies=proxies)
+
+            # 打印详细错误信息以便调试
+            if response.status_code != 200:
+                print(f"⚠️  Gemini API returned {response.status_code}")
+                try:
+                    error_detail = response.json()
+                    print(f"   Error detail: {json.dumps(error_detail, indent=2, ensure_ascii=False)[:500]}")
+                except:
+                    print(f"   Response body: {response.text[:500]}")
+
             response.raise_for_status()
             result = response.json()
 
@@ -1054,26 +1063,26 @@ class OpenAIProvider(LLMProvider):
             else:
                 print(f"🔄 [DEBUG] Retry {retry_count}/{self.max_retries} - max_tokens: {max_tokens}")
 
-                # 构建消息
-                default_system = """You are a helpful assistant that generates BDD scenario descriptions.
+            # 构建消息（每次调用都需要，不能放在 else 分支里）
+            default_system = """You are a helpful assistant that generates BDD scenario descriptions.
             You MUST respond with valid JSON only. Do not include any text outside the JSON structure."""
 
-                system_content = system_prompt or default_system
+            system_content = system_prompt or default_system
 
-                # OpenAI requires the word "json" in messages when using response_format json_object
-                if 'json' not in system_content.lower() and 'json' not in prompt.lower():
-                    system_content += "\nYou MUST respond with valid JSON only."
+            # OpenAI requires the word "json" in messages when using response_format json_object
+            if 'json' not in system_content.lower() and 'json' not in prompt.lower():
+                system_content += "\nYou MUST respond with valid JSON only."
 
-                messages = [
-                    {
-                        "role": "system",
-                        "content": system_content
-                    },
-                    {
-                        "role": "user",
-                        "content": prompt
-                    }
-                ]
+            messages = [
+                {
+                    "role": "system",
+                    "content": system_content
+                },
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ]
 
             # 根据模型选择参数
             if self._is_gpt5_model(self.model):
