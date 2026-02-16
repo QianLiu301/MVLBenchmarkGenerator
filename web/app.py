@@ -18,10 +18,10 @@ DEBUG = os.environ.get('DEBUG', 'false').lower() == 'true'
 # 代理配置
 # 除 DeepSeek 和 Qwen 外，其他 LLM API 需要代理访问
 # 设置方式（选择一种）：
-#   1. 环境变量: export HTTPS_PROXY=http://127.0.0.1:7890
-#   2. 直接修改下方 PROXY_URL
+#   1. 环境变量: export HTTPS_PROXY=http://127.0.0.1:10809
+#   2. 直接修改下方 PROXY_URL 的默认值
 # ============================================================
-PROXY_URL = os.environ.get('HTTPS_PROXY', '')  # 例如: http://127.0.0.1:7890
+PROXY_URL = os.environ.get('HTTPS_PROXY', 'http://127.0.0.1:10809')
 
 def _setup_proxy():
     """设置代理环境变量，供 LLM providers 使用"""
@@ -33,7 +33,7 @@ def _setup_proxy():
         print("   (DeepSeek and Qwen will bypass proxy automatically)")
     else:
         print("⚠️  No proxy configured. Set HTTPS_PROXY env var if needed.")
-        print("   Example: export HTTPS_PROXY=http://127.0.0.1:7890")
+        print("   Example: export HTTPS_PROXY=http://127.0.0.1:10809")
 
 _setup_proxy()
 
