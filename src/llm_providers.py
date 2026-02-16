@@ -1370,7 +1370,8 @@ class ClaudeProvider(LLMProvider):
             payload["system"] = system_prompt
 
         try:
-            response = requests.post(self.api_url, headers=headers, json=payload, timeout=30)
+            proxies = self._get_proxies()
+            response = requests.post(self.api_url, headers=headers, json=payload, timeout=30, proxies=proxies)
             response.raise_for_status()
             result = response.json()
             return result['content'][0]['text'].strip()
