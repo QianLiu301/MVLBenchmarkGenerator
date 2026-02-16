@@ -217,47 +217,61 @@ class GeminiProvider(LLMProvider):
         return self._fallback_description(prompt)
 
     def _call_api_rest(self, prompt: str, max_tokens: int = 8192, system_prompt: str = None) -> str:
-        # 修正模型名称 (改为稳定版)
-        model_name = self.model if "gemini" in self.model else "gemini-2.0-flash-exp"
-        print(f"🔷 [Gemini] Calling REST API - Model: {model_name}, max_tokens: {max_tokens}")
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={self.api_key}"
+        # 模型降级列表：如果当前模型返回 400，尝试下一个
+        models_to_try = [self.model, "gemini-2.0-flash", "gemini-1.5-flash"]
+        # 去重并保持顺序
+        seen = set()
+        models_to_try = [m for m in models_to_try if not (m in seen or seen.add(m))]
 
-        # 正确构建 payload，加入 system_instruction
-        payload = {
-            "contents": [{"parts": [{"text": prompt}]}],
-            "generationConfig": {
-                "maxOutputTokens": max_tokens,  # 调大 token 限制
-                "temperature": 0.4  # 代码生成建议调低随机性
+        for model_name in models_to_try:
+            print(f"🔷 [Gemini] Calling REST API - Model: {model_name}, max_tokens: {max_tokens}")
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={self.api_key}"
+
+            # 正确构建 payload
+            payload = {
+                "contents": [{"parts": [{"text": prompt}]}],
+                "generationConfig": {
+                    "maxOutputTokens": max_tokens,
+                    "temperature": 0.4
+                }
             }
-        }
 
-        # 如果有 system_prompt，按照 Gemini API 规范添加
-        if system_prompt:
-            payload["system_instruction"] = {"parts": [{"text": system_prompt}]}
+            # 如果有 system_prompt，按照 Gemini API 规范添加
+            if system_prompt:
+                payload["system_instruction"] = {"parts": [{"text": system_prompt}]}
 
-        try:
-            proxies = self._get_proxies()
-            response = requests.post(url, json=payload, timeout=60, proxies=proxies)
+            try:
+                proxies = self._get_proxies()
+                response = requests.post(url, json=payload, timeout=60, proxies=proxies)
 
-            # 打印详细错误信息以便调试
-            if response.status_code != 200:
-                print(f"⚠️  Gemini API returned {response.status_code}")
-                try:
-                    error_detail = response.json()
-                    print(f"   Error detail: {json.dumps(error_detail, indent=2, ensure_ascii=False)[:500]}")
-                except:
-                    print(f"   Response body: {response.text[:500]}")
+                # 如果返回 400/404，打印详情并尝试下一个模型
+                if response.status_code in (400, 404):
+                    print(f"⚠️  Gemini API returned {response.status_code} for model {model_name}")
+                    try:
+                        error_detail = response.json()
+                        error_msg = error_detail.get('error', {}).get('message', str(error_detail))
+                        print(f"   Error: {str(error_msg)[:300]}")
+                    except:
+                        print(f"   Response: {response.text[:300]}")
+                    continue  # 尝试下一个模型
 
-            response.raise_for_status()
-            result = response.json()
+                response.raise_for_status()
+                result = response.json()
 
-            # 增加安全性检查，防止 index error
-            if 'candidates' in result and result['candidates'][0]['content']['parts']:
-                return result['candidates'][0]['content']['parts'][0]['text'].strip()
-            return "Error: No content generated."
-        except Exception as e:
-            print(f"⚠️  Gemini REST API request failed: {e}")
-            return self._fallback_description(prompt)
+                # 增加安全性检查，防止 index error
+                if 'candidates' in result and result['candidates'][0]['content']['parts']:
+                    if model_name != self.model:
+                        print(f"✅ [Gemini] Fallback model {model_name} succeeded")
+                    return result['candidates'][0]['content']['parts'][0]['text'].strip()
+                return "Error: No content generated."
+
+            except Exception as e:
+                print(f"⚠️  Gemini REST API request failed ({model_name}): {e}")
+                continue  # 尝试下一个模型
+
+        # 所有模型都失败
+        print(f"⚠️  All Gemini models failed, using fallback")
+        return self._fallback_description(prompt)
 
     def _call_api_stream(self, prompt: str, max_tokens: int = 8192, system_prompt: str = None):
         """
@@ -1306,33 +1320,77 @@ Respond with ONLY the JSON object, no other text.
 
         自动路由到合适的端点:
         - Codex 模型 → completions endpoint (返回纯文本)
-        - 其他模型 → chat completions endpoint with JSON mode (返回 JSON 字符串)
+        - 有 system_prompt → chat completions (返回纯文本，用于代码生成等)
+        - 其他情况 → chat completions + JSON mode (返回 JSON 字符串)
         """
         print(f"   🔍 [DEBUG][OpenAI._call_api] Called with max_tokens={max_tokens}")
 
         # 🔑 Codex 模型使用 completions 接口
         if self._is_codex_model(self.model):
-            text_result = self._call_api_completions(prompt, max_tokens)
+            return self._call_api_completions(prompt, max_tokens)
 
-            # 尝试将文本包装成 JSON 格式以保持一致性
-            try:
-                # 检查是否已经是 JSON
-                json.loads(text_result)
-                return text_result
-            except:
-                # 不是 JSON,包装成 JSON
-                wrapped_json = json.dumps({
-                    "scenario": text_result,
-                    "model": self.model
-                }, ensure_ascii=False, indent=2)
-                print(f"   ✅ [DEBUG][OpenAI._call_api] Wrapped text as JSON ({len(wrapped_json)} chars)")
-                return wrapped_json
+        # 🔑 如果有 system_prompt，使用普通 chat completions（不强制 JSON 模式）
+        # 这样代码生成等场景可以返回纯文本
+        if system_prompt:
+            return self._call_api_chat(prompt, max_tokens, system_prompt)
 
-        # 其他模型使用 chat completions + JSON mode
+        # 其他情况使用 chat completions + JSON mode
         result = self._call_api_with_json_mode(prompt, max_tokens, system_prompt)
         json_str = json.dumps(result, ensure_ascii=False, indent=2)
         print(f"   ✅ [DEBUG][OpenAI._call_api] Returning JSON string ({len(json_str)} chars)")
         return json_str
+
+    def _call_api_chat(self, prompt: str, max_tokens: int = 4096, system_prompt: str = None) -> str:
+        """
+        使用普通 Chat Completions API（不强制 JSON 模式）
+        用于代码生成等需要纯文本输出的场景
+        """
+        try:
+            messages = [
+                {
+                    "role": "system",
+                    "content": system_prompt or "You are a helpful assistant."
+                },
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ]
+
+            if self._is_gpt5_model(self.model):
+                params = {
+                    "model": self.model,
+                    "messages": messages,
+                    "max_completion_tokens": max_tokens,
+                    "temperature": 1,
+                }
+            else:
+                params = {
+                    "model": self.model,
+                    "messages": messages,
+                    "max_tokens": max_tokens,
+                    "temperature": 0.7,
+                }
+
+            response = self.client.chat.completions.create(**params)
+            content = response.choices[0].message.content
+
+            if hasattr(response, 'usage') and response.usage:
+                print(f"💰 [DEBUG] Tokens - "
+                      f"Prompt: {response.usage.prompt_tokens}, "
+                      f"Completion: {response.usage.completion_tokens}, "
+                      f"Total: {response.usage.total_tokens}")
+
+            if content and content.strip():
+                print(f"✅ [SUCCESS] Chat response ({len(content)} chars)")
+                return content.strip()
+
+            print(f"⚠️ [WARNING] Empty response from OpenAI chat API")
+            return self._fallback_text()
+
+        except Exception as e:
+            print(f"❌ [ERROR] OpenAI chat API failed: {e}")
+            return self._fallback_text()
 
 
 class ClaudeProvider(LLMProvider):
