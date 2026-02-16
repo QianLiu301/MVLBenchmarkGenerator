@@ -217,38 +217,70 @@ class GeminiProvider(LLMProvider):
         return self._fallback_description(prompt)
 
     def _call_api_rest(self, prompt: str, max_tokens: int = 8192, system_prompt: str = None) -> str:
-        # 修正模型名称 (改为稳定版)
-        model_name = self.model if "gemini" in self.model else "gemini-2.0-flash-exp"
-        print(f"🔷 [Gemini] Calling REST API - Model: {model_name}, max_tokens: {max_tokens}")
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={self.api_key}"
+        # 按优先级尝试的模型列表
+        models_to_try = [
+            self.model,  # 首先尝试配置的模型
+            "gemini-2.5-flash",  # 当前稳定版
+            "gemini-2.5-flash-lite",  # 轻量版
+            "gemini-2.0-flash",  # 旧版备用
+        ]
+        # 去重并保持顺序
+        models_to_try = list(dict.fromkeys(models_to_try))
 
-        # 正确构建 payload，加入 system_instruction
-        payload = {
-            "contents": [{"parts": [{"text": prompt}]}],
-            "generationConfig": {
-                "maxOutputTokens": max_tokens,  # 调大 token 限制
-                "temperature": 0.4,  # 代码生成建议调低随机性
-                "stopSequences": []
+        last_error = None
+        for model_name in models_to_try:
+            print(f"🔷 [Gemini] Trying model: {model_name}, max_tokens: {max_tokens}")
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={self.api_key}"
+
+            payload = {
+                "contents": [{"parts": [{"text": prompt}]}],
+                "generationConfig": {
+                    "maxOutputTokens": max_tokens,
+                    "temperature": 0.4,
+                    "stopSequences": []
+                }
             }
-        }
 
-        # 如果有 system_prompt，按照 Gemini API 规范添加
-        if system_prompt:
-            payload["system_instruction"] = {"parts": [{"text": system_prompt}]}
+            if system_prompt:
+                payload["system_instruction"] = {"parts": [{"text": system_prompt}]}
 
-        try:
-            proxies = self._get_proxies()
-            response = requests.post(url, json=payload, timeout=60, proxies=proxies)
-            response.raise_for_status()
-            result = response.json()
+            try:
+                proxies = self._get_proxies()
+                response = requests.post(url, json=payload, timeout=60, proxies=proxies)
 
-            # 增加安全性检查，防止 index error
-            if 'candidates' in result and result['candidates'][0]['content']['parts']:
-                return result['candidates'][0]['content']['parts'][0]['text'].strip()
-            return "Error: No content generated."
-        except Exception as e:
-            print(f"⚠️  Gemini REST API request failed: {e}")
-            return self._fallback_description(prompt)
+                # 如果是 429 配额错误，尝试下一个模型
+                if response.status_code == 429:
+                    error_data = response.json()
+                    print(f"⚠️  Model {model_name} quota exceeded, trying next model...")
+                    last_error = error_data
+                    continue
+
+                response.raise_for_status()
+                result = response.json()
+
+                if 'candidates' in result and result['candidates'][0]['content']['parts']:
+                    return result['candidates'][0]['content']['parts'][0]['text'].strip()
+                return "Error: No content generated."
+
+            except requests.exceptions.HTTPError as e:
+                print(f"⚠️  Model {model_name} failed: {e}")
+                if hasattr(e, 'response') and e.response is not None:
+                    try:
+                        error_detail = e.response.json()
+                        print(f"   Error details: {error_detail}")
+                        last_error = error_detail
+                    except:
+                        pass
+                continue
+
+            except Exception as e:
+                print(f"⚠️  Unexpected error with {model_name}: {e}")
+                last_error = str(e)
+                continue
+
+        # 所有模型都失败
+        print(f"❌ All Gemini models failed. Last error: {last_error}")
+        return self._fallback_description(prompt)
 
     def _call_api_stream(self, prompt: str, max_tokens: int = 8192, system_prompt: str = None):
         """
@@ -1054,26 +1086,26 @@ class OpenAIProvider(LLMProvider):
             else:
                 print(f"🔄 [DEBUG] Retry {retry_count}/{self.max_retries} - max_tokens: {max_tokens}")
 
-                # 构建消息
-                default_system = """You are a helpful assistant that generates BDD scenario descriptions.
+            # 构建消息（移到 if-else 外部）
+            default_system = """You are a helpful assistant that generates BDD scenario descriptions.
             You MUST respond with valid JSON only. Do not include any text outside the JSON structure."""
 
-                system_content = system_prompt or default_system
+            system_content = system_prompt or default_system
 
-                # OpenAI requires the word "json" in messages when using response_format json_object
-                if 'json' not in system_content.lower() and 'json' not in prompt.lower():
-                    system_content += "\nYou MUST respond with valid JSON only."
+            # OpenAI requires the word "json" in messages when using response_format json_object
+            if 'json' not in system_content.lower() and 'json' not in prompt.lower():
+                system_content += "\nYou MUST respond with valid JSON only."
 
-                messages = [
-                    {
-                        "role": "system",
-                        "content": system_content
-                    },
-                    {
-                        "role": "user",
-                        "content": prompt
-                    }
-                ]
+            messages = [
+                {
+                    "role": "system",
+                    "content": system_content
+                },
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ]
 
             # 根据模型选择参数
             if self._is_gpt5_model(self.model):
@@ -1370,7 +1402,8 @@ class ClaudeProvider(LLMProvider):
             payload["system"] = system_prompt
 
         try:
-            response = requests.post(self.api_url, headers=headers, json=payload, timeout=30)
+            proxies = self._get_proxies()
+            response = requests.post(self.api_url, headers=headers, json=payload, timeout=30, proxies=proxies)
             response.raise_for_status()
             result = response.json()
             return result['content'][0]['text'].strip()
