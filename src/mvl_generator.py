@@ -197,7 +197,8 @@ class MVLGenerator:
             k_value: int = 3,
             bitwidth: int = 8,
             language: str = 'c',
-            operations: List[str] = None
+            operations: List[str] = None,
+            natural_input: str = ''
     ) -> Dict:
         """
         Generate MVL ALU code.
@@ -207,6 +208,7 @@ class MVLGenerator:
             bitwidth: Number of digits (8, 10, 12, 14)
             language: Output language ('c', 'python', 'verilog', 'vhdl')
             operations: List of operations to include
+            natural_input: Natural language description (takes priority for prompt/naming when provided)
 
         Returns:
             Dict with generation results
@@ -218,6 +220,8 @@ class MVLGenerator:
         actual_class = type(self.llm).__name__ if self.llm else 'None'
         print(f"\n{'=' * 60}")
         print(f"🔢 Generating MVL ALU")
+        if natural_input:
+            print(f"   Natural input: {natural_input}")
         print(f"   K-value: {k_value} (GF({k_value}))")
         print(f"   Bitwidth: {bitwidth}-trit")
         print(f"   Language: {language.upper()}")
@@ -229,8 +233,10 @@ class MVLGenerator:
         # Calculate MOD value
         mod_value = k_value ** bitwidth
 
-        # Create prompt based on language
-        if language.lower() == 'c':
+        # Create prompt: use natural_input when provided, otherwise use structured prompt
+        if natural_input:
+            prompt = self._create_natural_prompt(natural_input, k_value, bitwidth, mod_value, operations, language)
+        elif language.lower() == 'c':
             prompt = self._create_c_prompt(k_value, bitwidth, mod_value, operations)
         elif language.lower() == 'python':
             prompt = self._create_python_prompt(k_value, bitwidth, mod_value, operations)
@@ -271,7 +277,7 @@ class MVLGenerator:
             code = self._fix_code(code, language)
 
             # Save file
-            file_path = self._save_code(code, k_value, bitwidth, language)
+            file_path = self._save_code(code, k_value, bitwidth, language, natural_input=natural_input)
 
             print(f"✅ Code saved: {file_path}")
 
@@ -298,7 +304,8 @@ class MVLGenerator:
             k_value: int = 3,
             bitwidth: int = 8,
             language: str = 'c',
-            operations: List[str] = None
+            operations: List[str] = None,
+            natural_input: str = ''
     ):
         """
         Generate MVL ALU code with streaming output.
@@ -314,8 +321,10 @@ class MVLGenerator:
 
         mod_value = k_value ** bitwidth
 
-        # Create prompt
-        if language.lower() == 'c':
+        # Create prompt: use natural_input when provided
+        if natural_input:
+            prompt = self._create_natural_prompt(natural_input, k_value, bitwidth, mod_value, operations, language)
+        elif language.lower() == 'c':
             prompt = self._create_c_prompt(k_value, bitwidth, mod_value, operations)
         elif language.lower() == 'python':
             prompt = self._create_python_prompt(k_value, bitwidth, mod_value, operations)
@@ -335,7 +344,8 @@ class MVLGenerator:
         has_stream = hasattr(self.llm, '_call_api_stream')
         if not has_stream:
             # Fallback to non-streaming
-            result = self.generate(k_value=k_value, bitwidth=bitwidth, language=language, operations=operations)
+            result = self.generate(k_value=k_value, bitwidth=bitwidth, language=language,
+                                   operations=operations, natural_input=natural_input)
             if result.get('success') and result.get('code'):
                 yield ("chunk", result['code'])
             yield ("done", result)
@@ -358,7 +368,7 @@ class MVLGenerator:
                 return
 
             code = self._fix_code(code, language)
-            file_path = self._save_code(code, k_value, bitwidth, language)
+            file_path = self._save_code(code, k_value, bitwidth, language, natural_input=natural_input)
 
             print(f"✅ Code saved: {file_path}")
 
@@ -379,6 +389,38 @@ class MVLGenerator:
             import traceback
             traceback.print_exc()
             yield ("error", str(e))
+
+    def _create_natural_prompt(self, natural_input: str, k: int, bits: int, mod: int,
+                                 operations: List[str], language: str) -> str:
+        """Create prompt based on natural language input, supplemented with structured parameters."""
+        ops_str = ', '.join(operations)
+
+        lang_instructions = {
+            'c': 'Output ONLY C code. Must be complete and compilable with gcc. Include main() with test cases.',
+            'python': 'Output ONLY Python code. Must be complete and runnable with python3. Include test cases at the bottom.',
+            'verilog': 'Output ONLY Verilog code. Must be synthesizable. Include a testbench module.',
+            'vhdl': 'Output ONLY VHDL code. Must be synthesizable. Include a testbench.'
+        }
+
+        prompt = f"""Based on the following description, generate a complete implementation:
+
+DESCRIPTION: {natural_input}
+
+CONTEXT PARAMETERS (use these to fill in any details not specified in the description):
+- K-value: {k} (operations are mod {k})
+- Bitwidth: {bits} trits
+- MOD value: {mod} ({k}^{bits})
+- Operations: {ops_str}
+- Output language: {language.upper()}
+
+CRITICAL RULES:
+1. {lang_instructions.get(language.lower(), lang_instructions['c'])}
+2. No markdown, no explanations, only code
+3. The description above takes priority over the context parameters
+
+Generate the complete code now:
+"""
+        return prompt
 
     def _create_c_prompt(self, k: int, bits: int, mod: int, operations: List[str]) -> str:
         """Create prompt for C code generation"""
@@ -598,7 +640,24 @@ Generate the complete VHDL code (entity + architecture + testbench) now:
 
         return code
 
-    def _save_code(self, code: str, k: int, bits: int, language: str) -> Path:
+    @staticmethod
+    def _sanitize_filename(text: str) -> str:
+        """Convert natural language text to a safe filename component.
+
+        e.g. '10-trit ternary calculator' -> '10_trit_ternary_calculator'
+        """
+        # Replace non-alphanumeric characters (except hyphens) with underscores
+        name = re.sub(r'[^a-zA-Z0-9\-]', '_', text.strip())
+        # Collapse multiple underscores
+        name = re.sub(r'_+', '_', name)
+        # Remove leading/trailing underscores
+        name = name.strip('_')
+        # Limit length
+        if len(name) > 60:
+            name = name[:60].rstrip('_')
+        return name.lower()
+
+    def _save_code(self, code: str, k: int, bits: int, language: str, natural_input: str = '') -> Path:
         """Save generated code to file"""
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
 
@@ -611,13 +670,21 @@ Generate the complete VHDL code (entity + architecture + testbench) now:
         }
         ext = extensions.get(language.lower(), 'txt')
 
-        filename = f"mvl_alu_gf{k}_{bits}bit_{timestamp}.{ext}"
+        # When natural_input is provided, use it for the filename
+        if natural_input:
+            safe_name = self._sanitize_filename(natural_input)
+            filename = f"{safe_name}_{timestamp}.{ext}"
+            description = natural_input
+        else:
+            filename = f"mvl_alu_gf{k}_{bits}bit_{timestamp}.{ext}"
+            description = f"GF({k}) {bits}-trit"
+
         file_path = self.output_dir / filename
 
         # Add header comment
         if language.lower() == 'c':
             header = f"""/*
- * MVL ALU Benchmark - GF({k}) {bits}-trit
+ * MVL ALU Benchmark - {description}
  * Generated by: MVL Benchmark Generator
  * LLM Provider: {self.llm_provider_name}
  * Generated at: {timestamp}
@@ -627,7 +694,7 @@ Generate the complete VHDL code (entity + architecture + testbench) now:
 """
         elif language.lower() == 'python':
             header = f'''"""
-MVL ALU Benchmark - GF({k}) {bits}-trit
+MVL ALU Benchmark - {description}
 Generated by: MVL Benchmark Generator
 LLM Provider: {self.llm_provider_name}
 Generated at: {timestamp}
@@ -636,7 +703,7 @@ MOD value: {k ** bits}
 
 '''
         elif language.lower() == 'vhdl':
-            header = f"""-- MVL ALU Benchmark - GF({k}) {bits}-trit
+            header = f"""-- MVL ALU Benchmark - {description}
 -- Generated by: MVL Benchmark Generator
 -- LLM Provider: {self.llm_provider_name}
 -- Generated at: {timestamp}
@@ -644,7 +711,7 @@ MOD value: {k ** bits}
 
 """
         else:
-            header = f"""// MVL ALU Benchmark - GF({k}) {bits}-trit
+            header = f"""// MVL ALU Benchmark - {description}
 // Generated by: MVL Benchmark Generator
 // LLM Provider: {self.llm_provider_name}
 // Generated at: {timestamp}
