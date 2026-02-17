@@ -859,12 +859,14 @@
                     <div class="select-wrapper">
                         <select id="llm-provider" onchange="onLlmProviderChange()">
                             <option value="gemini" selected>Gemini</option>
-                            <option value="mistral">Mistral</option>
+                            <option value="groq">Groq</option>
                             <option value="deepseek">DeepSeek</option>
-                            <option value="openai">OpenAI</option>
                             <option value="qwen">Qwen</option>
                             <option value="together">Together AI</option>
-                            <option value="groq">Groq</option>
+                            <option value="mistral">Mistral</option>
+                            <option value="openai">OpenAI</option>
+                            <option value="claude">Claude</option>
+                            <option value="grok">Grok</option>
                         </select>
                     </div>
                 </div>
@@ -1251,6 +1253,14 @@
             'together': [
                 {value: 'meta-llama/Llama-3.3-70B-Instruct-Turbo', text: 'Llama 3.3 70B'},
                 {value: 'meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8', text: 'Llama 4 Maverick'}
+            ],
+            'claude': [
+                {value: 'claude-sonnet-4-20250514', text: 'Claude Sonnet 4'},
+                {value: 'claude-3-5-sonnet-20241022', text: 'Claude 3.5 Sonnet'}
+            ],
+            'grok': [
+                {value: 'grok-3-mini', text: 'Grok 3 Mini'},
+                {value: 'grok-3', text: 'Grok 3'}
             ]
             // deepseek 和 groq 不需要 model 选择
         };

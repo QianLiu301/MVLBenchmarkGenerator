@@ -31,10 +31,39 @@ class MVLGenerator:
         self.output_dir = self._setup_output_dir(output_dir, project_root)
         self.project_root = Path(project_root) if project_root else Path.cwd()
 
-        print(f"🔢 MVL Generator initialized")
-        print(f"   LLM Provider: {self.llm_provider_name}")
-        print(f"   Model: {self.model or 'default'}")
+        # Show actual provider and model
+        actual_model = getattr(self.llm, 'model', None) if self.llm else None
+        actual_class = type(self.llm).__name__ if self.llm else 'None'
+        print(f"\n🔢 MVL Generator initialized")
+        print(f"   Provider: {self.llm_provider_name} ({actual_class})")
+        print(f"   Model: {actual_model or 'N/A'}")
         print(f"   Output directory: {self.output_dir}")
+
+    def _load_config_api_key(self, provider_name: str) -> Optional[str]:
+        """Load API key from llm_config.json for the given provider"""
+        import json
+        config_locations = [
+            Path(__file__).parent.parent / 'llm_config.json',  # project root
+            Path(__file__).parent / 'llm_config.json',         # src/
+            Path.cwd() / 'llm_config.json',                    # CWD
+        ]
+
+        for config_path in config_locations:
+            try:
+                if config_path.exists():
+                    with open(config_path, 'r') as f:
+                        config = json.load(f)
+                    provider_config = config.get(provider_name, {})
+                    api_key = provider_config.get('api_key', '')
+                    if api_key:
+                        return api_key
+                    # Also check for model override from config
+                    model_from_config = provider_config.get('model', '')
+                    if model_from_config and not self.model:
+                        self.model = model_from_config
+            except Exception:
+                continue
+        return None
 
     def _setup_llm(self):
         """Setup LLM provider"""
@@ -51,6 +80,8 @@ class MVLGenerator:
                 QwenProvider,
                 MistralProvider,
                 TogetherProvider,
+                GrokProvider,
+                LocalLLMProvider,
             )
 
             providers = {
@@ -63,6 +94,8 @@ class MVLGenerator:
                 'qwen': QwenProvider,
                 'mistral': MistralProvider,
                 'together': TogetherProvider,
+                'grok': GrokProvider,
+                'local': LocalLLMProvider,
             }
 
             if self.llm_provider_name not in providers:
@@ -72,21 +105,38 @@ class MVLGenerator:
 
             provider_class = providers[self.llm_provider_name]
 
-            if self.model:
-                llm = provider_class(model=self.model)
-                print(f"✅ LLM provider loaded: {provider_class.__name__} with model: {self.model}")
-            else:
-                llm = provider_class()
-                print(f"✅ LLM provider loaded: {provider_class.__name__} with default model")
+            # Load API key from llm_config.json if not set in environment
+            kwargs = {}
+            config_api_key = self._load_config_api_key(self.llm_provider_name)
+            if config_api_key:
+                kwargs['api_key'] = config_api_key
 
-            # Log the actual model being used
-            if hasattr(llm, 'model'):
-                print(f"   🤖 Actual model in use: {llm.model}")
+            if self.model:
+                kwargs['model'] = self.model
+
+            # LocalLLMProvider doesn't accept kwargs
+            if self.llm_provider_name == 'local':
+                llm = provider_class()
+            else:
+                llm = provider_class(**kwargs)
+
+            # Log the actual provider and model
+            actual_model = getattr(llm, 'model', 'N/A')
+            print(f"✅ LLM provider loaded: {provider_class.__name__}")
+            print(f"   Provider: {self.llm_provider_name}")
+            print(f"   Model: {actual_model}")
 
             return llm
 
         except ImportError as e:
             print(f"❌ Failed to import LLM providers: {e}")
+            return None
+        except ValueError as e:
+            print(f"❌ Failed to initialize provider '{self.llm_provider_name}': {e}")
+            print(f"   Please set the API key in llm_config.json or as an environment variable")
+            return None
+        except Exception as e:
+            print(f"❌ Unexpected error setting up provider '{self.llm_provider_name}': {e}")
             return None
 
     def _setup_output_dir(self, output_dir: Optional[str], project_root: Optional[str]) -> Path:
@@ -125,13 +175,16 @@ class MVLGenerator:
         if operations is None:
             operations = ['ADD', 'SUB', 'MUL', 'NEG', 'INC', 'DEC']
 
+        actual_model = getattr(self.llm, 'model', 'N/A') if self.llm else 'N/A'
+        actual_class = type(self.llm).__name__ if self.llm else 'None'
         print(f"\n{'=' * 60}")
         print(f"🔢 Generating MVL ALU")
         print(f"   K-value: {k_value} (GF({k_value}))")
         print(f"   Bitwidth: {bitwidth}-trit")
         print(f"   Language: {language.upper()}")
         print(f"   Operations: {', '.join(operations)}")
-        print(f"   LLM: {self.llm_provider_name.upper()}")
+        print(f"   LLM Provider: {self.llm_provider_name} ({actual_class})")
+        print(f"   LLM Model: {actual_model}")
         print(f"{'=' * 60}")
 
         # Calculate MOD value

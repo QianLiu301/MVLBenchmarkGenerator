@@ -69,7 +69,10 @@ def api_status():
     return jsonify({
         'status': 'ok',
         'tools': simulation_runner.get_tools_status(),
-        'llm_providers': ['gemini', 'openai', 'groq', 'deepseek', 'claude']
+        'llm_providers': [
+            'gemini', 'openai', 'gpt', 'claude', 'groq',
+            'deepseek', 'qwen', 'mistral', 'together', 'grok', 'local'
+        ]
     })
 
 
@@ -97,12 +100,22 @@ def api_generate():
             return jsonify({'success': False, 'error': 'Language must be c, python, verilog, or vhdl'}), 400
 
         # Create generator and generate
-        print(f"📋 [API] Generate request - provider: {llm_provider}, model: {model}, k={k_value}, bitwidth={bitwidth}, lang={language}")
+        print(f"\n📋 [API] Generate request:")
+        print(f"   Requested provider: {llm_provider}")
+        print(f"   Requested model: {model or '(default)'}")
+        print(f"   Parameters: k={k_value}, bitwidth={bitwidth}, lang={language}")
+
         generator = MVLGenerator(
             llm_provider=llm_provider,
             model=model,
             project_root=str(PROJECT_ROOT)
         )
+
+        # Log actual provider/model after initialization
+        actual_model = getattr(generator.llm, 'model', 'N/A') if generator.llm else 'N/A'
+        actual_class = type(generator.llm).__name__ if generator.llm else 'None'
+        print(f"   Actual provider: {generator.llm_provider_name} ({actual_class})")
+        print(f"   Actual model: {actual_model}")
 
         result = generator.generate(
             k_value=k_value,
