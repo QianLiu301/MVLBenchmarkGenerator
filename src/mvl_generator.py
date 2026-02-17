@@ -37,47 +37,32 @@ class MVLGenerator:
         print(f"   Output directory: {self.output_dir}")
 
     def _setup_llm(self):
-        """Setup LLM provider"""
+        """Setup LLM provider, loading API keys from llm_config.json if available"""
         try:
             import sys
             sys.path.insert(0, str(Path(__file__).parent))
 
-            from llm_providers import (
-                GeminiProvider,
-                OpenAIProvider,
-                ClaudeProvider,
-                GroqProvider,
-                DeepSeekProvider,
-                QwenProvider,
-                MistralProvider,
-                TogetherProvider,
-            )
+            from llm_providers import LLMFactory, LLMConfig
 
-            providers = {
-                'gemini': GeminiProvider,
-                'openai': OpenAIProvider,
-                'gpt': OpenAIProvider,
-                'claude': ClaudeProvider,
-                'groq': GroqProvider,
-                'deepseek': DeepSeekProvider,
-                'qwen': QwenProvider,
-                'mistral': MistralProvider,
-                'together': TogetherProvider,
-            }
+            # Load API key from llm_config.json
+            kwargs = {}
+            provider_config = {}
+            try:
+                config = LLMConfig()
+                provider_config = config.config.get(self.llm_provider_name, {})
+                if isinstance(provider_config, dict) and provider_config.get("api_key"):
+                    kwargs["api_key"] = provider_config["api_key"]
+                    print(f"   🔑 API key loaded from llm_config.json for '{self.llm_provider_name}'")
+            except Exception as e:
+                print(f"   ⚠️  Could not load llm_config.json: {e}")
 
-            if self.llm_provider_name not in providers:
-                print(f"⚠️  Unknown LLM provider: {self.llm_provider_name}")
-                print(f"   Available: {', '.join(providers.keys())}")
-                self.llm_provider_name = 'groq'
-
-            provider_class = providers[self.llm_provider_name]
-
+            # Use the model from frontend selection, or fall back to config/default
             if self.model:
-                llm = provider_class(model=self.model)
-                print(f"✅ LLM provider loaded: {provider_class.__name__} with model: {self.model}")
-            else:
-                llm = provider_class()
-                print(f"✅ LLM provider loaded: {provider_class.__name__} with default model")
+                kwargs["model"] = self.model
+            elif isinstance(provider_config, dict) and provider_config.get("model"):
+                kwargs["model"] = provider_config["model"]
+
+            llm = LLMFactory.create_provider(self.llm_provider_name, **kwargs)
 
             # Log the actual model being used
             if hasattr(llm, 'model'):
