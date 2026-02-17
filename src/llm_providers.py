@@ -8,7 +8,6 @@ Other GPT-5 models use chat completions endpoint (v1/chat/completions)
 
 🔧 FIXED: _fallback_description now returns JSON format for intent parsing compatibility
 """
-
 import os
 import json
 import time
