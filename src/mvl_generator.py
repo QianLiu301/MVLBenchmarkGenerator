@@ -324,7 +324,7 @@ class MVLGenerator:
         try:
             response = self.llm._call_api(
                 prompt,
-                max_tokens=4096,
+                max_tokens=8192,
                 system_prompt="You are an expert programmer. Generate clean, compilable code without any explanations."
             )
 
@@ -338,6 +338,9 @@ class MVLGenerator:
 
             # Fix common issues
             code = self._fix_code(code, language)
+
+            # Auto-enhance test coverage if too low
+            code = self._enhance_test_coverage(code, language, k_value, bitwidth, mod_value)
 
             # Validate generated code quality
             validation_warnings = self._validate_code(code, language, k_value, bitwidth, mod_value)
@@ -430,7 +433,7 @@ class MVLGenerator:
             full_response = ""
             system_prompt = "You are an expert programmer. Generate clean, compilable code without any explanations."
 
-            for chunk in self.llm._call_api_stream(prompt, max_tokens=4096, system_prompt=system_prompt):
+            for chunk in self.llm._call_api_stream(prompt, max_tokens=8192, system_prompt=system_prompt):
                 full_response += chunk
                 yield ("chunk", chunk)
 
@@ -443,6 +446,9 @@ class MVLGenerator:
                 return
 
             code = self._fix_code(code, language)
+
+            # Auto-enhance test coverage if too low
+            code = self._enhance_test_coverage(code, language, k_value, bitwidth, mod_value)
 
             # Validate generated code quality
             validation_warnings = self._validate_code(code, language, k_value, bitwidth, mod_value)
@@ -599,7 +605,15 @@ CRITICAL RULES:
 1. No markdown formatting, no explanations — output ONLY {language.upper()} code
 2. The MOD value {mod} and bit width {data_width} are mathematically derived and MUST be used exactly
 3. All 6 operations must be implemented
-4. Include at least 20 test vectors covering: zero inputs, max value ({mod-1}), overflow/underflow, small values, random values
+
+⚠️ MANDATORY TEST REQUIREMENT (DO NOT SKIP):
+You MUST include AT LEAST 20 test vectors in the test/main section. This is a HARD REQUIREMENT — code with fewer than 20 tests will be REJECTED.
+Test vectors must cover ALL 6 operations with these categories:
+- Edge cases: a=0, b=0 (at least 2 tests)
+- Max value: a={mod-1}, b={mod-1} (at least 2 tests)
+- Overflow/underflow: values that wrap around mod {mod} (at least 4 tests)
+- Small values: a=1, b=1 (at least 2 tests)
+- Random values: random a, b for each operation (at least 10 tests)
 
 Generate the complete {language.upper()} code now:
 """
@@ -614,7 +628,7 @@ Generate the complete {language.upper()} code now:
 CRITICAL RULES:
 1. Output ONLY C code, no markdown, no explanations
 2. Must be complete and compilable with gcc
-3. Include main() with 20 random test vectors
+3. main() MUST contain AT LEAST 20 test vectors — this is a HARD REQUIREMENT
 
 SPECIFICATIONS:
 - K-value: {k} (operations are mod {k})
@@ -631,7 +645,14 @@ REQUIRED STRUCTURE:
 5. mod{mod}() helper function for negative number handling
 6. alu_exec() function with switch-case for operations
 7. op_name() function to get operation name string
-8. main() with srand(), 20 random tests, printf results
+8. main() with srand() and AT LEAST 20 printf test lines
+
+⚠️ MANDATORY TEST REQUIREMENT:
+main() MUST include AT LEAST 20 test vectors using printf. Code with fewer than 20 tests will be REJECTED.
+Include:
+- 6 edge-case tests (one per operation with a=0, b=0)
+- 6 max-value tests (one per operation with a={mod-1}, b={mod-1})
+- 8+ random tests with srand(time(NULL)) and rand() % {mod}
 
 EXAMPLE OUTPUT FORMAT IN main():
 printf("Test %2d: %-3s A=%d B=%d -> R=%d Z=%d N=%d C=%d\\n", ...);
@@ -649,7 +670,7 @@ Generate the complete C code now:
 CRITICAL RULES:
 1. Output ONLY Python code, no markdown, no explanations
 2. Must be complete and runnable with python3
-3. Include main section with 20 random test vectors
+3. if __name__ == "__main__" block MUST contain AT LEAST 20 test vectors — HARD REQUIREMENT
 
 SPECIFICATIONS:
 - K-value: {k}
@@ -665,7 +686,14 @@ REQUIRED STRUCTURE:
 4. Flags dataclass or namedtuple (z, n, c)
 5. alu_exec(a, b, op) function returning (result, flags)
 6. op_name(op) function
-7. if __name__ == "__main__": block with 20 random tests
+7. if __name__ == "__main__": block with AT LEAST 20 print test lines
+
+⚠️ MANDATORY TEST REQUIREMENT:
+The main block MUST include AT LEAST 20 test vectors using print(). Code with fewer than 20 tests will be REJECTED.
+Include:
+- 6 edge-case tests (one per operation with a=0, b=0)
+- 6 max-value tests (one per operation with a={mod-1}, b={mod-1})
+- 8+ random tests with random.randint(0, {mod-1})
 
 Generate the complete Python code now:
 """
@@ -713,7 +741,15 @@ OPCODES:
 - 4'b0100: INC (a + 1) mod {mod}
 - 4'b0101: DEC (a - 1) mod {mod}
 
-Generate the complete Verilog module now:
+⚠️ MANDATORY TESTBENCH REQUIREMENT:
+You MUST include a testbench module mvl_alu_{k}_{bits}bit_tb with AT LEAST 20 $display test vectors. Code with fewer than 20 tests will be REJECTED.
+Include:
+- 6 edge-case tests (one per opcode with a=0, b=0)
+- 6 max-value tests (one per opcode with a={mod-1}, b={mod-1})
+- 8+ additional tests with various values
+Each test: assign a, b, opcode → #10 → $display result
+
+Generate the complete Verilog module with testbench now:
 """
         return prompt
 
@@ -765,11 +801,14 @@ OPCODES:
 - "0100": INC (a + 1) mod {mod}
 - "0101": DEC (a - 1) mod {mod}
 
-TESTBENCH REQUIREMENTS:
-- Entity: mvl_alu_{k}_{bits}bit_tb
-- Generate at least 20 test vectors
-- Use assert or report statements to display results
-- Format: report "Test N: OP A=X B=Y -> R=Z"
+⚠️ MANDATORY TESTBENCH REQUIREMENT:
+You MUST include a testbench entity mvl_alu_{k}_{bits}bit_tb with AT LEAST 20 assert/report test vectors. Code with fewer than 20 tests will be REJECTED.
+Include:
+- 6 edge-case tests (one per opcode with a=0, b=0)
+- 6 max-value tests (one per opcode with a={mod-1}, b={mod-1})
+- 8+ additional tests with various values
+Each test: assign a, b, opcode → wait for 10 ns → assert/report result
+Format: report "Test N: OP A=X B=Y -> R=Z"
 
 Generate the complete VHDL code (entity + architecture + testbench) now:
 """
@@ -905,6 +944,69 @@ Generate the complete VHDL code (entity + architecture + testbench) now:
             # Ensure IEEE library is present
             if 'library ieee' not in code.lower() and 'library IEEE' not in code:
                 code = 'library IEEE;\nuse IEEE.STD_LOGIC_1164.ALL;\nuse IEEE.NUMERIC_STD.ALL;\n\n' + code
+
+        return code
+
+    def _enhance_test_coverage(self, code: str, language: str, k: int, bits: int, mod: int) -> str:
+        """If test coverage is low, do a focused LLM call to add more test vectors."""
+        import math
+        lang = language.lower()
+        test_indicators = {
+            'c': ['printf', 'test', 'assert'],
+            'python': ['print', 'test', 'assert'],
+            'verilog': ['$display', 'initial begin', '#'],
+            'vhdl': ['assert', 'report', 'wait for'],
+        }
+        indicators = test_indicators.get(lang, [])
+        test_count = sum(1 for line in code.split('\n')
+                         if any(ind in line.lower() for ind in indicators))
+
+        if test_count >= 10:
+            return code  # Already has enough tests
+
+        print(f"\n🔧 Low test coverage detected ({test_count} lines). Auto-enhancing with more test vectors...")
+
+        lang_hint = {
+            'c': f'Add more printf test lines in main(). Use alu_exec(a, b, op) and printf to print results. Include edge cases (0,0), max values ({mod-1},{mod-1}), and random values for all 6 operations (OP_ADD through OP_DEC).',
+            'python': f'Add more print test lines in the if __name__ == "__main__" block. Use alu_exec(a, b, op) and print results. Include edge cases (0,0), max values ({mod-1},{mod-1}), and random values for all 6 operations.',
+            'verilog': f'Add more $display test vectors in the testbench initial block. Test all 6 opcodes (0000-0101) with edge cases (a=0,b=0), max values (a={mod-1},b={mod-1}), and various other values. Use #10 between tests.',
+            'vhdl': f'Add more assert/report test vectors in the testbench process. Test all 6 opcodes ("0000"-"0101") with edge cases (a=0,b=0), max values (a={mod-1},b={mod-1}), and various other values. Use wait for 10 ns between tests.',
+        }
+
+        enhance_prompt = f"""Here is existing {language.upper()} code that has too few test vectors. Add AT LEAST 15 more test vectors to the test/main section to bring the total to 20+.
+
+RULES:
+1. Output the COMPLETE code (original + new tests) — do NOT remove any existing code
+2. Only add test vectors, do NOT modify the ALU logic
+3. {lang_hint.get(lang, lang_hint['c'])}
+4. No markdown, no explanations — output ONLY {language.upper()} code
+
+EXISTING CODE:
+{code}
+
+Output the complete enhanced code now:"""
+
+        try:
+            response = self.llm._call_api(
+                enhance_prompt,
+                max_tokens=8192,
+                system_prompt="You are an expert programmer. Add test vectors to the provided code. Output ONLY code, no explanations."
+            )
+            enhanced_code = self._extract_code(response, language)
+            if enhanced_code:
+                enhanced_code = self._fix_code(enhanced_code, language)
+                # Verify enhancement actually improved test coverage
+                new_test_count = sum(1 for line in enhanced_code.split('\n')
+                                     if any(ind in line.lower() for ind in indicators))
+                if new_test_count > test_count:
+                    print(f"✅ Test coverage enhanced: {test_count} → {new_test_count} test-related lines")
+                    return enhanced_code
+                else:
+                    print(f"⚠️ Enhancement did not improve coverage, keeping original code")
+            else:
+                print(f"⚠️ Failed to extract enhanced code, keeping original")
+        except Exception as e:
+            print(f"⚠️ Test enhancement failed ({e}), keeping original code")
 
         return code
 
