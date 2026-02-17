@@ -80,6 +80,7 @@ def api_generate():
         data = request.json
 
         llm_provider = data.get('llm', 'groq')
+        model = data.get('model', None)
         k_value = int(data.get('k_value', 3))
         bitwidth = int(data.get('bitwidth', 8))
         language = data.get('language', 'c')
@@ -96,8 +97,10 @@ def api_generate():
             return jsonify({'success': False, 'error': 'Language must be c, python, verilog, or vhdl'}), 400
 
         # Create generator and generate
+        print(f"📋 [API] Generate request - provider: {llm_provider}, model: {model}, k={k_value}, bitwidth={bitwidth}, lang={language}")
         generator = MVLGenerator(
             llm_provider=llm_provider,
+            model=model,
             project_root=str(PROJECT_ROOT)
         )
 

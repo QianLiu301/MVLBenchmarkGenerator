@@ -1331,7 +1331,9 @@ Respond with ONLY the JSON object, no other text.
         - Codex 模型 → completions endpoint (返回纯文本)
         - 其他模型 → chat completions endpoint with JSON mode (返回 JSON 字符串)
         """
-        print(f"   🔍 [DEBUG][OpenAI._call_api] Called with max_tokens={max_tokens}")
+        print(f"\n{'='*60}")
+        print(f"   🔍 [OpenAI._call_api] Model: {self.model} | max_tokens={max_tokens}")
+        print(f"{'='*60}")
 
         # 🔑 Codex 模型使用 completions 接口
         if self._is_codex_model(self.model):
