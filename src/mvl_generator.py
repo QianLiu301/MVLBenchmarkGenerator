@@ -42,10 +42,13 @@ class MVLGenerator:
     def _load_config_api_key(self, provider_name: str) -> Optional[str]:
         """Load API key from llm_config.json for the given provider"""
         import json
+        project_root = Path(__file__).parent.parent
         config_locations = [
-            Path(__file__).parent.parent / 'llm_config.json',  # project root
+            project_root / 'config' / 'llm_config.json',      # config/
+            project_root / 'llm_config.json',                  # project root
             Path(__file__).parent / 'llm_config.json',         # src/
             Path.cwd() / 'llm_config.json',                    # CWD
+            Path.cwd() / 'config' / 'llm_config.json',        # CWD/config/
         ]
 
         for config_path in config_locations:
@@ -56,6 +59,7 @@ class MVLGenerator:
                     provider_config = config.get(provider_name, {})
                     api_key = provider_config.get('api_key', '')
                     if api_key:
+                        print(f"   📄 Config loaded from: {config_path}")
                         return api_key
                     # Also check for model override from config
                     model_from_config = provider_config.get('model', '')
