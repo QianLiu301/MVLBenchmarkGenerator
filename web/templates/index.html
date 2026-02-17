@@ -397,7 +397,10 @@
         }
 
         .lang-tab {
-            padding: 8px 18px;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 10px 18px;
             font-size: 0.82rem;
             font-weight: 500;
             color: var(--text-secondary);
@@ -418,39 +421,16 @@
             font-weight: 600;
         }
 
-        /* Generation progress */
-        .gen-progress {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            margin-bottom: 12px;
-            padding: 8px 14px;
-            background: var(--bg-gray);
-            border-radius: var(--radius);
-            font-size: 0.82rem;
-            color: var(--text-secondary);
+        .tab-status {
+            display: inline-block;
+            font-size: 0.7rem;
+            line-height: 1;
         }
 
-        .gen-progress .progress-dots {
-            display: flex;
-            gap: 4px;
-        }
-
-        .gen-progress .dot {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            background: var(--border);
-        }
-
-        .gen-progress .dot.done {
-            background: var(--success);
-        }
-
-        .gen-progress .dot.active {
-            background: var(--primary);
-            animation: pulse 1s infinite;
-        }
+        .tab-status.done { color: var(--success); }
+        .tab-status.generating { color: var(--primary); animation: pulse 1s infinite; }
+        .tab-status.error { color: var(--error); }
+        .tab-status.pending { color: var(--text-muted); }
 
         @keyframes pulse {
             0%, 100% { opacity: 1; }
@@ -1085,19 +1065,13 @@
                 </div>
             </div>
 
-            <div class="gen-progress" id="gen-progress" style="display: none;">
-                <span id="gen-progress-text">Generating...</span>
-                <div class="progress-dots" id="gen-progress-dots"></div>
-            </div>
-
-            <div class="lang-tabs" id="result-lang-tabs" style="display: none;"></div>
-
             <div class="section-label">Generated Code Preview</div>
+            <div class="lang-tabs" id="result-lang-tabs" style="display: none;"></div>
             <div class="code-preview" id="code-preview">// Loading...</div>
 
             <div class="action-buttons">
-                <button class="btn btn-secondary btn-sm" onclick="downloadCode()">📥 Download Code</button>
-                <button class="btn btn-secondary btn-sm" id="download-all-btn" onclick="downloadAll()" style="display: none;">📦 Download All</button>
+                <button class="btn btn-secondary btn-sm" id="download-code-btn" onclick="downloadCode()">📥 Download Code</button>
+                <button class="btn btn-secondary btn-sm" id="download-all-btn" onclick="downloadAll()" style="display: none;">📦 Download All (.zip)</button>
                 <button class="btn btn-secondary btn-sm" onclick="viewFullCode()">👁️ View Full</button>
                 <button class="btn btn-success btn-sm" onclick="runSimulation()" id="run-sim-btn">▶️ Run Simulation</button>
             </div>
@@ -1184,8 +1158,13 @@
                 <h2 id="code-modal-title">Full Code</h2>
                 <button class="modal-close" onclick="closeCodeModal()">✕</button>
             </div>
+            <div class="lang-tabs" id="modal-lang-tabs" style="display: none; padding: 0 24px;"></div>
             <div class="modal-body" style="padding: 0;">
                 <pre style="margin:0; padding:20px; font-family:'JetBrains Mono','Fira Code','Consolas',monospace; font-size:13px; line-height:1.6; white-space:pre-wrap; word-break:break-all; color:#1e293b; background:#ffffff;" id="code-modal-content"></pre>
+            </div>
+            <div class="modal-footer" id="code-modal-footer">
+                <button class="btn btn-secondary btn-sm" onclick="copyCurrentCode()" id="copy-code-btn">📋 Copy Code</button>
+                <button class="btn btn-secondary btn-sm" onclick="downloadCurrentFile()" style="margin-left: 8px;">📥 Download This File</button>
             </div>
         </div>
     </div>
@@ -1494,6 +1473,9 @@
         // ============================================================
         // Generation
         // ============================================================
+        let generatedLanguages = [];    // All languages requested in current generation
+        let langStatus = {};            // Per-language status: 'pending'|'generating'|'done'|'error'
+
         function getSelectedItems(groupId) {
             const selected = [];
             document.querySelectorAll(`#${groupId} .checkbox-item.selected`).forEach(item => {
@@ -1527,6 +1509,9 @@
             setLoading(true);
             currentResults = {};
             activeResultLang = null;
+            generatedLanguages = [...languages];
+            langStatus = {};
+            languages.forEach(l => langStatus[l] = 'pending');
 
             const baseRequest = {
                 llm: provider,
@@ -1541,8 +1526,6 @@
             // Show result panel with generating state
             document.getElementById('generation-result').classList.add('visible');
             document.getElementById('simulation-result').classList.remove('visible');
-            document.getElementById('result-lang-tabs').style.display = 'none';
-            document.getElementById('download-all-btn').style.display = 'none';
             document.getElementById('gen-result-icon').innerHTML = '<div class="spinner"></div>';
             document.getElementById('gen-result-title').textContent = 'Generating...';
             document.getElementById('gen-result-subtitle').textContent = `${provider.toUpperCase()} • ${languages.map(l => l.toUpperCase()).join(', ')}`;
@@ -1553,14 +1536,26 @@
             document.getElementById('stat-mod').textContent = (kValue ** bitwidth).toLocaleString();
             document.getElementById('stat-lang').textContent = languages.map(l => l.toUpperCase()).join(', ');
 
+            // Show tabs immediately (with pending status) for multi-language
+            activeResultLang = languages[0];
+            renderResultTabs();
+            document.getElementById('code-preview').textContent = '';
+
             const errors = [];
 
             for (let i = 0; i < languages.length; i++) {
                 const lang = languages[i];
                 const requestBody = { ...baseRequest, language: lang };
 
-                // Show progress
-                updateGenProgress(lang, i, languages);
+                langStatus[lang] = 'generating';
+                activeResultLang = lang;
+                renderResultTabs();
+
+                // Update header progress
+                if (languages.length > 1) {
+                    document.getElementById('gen-result-title').textContent =
+                        `Generating ${lang.toUpperCase()}... (${i + 1}/${languages.length})`;
+                }
 
                 try {
                     if (streamOutput) {
@@ -1568,135 +1563,170 @@
                     } else {
                         await generateNormalOne(requestBody);
                     }
+                    langStatus[lang] = 'done';
                 } catch (error) {
                     console.error(`Generation failed for ${lang}:`, error);
+                    langStatus[lang] = 'error';
                     errors.push(`${lang.toUpperCase()}: ${error.message}`);
                 }
+
+                renderResultTabs();
             }
 
-            // Display results for whatever succeeded
+            // Display final results
             const successLangs = languages.filter(l => currentResults[l]);
 
             if (successLangs.length > 0) {
                 activeResultLang = successLangs[0];
                 currentResult = currentResults[activeResultLang];
                 displayFinalResult(successLangs);
+            } else {
+                document.getElementById('gen-result-icon').textContent = '✗';
+                document.getElementById('gen-result-title').textContent = 'Generation Failed';
             }
 
             if (errors.length > 0) {
                 showError(`Failed: ${errors.join('; ')}`);
-            } else if (successLangs.length === 0) {
-                showError('All generations failed');
             }
 
             setLoading(false);
-            document.getElementById('gen-progress').style.display = 'none';
         }
 
-        function updateGenProgress(lang, index, languages) {
-            const total = languages.length;
-            document.getElementById('gen-result-title').textContent =
-                total > 1 ? `Generating ${lang.toUpperCase()}... (${index + 1}/${total})` : 'Generating...';
-            document.getElementById('gen-result-subtitle').textContent = `Streaming from LLM`;
-            document.getElementById('stat-lang').textContent =
-                total > 1 ? languages.map(l => l.toUpperCase()).join(', ') : lang.toUpperCase();
+        function renderResultTabs() {
+            const container = document.getElementById('result-lang-tabs');
+            const isMulti = generatedLanguages.length > 1;
 
-            // Progress dots
-            if (total > 1) {
-                const progress = document.getElementById('gen-progress');
-                progress.style.display = 'flex';
-                document.getElementById('gen-progress-text').textContent =
-                    `${lang.toUpperCase()} (${index + 1}/${total})`;
-                const dotsHtml = languages.map((l, j) => {
-                    const cls = j < index ? 'dot done' : j === index ? 'dot active' : 'dot';
-                    return `<span class="${cls}" title="${l.toUpperCase()}"></span>`;
-                }).join('');
-                document.getElementById('gen-progress-dots').innerHTML = dotsHtml;
+            if (!isMulti) {
+                container.style.display = 'none';
+                return;
             }
+
+            container.innerHTML = '';
+            container.style.display = 'flex';
+
+            generatedLanguages.forEach(lang => {
+                const tab = document.createElement('span');
+                tab.className = 'lang-tab' + (lang === activeResultLang ? ' active' : '');
+
+                const status = langStatus[lang] || 'pending';
+                const statusIcon = status === 'done' ? '✓' :
+                                   status === 'generating' ? '●' :
+                                   status === 'error' ? '✗' : '○';
+
+                tab.innerHTML = `${lang.toUpperCase()} <span class="tab-status ${status}">${statusIcon}</span>`;
+
+                if (status === 'done') {
+                    tab.onclick = () => switchResultTab(lang);
+                }
+
+                container.appendChild(tab);
+            });
         }
 
         async function generateNormalOne(requestBody) {
-            const response = await fetch('/api/generate', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(requestBody)
-            });
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 180000);
 
-            const data = await response.json();
+            try {
+                const response = await fetch('/api/generate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(requestBody),
+                    signal: controller.signal
+                });
 
-            if (!data.success) {
-                throw new Error(data.error || `Generation failed for ${requestBody.language}`);
+                const data = await response.json();
+
+                if (!data.success) {
+                    throw new Error(data.error || `Generation failed for ${requestBody.language}`);
+                }
+
+                currentResults[requestBody.language] = data;
+
+                // Update preview
+                const lines = data.code.split('\n').slice(0, 50);
+                document.getElementById('code-preview').textContent = lines.join('\n');
+                if (data.code.split('\n').length > 50) {
+                    document.getElementById('code-preview').textContent += '\n\n// ... (truncated)';
+                }
+            } finally {
+                clearTimeout(timeoutId);
             }
-
-            currentResults[requestBody.language] = data;
-
-            // Update preview with latest result
-            const lines = data.code.split('\n').slice(0, 40);
-            document.getElementById('code-preview').textContent = lines.join('\n') + '\n\n// ... (truncated)';
         }
 
         async function generateStreamOne(requestBody) {
             const preview = document.getElementById('code-preview');
             preview.textContent = '';
 
-            const response = await fetch('/api/generate-stream', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(requestBody)
-            });
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 180000);
 
-            if (!response.ok) {
-                const errData = await response.json();
-                throw new Error(errData.error || 'Stream request failed');
-            }
+            try {
+                const response = await fetch('/api/generate-stream', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(requestBody),
+                    signal: controller.signal
+                });
 
-            const reader = response.body.getReader();
-            const decoder = new TextDecoder();
-            let buffer = '';
-            let streamedText = '';
+                if (!response.ok) {
+                    const errData = await response.json();
+                    throw new Error(errData.error || 'Stream request failed');
+                }
 
-            function processSSELine(line) {
-                if (!line.startsWith('data: ')) return;
-                try {
-                    const eventData = JSON.parse(line.slice(6));
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+                let streamedText = '';
 
-                    if (eventData.type === 'chunk') {
-                        streamedText += eventData.content;
-                        const allLines = streamedText.split('\n');
-                        const displayLines = allLines.slice(0, 40);
-                        preview.textContent = displayLines.join('\n');
-                        if (allLines.length > 40) {
-                            preview.textContent += '\n\n// ... (streaming)';
+                function processSSELine(line) {
+                    if (!line.startsWith('data: ')) return;
+                    try {
+                        const eventData = JSON.parse(line.slice(6));
+
+                        if (eventData.type === 'chunk') {
+                            streamedText += eventData.content;
+                            const allLines = streamedText.split('\n');
+                            const displayLines = allLines.slice(0, 50);
+                            preview.textContent = displayLines.join('\n');
+                            if (allLines.length > 50) {
+                                preview.textContent += '\n\n// ... (streaming)';
+                            }
+                            preview.scrollTop = preview.scrollHeight;
+
+                        } else if (eventData.type === 'done') {
+                            currentResults[requestBody.language] = eventData.result;
+
+                        } else if (eventData.type === 'error') {
+                            console.error(`Stream error for ${requestBody.language}:`, eventData.error);
                         }
-                        preview.scrollTop = preview.scrollHeight;
-
-                    } else if (eventData.type === 'done') {
-                        currentResults[requestBody.language] = eventData.result;
-
-                    } else if (eventData.type === 'error') {
-                        console.error(`Stream error for ${requestBody.language}:`, eventData.error);
+                    } catch (parseErr) {
+                        // Ignore JSON parse errors from incomplete chunks
                     }
-                } catch (parseErr) {
-                    // Ignore JSON parse errors from incomplete chunks
                 }
-            }
 
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
 
-                buffer += decoder.decode(value, { stream: true });
-                const lines = buffer.split('\n');
-                buffer = lines.pop();
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop();
 
-                for (const line of lines) {
-                    processSSELine(line);
+                    for (const line of lines) {
+                        processSSELine(line);
+                    }
                 }
-            }
 
-            // Process any remaining data in the buffer
-            if (buffer.trim()) {
-                processSSELine(buffer);
+                // Process remaining buffer
+                if (buffer.trim()) {
+                    processSSELine(buffer);
+                }
+
+                // If 'done' event was missed, the result won't be stored
+                // The caller will detect this via langStatus
+            } finally {
+                clearTimeout(timeoutId);
             }
         }
 
@@ -1707,47 +1737,30 @@
             document.getElementById('gen-result-title').textContent = 'Generation Complete';
 
             if (isMulti) {
-                const filenames = languages.map(l => currentResults[l]?.filename || l).join(', ');
                 const llm = currentResults[languages[0]]?.llm || '';
                 document.getElementById('gen-result-subtitle').textContent =
-                    `${languages.length} files • ${llm.toUpperCase()}`;
+                    `${languages.length} files generated • ${llm.toUpperCase()}`;
 
-                // Build tabs
-                const tabsContainer = document.getElementById('result-lang-tabs');
-                tabsContainer.innerHTML = '';
-                tabsContainer.style.display = 'flex';
-
-                languages.forEach(lang => {
-                    const tab = document.createElement('span');
-                    tab.className = 'lang-tab' + (lang === activeResultLang ? ' active' : '');
-                    tab.textContent = lang.toUpperCase();
-                    tab.onclick = () => switchResultTab(lang, languages);
-                    tabsContainer.appendChild(tab);
-                });
-
-                // Show download all button
                 document.getElementById('download-all-btn').style.display = '';
+                document.getElementById('download-code-btn').textContent = '📥 Download This File';
             } else {
                 const data = currentResults[languages[0]];
                 document.getElementById('gen-result-subtitle').textContent =
                     `${data.filename} • ${data.llm.toUpperCase()}`;
-                document.getElementById('result-lang-tabs').style.display = 'none';
                 document.getElementById('download-all-btn').style.display = 'none';
+                document.getElementById('download-code-btn').textContent = '📥 Download Code';
             }
 
-            // Show active tab content
+            // Update tabs with final status
+            generatedLanguages = languages;
+            renderResultTabs();
             showResultForLang(activeResultLang);
         }
 
-        function switchResultTab(lang, languages) {
+        function switchResultTab(lang) {
             activeResultLang = lang;
             currentResult = currentResults[lang];
-
-            // Update tab styles
-            document.querySelectorAll('#result-lang-tabs .lang-tab').forEach(tab => {
-                tab.classList.toggle('active', tab.textContent === lang.toUpperCase());
-            });
-
+            renderResultTabs();
             showResultForLang(lang);
         }
 
@@ -1755,14 +1768,21 @@
             const data = currentResults[lang];
             if (!data) return;
 
+            currentResult = data;
+
             document.getElementById('stat-k').textContent = data.k_value;
             document.getElementById('stat-bits').textContent = data.bitwidth;
             document.getElementById('stat-mod').textContent = data.mod_value.toLocaleString();
             document.getElementById('stat-lang').textContent = data.language.toUpperCase();
 
-            // Code preview
-            const lines = data.code.split('\n').slice(0, 40);
-            document.getElementById('code-preview').textContent = lines.join('\n') + '\n\n// ... (truncated)';
+            // Code preview (first 50 lines)
+            const allLines = data.code.split('\n');
+            const displayLines = allLines.slice(0, 50);
+            let previewText = displayLines.join('\n');
+            if (allLines.length > 50) {
+                previewText += '\n\n// ... (truncated)';
+            }
+            document.getElementById('code-preview').textContent = previewText;
         }
 
         // ============================================================
@@ -1833,6 +1853,10 @@
             }
         }
 
+        function downloadCurrentFile() {
+            downloadCode();
+        }
+
         function downloadAll() {
             const filePaths = Object.values(currentResults)
                 .filter(r => r?.file_path)
@@ -1871,14 +1895,65 @@
             }
         }
 
+        let modalActiveLang = null;
+
         function viewFullCode() {
             const result = currentResults[activeResultLang] || currentResult;
-            if (result?.code) {
-                document.getElementById('code-modal-title').textContent = result.filename || 'Full Code';
-                document.getElementById('code-modal-content').textContent = result.code;
-                document.getElementById('code-modal').classList.add('active');
-                document.body.style.overflow = 'hidden';
+            if (!result?.code) return;
+
+            modalActiveLang = activeResultLang;
+            const isMulti = generatedLanguages.length > 1 &&
+                            generatedLanguages.filter(l => currentResults[l]).length > 1;
+
+            // Build modal tabs for multi-language
+            const modalTabs = document.getElementById('modal-lang-tabs');
+            if (isMulti) {
+                modalTabs.innerHTML = '';
+                modalTabs.style.display = 'flex';
+                generatedLanguages.forEach(lang => {
+                    if (!currentResults[lang]) return;
+                    const tab = document.createElement('span');
+                    tab.className = 'lang-tab' + (lang === modalActiveLang ? ' active' : '');
+                    tab.textContent = lang.toUpperCase();
+                    tab.onclick = () => switchModalTab(lang);
+                    modalTabs.appendChild(tab);
+                });
+            } else {
+                modalTabs.style.display = 'none';
             }
+
+            updateModalContent(modalActiveLang);
+            document.getElementById('code-modal').classList.add('active');
+            document.body.style.overflow = 'hidden';
+        }
+
+        function switchModalTab(lang) {
+            modalActiveLang = lang;
+            document.querySelectorAll('#modal-lang-tabs .lang-tab').forEach(tab => {
+                tab.classList.toggle('active', tab.textContent === lang.toUpperCase());
+            });
+            updateModalContent(lang);
+        }
+
+        function updateModalContent(lang) {
+            const data = currentResults[lang];
+            if (!data) return;
+            document.getElementById('code-modal-title').textContent = data.filename || 'Full Code';
+            document.getElementById('code-modal-content').textContent = data.code;
+        }
+
+        function copyCurrentCode() {
+            const data = currentResults[modalActiveLang || activeResultLang];
+            if (!data?.code) return;
+
+            navigator.clipboard.writeText(data.code).then(() => {
+                const btn = document.getElementById('copy-code-btn');
+                const original = btn.textContent;
+                btn.textContent = '✓ Copied!';
+                setTimeout(() => { btn.textContent = original; }, 2000);
+            }).catch(() => {
+                showError('Failed to copy to clipboard');
+            });
         }
 
         function closeCodeModal() {
@@ -1890,12 +1965,13 @@
             currentResult = null;
             currentResults = {};
             activeResultLang = null;
+            generatedLanguages = [];
+            langStatus = {};
             simResult = null;
             document.getElementById('generation-result').classList.remove('visible');
             document.getElementById('simulation-result').classList.remove('visible');
             document.getElementById('result-lang-tabs').style.display = 'none';
             document.getElementById('download-all-btn').style.display = 'none';
-            document.getElementById('gen-progress').style.display = 'none';
         }
 
         // ============================================================
