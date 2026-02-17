@@ -244,6 +244,36 @@ def api_download(filepath):
     )
 
 
+@app.route('/api/download-zip', methods=['POST'])
+def api_download_zip():
+    """Download multiple generated files as a zip archive"""
+    import zipfile
+    import io
+
+    data = request.json
+    file_paths = data.get('file_paths', [])
+
+    if not file_paths:
+        return jsonify({'error': 'No files specified'}), 400
+
+    memory_file = io.BytesIO()
+    with zipfile.ZipFile(memory_file, 'w', zipfile.ZIP_DEFLATED) as zf:
+        for fp in file_paths:
+            fp = fp.replace('\\', '/')
+            full_path = PROJECT_ROOT / fp
+            if full_path.exists():
+                zf.write(full_path, full_path.name)
+
+    memory_file.seek(0)
+
+    return send_file(
+        memory_file,
+        mimetype='application/zip',
+        as_attachment=True,
+        download_name='mvl_benchmark_codes.zip'
+    )
+
+
 @app.route('/api/view-code/<path:filepath>')
 def api_view_code(filepath):
     """View code file content"""
