@@ -7,7 +7,7 @@ Web API for generating and running MVL benchmarks.
 import os
 import sys
 from pathlib import Path
-from flask import Flask, request, jsonify, send_from_directory, send_file
+from flask import Flask, request, jsonify, send_from_directory, send_file, Response
 from flask_cors import CORS
 
 # 从环境变量读取配置
@@ -125,6 +125,72 @@ def api_generate():
         )
 
         return jsonify(result)
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/generate-stream', methods=['POST'])
+def api_generate_stream():
+    """Generate MVL ALU code with streaming output (SSE)"""
+    import json
+
+    try:
+        data = request.json
+
+        llm_provider = data.get('llm', 'groq')
+        model = data.get('model', None)
+        k_value = int(data.get('k_value', 3))
+        bitwidth = int(data.get('bitwidth', 8))
+        language = data.get('language', 'c')
+        operations = data.get('operations', ['ADD', 'SUB', 'MUL', 'NEG', 'INC', 'DEC'])
+
+        # Validate parameters
+        if k_value < 2 or k_value > 8:
+            return jsonify({'success': False, 'error': 'K-value must be between 2 and 8'}), 400
+        if bitwidth not in [8, 10, 12, 14]:
+            return jsonify({'success': False, 'error': 'Bitwidth must be 8, 10, 12, or 14'}), 400
+        if language not in ['c', 'python', 'verilog', 'vhdl']:
+            return jsonify({'success': False, 'error': 'Language must be c, python, verilog, or vhdl'}), 400
+
+        print(f"\n📋 [API] Stream generate request:")
+        print(f"   Requested provider: {llm_provider}")
+        print(f"   Parameters: k={k_value}, bitwidth={bitwidth}, lang={language}")
+
+        generator = MVLGenerator(
+            llm_provider=llm_provider,
+            model=model,
+            project_root=str(PROJECT_ROOT)
+        )
+
+        def event_stream():
+            try:
+                for event_type, event_data in generator.generate_stream(
+                    k_value=k_value,
+                    bitwidth=bitwidth,
+                    language=language,
+                    operations=operations
+                ):
+                    if event_type == "chunk":
+                        yield f"data: {json.dumps({'type': 'chunk', 'content': event_data})}\n\n"
+                    elif event_type == "done":
+                        yield f"data: {json.dumps({'type': 'done', 'result': event_data})}\n\n"
+                    elif event_type == "error":
+                        yield f"data: {json.dumps({'type': 'error', 'error': event_data})}\n\n"
+            except Exception as e:
+                yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
+
+        return Response(
+            event_stream(),
+            mimetype='text/event-stream',
+            headers={
+                'Cache-Control': 'no-cache',
+                'X-Accel-Buffering': 'no',
+                'Connection': 'keep-alive'
+            }
+        )
 
     except Exception as e:
         import traceback

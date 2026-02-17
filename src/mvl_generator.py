@@ -60,22 +60,44 @@ class MVLGenerator:
                 if exists:
                     with open(config_path, 'r', encoding='utf-8') as f:
                         config = json.load(f)
+
+                    # Print top-level keys to understand structure
+                    print(f"      Config top-level keys: {list(config.keys())}")
+
+                    # Try direct lookup: config["together"]
                     provider_config = config.get(provider_name, {})
-                    api_key = provider_config.get('api_key', '')
+
+                    # If not found directly, search common wrapper keys
+                    if not provider_config:
+                        for wrapper_key in ['providers', 'llm_providers', 'llm', 'models']:
+                            wrapper = config.get(wrapper_key, {})
+                            if isinstance(wrapper, dict) and provider_name in wrapper:
+                                provider_config = wrapper[provider_name]
+                                print(f"      Found under '{wrapper_key}.{provider_name}'")
+                                break
+
+                    # Also handle list-style configs where providers are in a list
+                    if not provider_config and isinstance(config.get('providers'), list):
+                        for item in config['providers']:
+                            if isinstance(item, dict) and item.get('name') == provider_name:
+                                provider_config = item
+                                print(f"      Found in providers list by name")
+                                break
+
+                    api_key = provider_config.get('api_key', '') if isinstance(provider_config, dict) else ''
                     if api_key:
                         print(f"   📄 Config loaded from: {resolved}")
                         print(f"      API key found for '{provider_name}': {api_key[:4]}***{api_key[-4:]}")
                         return api_key
                     else:
                         print(f"      ⚠️ Config found but no api_key for '{provider_name}'")
-                        # Check available keys in this config
-                        available = [k for k, v in config.items() if isinstance(v, dict) and v.get('api_key')]
-                        if available:
-                            print(f"      Available providers with keys: {', '.join(available)}")
+                        print(f"      provider_config = {provider_config}")
+
                     # Also check for model override from config
-                    model_from_config = provider_config.get('model', '')
-                    if model_from_config and not self.model:
-                        self.model = model_from_config
+                    if isinstance(provider_config, dict):
+                        model_from_config = provider_config.get('model', '')
+                        if model_from_config and not self.model:
+                            self.model = model_from_config
             except Exception as e:
                 print(f"      ❌ Error reading {config_path}: {e}")
                 continue
@@ -268,6 +290,91 @@ class MVLGenerator:
             import traceback
             traceback.print_exc()
             return {'success': False, 'error': str(e)}
+
+    def generate_stream(
+            self,
+            k_value: int = 3,
+            bitwidth: int = 8,
+            language: str = 'c',
+            operations: List[str] = None
+    ):
+        """
+        Generate MVL ALU code with streaming output.
+        Yields (event_type, data) tuples:
+          - ("chunk", text_chunk)
+          - ("done", result_dict)
+          - ("error", error_message)
+        """
+        import json
+
+        if operations is None:
+            operations = ['ADD', 'SUB', 'MUL', 'NEG', 'INC', 'DEC']
+
+        mod_value = k_value ** bitwidth
+
+        # Create prompt
+        if language.lower() == 'c':
+            prompt = self._create_c_prompt(k_value, bitwidth, mod_value, operations)
+        elif language.lower() == 'python':
+            prompt = self._create_python_prompt(k_value, bitwidth, mod_value, operations)
+        elif language.lower() == 'verilog':
+            prompt = self._create_verilog_prompt(k_value, bitwidth, mod_value, operations)
+        else:
+            yield ("error", f'Unsupported language: {language}')
+            return
+
+        if self.llm is None:
+            yield ("error", f'LLM provider "{self.llm_provider_name}" failed to initialize.')
+            return
+
+        # Check if provider supports streaming
+        has_stream = hasattr(self.llm, '_call_api_stream')
+        if not has_stream:
+            # Fallback to non-streaming
+            result = self.generate(k_value=k_value, bitwidth=bitwidth, language=language, operations=operations)
+            if result.get('success') and result.get('code'):
+                yield ("chunk", result['code'])
+            yield ("done", result)
+            return
+
+        try:
+            full_response = ""
+            system_prompt = "You are an expert programmer. Generate clean, compilable code without any explanations."
+
+            for chunk in self.llm._call_api_stream(prompt, max_tokens=4096, system_prompt=system_prompt):
+                full_response += chunk
+                yield ("chunk", chunk)
+
+            print(f"✅ LLM streaming response received ({len(full_response)} chars)")
+
+            # Process the full response
+            code = self._extract_code(full_response, language)
+            if not code:
+                yield ("error", 'Failed to extract code from response')
+                return
+
+            code = self._fix_code(code, language)
+            file_path = self._save_code(code, k_value, bitwidth, language)
+
+            print(f"✅ Code saved: {file_path}")
+
+            yield ("done", {
+                'success': True,
+                'code': code,
+                'file_path': str(file_path),
+                'filename': file_path.name,
+                'k_value': k_value,
+                'bitwidth': bitwidth,
+                'language': language,
+                'mod_value': mod_value,
+                'llm': self.llm_provider_name
+            })
+
+        except Exception as e:
+            print(f"❌ Streaming generation failed: {e}")
+            import traceback
+            traceback.print_exc()
+            yield ("error", str(e))
 
     def _create_c_prompt(self, k: int, bits: int, mod: int, operations: List[str]) -> str:
         """Create prompt for C code generation"""
