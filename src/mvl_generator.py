@@ -201,17 +201,22 @@ class MVLGenerator:
             return {'success': False, 'error': f'Unsupported language: {language}'}
 
         # Call LLM
-        print(f"\n🤖 Calling {self.llm_provider_name.upper()} API...")
+        if self.llm is None:
+            return {
+                'success': False,
+                'error': f'LLM provider "{self.llm_provider_name}" failed to initialize. '
+                         f'Please check your API key in llm_config.json or set the corresponding environment variable.'
+            }
+
+        actual_model = getattr(self.llm, 'model', 'N/A')
+        print(f"\n🤖 Calling {self.llm_provider_name.upper()} API (model: {actual_model})...")
 
         try:
-            if hasattr(self.llm, '_call_api'):
-                response = self.llm._call_api(
-                    prompt,
-                    max_tokens=4096,
-                    system_prompt="You are an expert programmer. Generate clean, compilable code without any explanations."
-                )
-            else:
-                return {'success': False, 'error': 'LLM provider does not support _call_api'}
+            response = self.llm._call_api(
+                prompt,
+                max_tokens=4096,
+                system_prompt="You are an expert programmer. Generate clean, compilable code without any explanations."
+            )
 
             print(f"✅ LLM response received ({len(response)} chars)")
 
