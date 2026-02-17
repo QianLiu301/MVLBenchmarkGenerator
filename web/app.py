@@ -21,7 +21,7 @@ DEBUG = os.environ.get('DEBUG', 'false').lower() == 'true'
 #   1. 环境变量: export HTTPS_PROXY=http://127.0.0.1:7890
 #   2. 直接修改下方 PROXY_URL
 # ============================================================
-PROXY_URL = os.environ.get('HTTPS_PROXY', 'http://127.0.0.1:10809')  # 例如: http://127.0.0.1:10809
+PROXY_URL = os.environ.get('HTTPS_PROXY', '')  # Set HTTPS_PROXY env var if proxy needed
 
 
 def _setup_proxy():
