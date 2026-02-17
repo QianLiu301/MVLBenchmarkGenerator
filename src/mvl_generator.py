@@ -192,6 +192,61 @@ class MVLGenerator:
 
         return llm_dir
 
+    @staticmethod
+    def _parse_natural_input(text: str) -> Dict[str, Optional[int]]:
+        """Parse k_value and bitwidth from natural language input.
+
+        Examples:
+            '10-trit ternary calculator' -> {'k_value': 3, 'bitwidth': 10}
+            'GF(5) 12-trit ALU'         -> {'k_value': 5, 'bitwidth': 12}
+            'quaternary 8-bit unit'      -> {'k_value': 4, 'bitwidth': 8}
+        """
+        result: Dict[str, Optional[int]] = {'k_value': None, 'bitwidth': None}
+        lower = text.lower()
+
+        # --- Parse k_value ---
+        # Pattern: GF(n) or gf(n)
+        m = re.search(r'gf\s*\(\s*(\d+)\s*\)', lower)
+        if m:
+            result['k_value'] = int(m.group(1))
+
+        # Named radixes (use word boundary to avoid 'ternary' matching inside 'quaternary')
+        if result['k_value'] is None:
+            radix_map = {
+                'binary': 2, 'ternary': 3, 'quaternary': 4,
+                'quinary': 5, 'senary': 6, 'septenary': 7, 'octal': 8,
+            }
+            for name, k in radix_map.items():
+                if re.search(r'\b' + name + r'\b', lower):
+                    result['k_value'] = k
+                    break
+
+        # Pattern: k=N or k-value N or k value N
+        if result['k_value'] is None:
+            m = re.search(r'k\s*[=\-:]\s*(?:value\s*)?(\d+)', lower)
+            if m:
+                result['k_value'] = int(m.group(1))
+
+        # --- Parse bitwidth ---
+        # Pattern: N-trit or N trit
+        m = re.search(r'(\d+)\s*-?\s*trit', lower)
+        if m:
+            result['bitwidth'] = int(m.group(1))
+
+        # Pattern: N-bit or N bit
+        if result['bitwidth'] is None:
+            m = re.search(r'(\d+)\s*-?\s*bit', lower)
+            if m:
+                result['bitwidth'] = int(m.group(1))
+
+        # Pattern: bitwidth=N or bitwidth N
+        if result['bitwidth'] is None:
+            m = re.search(r'bitwidth\s*[=:]\s*(\d+)', lower)
+            if m:
+                result['bitwidth'] = int(m.group(1))
+
+        return result
+
     def generate(
             self,
             k_value: int = 3,
@@ -215,6 +270,14 @@ class MVLGenerator:
         """
         if operations is None:
             operations = ['ADD', 'SUB', 'MUL', 'NEG', 'INC', 'DEC']
+
+        # When natural_input is provided, parse k_value/bitwidth from it (overrides dropdowns)
+        if natural_input:
+            parsed = self._parse_natural_input(natural_input)
+            if parsed['k_value'] is not None:
+                k_value = parsed['k_value']
+            if parsed['bitwidth'] is not None:
+                bitwidth = parsed['bitwidth']
 
         actual_model = getattr(self.llm, 'model', 'N/A') if self.llm else 'N/A'
         actual_class = type(self.llm).__name__ if self.llm else 'None'
@@ -318,6 +381,14 @@ class MVLGenerator:
 
         if operations is None:
             operations = ['ADD', 'SUB', 'MUL', 'NEG', 'INC', 'DEC']
+
+        # When natural_input is provided, parse k_value/bitwidth from it (overrides dropdowns)
+        if natural_input:
+            parsed = self._parse_natural_input(natural_input)
+            if parsed['k_value'] is not None:
+                k_value = parsed['k_value']
+            if parsed['bitwidth'] is not None:
+                bitwidth = parsed['bitwidth']
 
         mod_value = k_value ** bitwidth
 
