@@ -27,9 +27,9 @@ class MVLGenerator:
     ):
         self.llm_provider_name = llm_provider.lower()
         self.model = model
+        self.project_root = Path(project_root) if project_root else Path.cwd()
         self.llm = self._setup_llm()
         self.output_dir = self._setup_output_dir(output_dir, project_root)
-        self.project_root = Path(project_root) if project_root else Path.cwd()
 
         print(f"🔢 MVL Generator initialized")
         print(f"   LLM Provider: {self.llm_provider_name}")
@@ -44,15 +44,16 @@ class MVLGenerator:
 
             from llm_providers import LLMFactory, LLMConfig
 
-            # Load API key from llm_config.json
+            # Load API key from llm_config.json (search in project root)
             kwargs = {}
             provider_config = {}
             try:
-                config = LLMConfig()
+                config_path = self.project_root / "llm_config.json"
+                config = LLMConfig(config_file=str(config_path))
                 provider_config = config.config.get(self.llm_provider_name, {})
                 if isinstance(provider_config, dict) and provider_config.get("api_key"):
                     kwargs["api_key"] = provider_config["api_key"]
-                    print(f"   🔑 API key loaded from llm_config.json for '{self.llm_provider_name}'")
+                    print(f"   🔑 API key loaded from {config_path}")
             except Exception as e:
                 print(f"   ⚠️  Could not load llm_config.json: {e}")
 
