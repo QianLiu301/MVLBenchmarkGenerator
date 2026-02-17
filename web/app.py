@@ -93,6 +93,7 @@ def api_generate():
         bitwidth = int(data.get('bitwidth', 8))
         language = data.get('language', 'c')
         operations = data.get('operations', ['ADD', 'SUB', 'MUL', 'NEG', 'INC', 'DEC'])
+        natural_input = data.get('natural_input', '').strip()
 
         # Validate parameters
         if k_value < 2 or k_value > 8:
@@ -109,6 +110,8 @@ def api_generate():
         print(f"   Requested provider: {llm_provider}")
         print(f"   Requested model: {model or '(default)'}")
         print(f"   Parameters: k={k_value}, bitwidth={bitwidth}, lang={language}")
+        if natural_input:
+            print(f"   Natural input: {natural_input}")
 
         generator = MVLGenerator(
             llm_provider=llm_provider,
@@ -126,7 +129,8 @@ def api_generate():
             k_value=k_value,
             bitwidth=bitwidth,
             language=language,
-            operations=operations
+            operations=operations,
+            natural_input=natural_input
         )
 
         return jsonify(result)
@@ -151,6 +155,7 @@ def api_generate_stream():
         bitwidth = int(data.get('bitwidth', 8))
         language = data.get('language', 'c')
         operations = data.get('operations', ['ADD', 'SUB', 'MUL', 'NEG', 'INC', 'DEC'])
+        natural_input = data.get('natural_input', '').strip()
 
         # Validate parameters
         if k_value < 2 or k_value > 8:
@@ -163,6 +168,8 @@ def api_generate_stream():
         print(f"\n📋 [API] Stream generate request:")
         print(f"   Requested provider: {llm_provider}")
         print(f"   Parameters: k={k_value}, bitwidth={bitwidth}, lang={language}")
+        if natural_input:
+            print(f"   Natural input: {natural_input}")
 
         generator = MVLGenerator(
             llm_provider=llm_provider,
@@ -176,7 +183,8 @@ def api_generate_stream():
                     k_value=k_value,
                     bitwidth=bitwidth,
                     language=language,
-                    operations=operations
+                    operations=operations,
+                    natural_input=natural_input
                 ):
                     if event_type == "chunk":
                         yield f"data: {json.dumps({'type': 'chunk', 'content': event_data})}\n\n"
