@@ -188,7 +188,7 @@ def api_generate_stream():
             headers={
                 'Cache-Control': 'no-cache',
                 'X-Accel-Buffering': 'no',
-                'Connection': 'keep-alive'
+                'Connection': 'close'
             }
         )
 
@@ -319,4 +319,4 @@ if __name__ == '__main__':
     print(f"Tools: {simulation_runner.get_tools_status()}")
     print("=" * 60)
 
-    app.run(host='0.0.0.0', port=PORT, debug=DEBUG)
+    app.run(host='0.0.0.0', port=PORT, debug=DEBUG, threaded=True)
