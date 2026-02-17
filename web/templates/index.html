@@ -561,6 +561,14 @@
             background: #fef2f2;
         }
 
+        .result-header.warning {
+            background: #fffbeb;
+        }
+
+        .result-header.warning .result-icon {
+            background: #f59e0b;
+        }
+
         .result-icon {
             width: 48px;
             height: 48px;
@@ -1066,8 +1074,11 @@
             </div>
 
             <div id="validation-warnings" style="display: none; background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 12px 16px; margin-bottom: 16px;">
-                <div style="font-size: 0.8rem; font-weight: 600; color: #92400e; margin-bottom: 8px;">⚠️ Validation Warnings</div>
-                <ul id="validation-warnings-list" style="font-size: 0.78rem; color: #78350f; margin: 0; padding-left: 20px; line-height: 1.8;"></ul>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                    <div id="validation-warnings-title" style="font-size: 0.8rem; font-weight: 600; color: #92400e;">⚠️ Validation Warnings</div>
+                    <button onclick="generate()" style="font-size: 0.72rem; padding: 3px 10px; background: #f59e0b; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500;">🔄 Re-generate</button>
+                </div>
+                <div id="validation-warnings-list" style="font-size: 0.78rem; color: #78350f; margin: 0; line-height: 1.8;"></div>
             </div>
 
             <div class="section-label">Generated Code Preview</div>
@@ -1844,16 +1855,47 @@
             // Show all generated languages, not just the active tab
             document.getElementById('stat-lang').textContent = generatedLanguages.map(l => l.toUpperCase()).join(', ');
 
-            // Show validation warnings if present
+            // Show validation warnings with actionable suggestions
             const warningsBox = document.getElementById('validation-warnings');
             const warningsList = document.getElementById('validation-warnings-list');
+            const warningsTitle = document.getElementById('validation-warnings-title');
+            const resultHeader = document.getElementById('gen-result-header');
+            const resultIcon = document.getElementById('gen-result-icon');
+            const resultTitle = document.getElementById('gen-result-title');
+
+            const suggestionMap = {
+                'LANGUAGE MISMATCH': 'Try re-generating. If the issue persists, switch to a different AI provider.',
+                'MISSING OPERATION': 'Re-generate to include all 6 MVL operations (ADD, SUB, MUL, NEG, INC, DEC). A different provider may produce better results.',
+                'MOD VALUE': 'The modular arithmetic constant may be incorrect. Re-generate or manually add the correct mod value to the code.',
+                'BIT WIDTH': 'The data bit width doesn\'t match log\u2082(mod). Re-generate or manually correct the bit width declarations.',
+                'LOW TEST COVERAGE': 'Re-generate for more test vectors, or manually add test cases to improve verification coverage.',
+                'OVERFLOW RISK': 'Replace uint32_t with uint64_t for multiplication operations to prevent integer overflow.',
+            };
+
             if (data.validation_warnings && data.validation_warnings.length > 0) {
+                warningsTitle.textContent = `⚠️ Validation Warnings (${data.validation_warnings.length})`;
                 warningsList.innerHTML = data.validation_warnings
-                    .map(w => `<li>${escapeHtml(w)}</li>`)
+                    .map(w => {
+                        const escaped = escapeHtml(w);
+                        const type = w.split(':')[0].trim();
+                        const suggestion = suggestionMap[type] || 'Try re-generating with a different AI provider.';
+                        return `<div style="margin-bottom: 8px; padding: 6px 10px; background: #fef3c7; border-radius: 4px;">
+                            <div style="font-weight: 500;">⚠ ${escaped}</div>
+                            <div style="font-size: 0.72rem; color: #92400e; margin-top: 2px;">💡 ${escapeHtml(suggestion)}</div>
+                        </div>`;
+                    })
                     .join('');
                 warningsBox.style.display = 'block';
+                // Change header to amber/warning state
+                resultHeader.className = 'result-header warning';
+                resultIcon.textContent = '⚠';
+                resultTitle.textContent = 'Generation Complete (with warnings)';
             } else {
                 warningsBox.style.display = 'none';
+                // Restore green success state
+                resultHeader.className = 'result-header';
+                resultIcon.textContent = '✓';
+                resultTitle.textContent = 'Generation Complete';
             }
 
             // Code preview (first 50 lines)
