@@ -945,7 +945,7 @@
             <div class="form-group" style="margin-bottom: 20px;">
                 <div class="lang-header">
                     <label>Output Language</label>
-                    <span class="multi-hint" id="multi-hint">Ctrl+Click to multi-select</span>
+                    <span class="multi-hint" id="multi-hint">Click to toggle selection</span>
                 </div>
                 <div class="checkbox-group" id="language-group">
                     <label class="checkbox-item selected" data-value="c">
@@ -1359,43 +1359,16 @@
             checkTools();
             setupCheckboxes();
             onLlmProviderChange();
-            // Show Cmd on Mac, Ctrl on others
-            if (navigator.platform.toUpperCase().indexOf('MAC') >= 0) {
-                document.getElementById('multi-hint').textContent = 'Cmd+Click to multi-select';
-            }
         });
 
         function setupCheckboxes() {
-            // Language group: click = single-select, Ctrl/Cmd+Click = multi-select
+            // Language group: click to toggle (multi-select)
             document.querySelectorAll('#language-group .checkbox-item').forEach(item => {
                 item.addEventListener('click', (e) => {
                     e.preventDefault();
                     const checkbox = item.querySelector('input');
-                    const isMultiKey = e.ctrlKey || e.metaKey;
-
-                    if (isMultiKey) {
-                        // Ctrl/Cmd + Click: toggle this item independently
-                        checkbox.checked = !checkbox.checked;
-                        item.classList.toggle('selected', checkbox.checked);
-                    } else {
-                        // Normal click: single-select (deselect all others)
-                        const wasOnlySelected = checkbox.checked &&
-                            getSelectedItems('language-group').length === 1;
-
-                        document.querySelectorAll('#language-group .checkbox-item').forEach(other => {
-                            other.classList.remove('selected');
-                            other.querySelector('input').checked = false;
-                        });
-
-                        // If clicking the only selected item, keep it selected (don't deselect all)
-                        if (!wasOnlySelected) {
-                            checkbox.checked = true;
-                            item.classList.add('selected');
-                        } else {
-                            checkbox.checked = true;
-                            item.classList.add('selected');
-                        }
-                    }
+                    checkbox.checked = !checkbox.checked;
+                    item.classList.toggle('selected', checkbox.checked);
                 });
             });
 
