@@ -1441,7 +1441,88 @@
         // ============================================================
         function setExample(text) {
             document.getElementById('natural-input').value = text;
+            parseAndSyncNaturalInput(text);
         }
+
+        /**
+         * Parse k_value and bitwidth from natural language text.
+         * Mirrors the backend _parse_natural_input logic.
+         */
+        function parseNaturalInput(text) {
+            const lower = text.toLowerCase();
+            let kValue = null;
+            let bitwidth = null;
+
+            // Parse k_value: GF(N)
+            let m = lower.match(/gf\s*\(\s*(\d+)\s*\)/);
+            if (m) kValue = parseInt(m[1]);
+
+            // Named radixes (word boundary)
+            if (kValue === null) {
+                const radixMap = {
+                    'binary': 2, 'ternary': 3, 'quaternary': 4,
+                    'quinary': 5, 'senary': 6, 'septenary': 7, 'octal': 8
+                };
+                for (const [name, k] of Object.entries(radixMap)) {
+                    if (new RegExp('\\b' + name + '\\b').test(lower)) {
+                        kValue = k;
+                        break;
+                    }
+                }
+            }
+
+            // k=N or k-value N
+            if (kValue === null) {
+                m = lower.match(/k\s*[-=:]\s*(?:value\s*)?(\d+)/);
+                if (m) kValue = parseInt(m[1]);
+            }
+
+            // Parse bitwidth: N-trit or N trit
+            m = lower.match(/(\d+)\s*-?\s*trit/);
+            if (m) bitwidth = parseInt(m[1]);
+
+            // N-bit or N bit
+            if (bitwidth === null) {
+                m = lower.match(/(\d+)\s*-?\s*bit/);
+                if (m) bitwidth = parseInt(m[1]);
+            }
+
+            return { kValue, bitwidth };
+        }
+
+        /**
+         * When natural input changes, sync the dropdown values and update stats.
+         */
+        function parseAndSyncNaturalInput(text) {
+            if (!text.trim()) return;
+            const parsed = parseNaturalInput(text);
+
+            if (parsed.kValue !== null) {
+                const kSelect = document.getElementById('k-value');
+                // Set dropdown if the value exists as an option
+                for (const opt of kSelect.options) {
+                    if (parseInt(opt.value) === parsed.kValue) {
+                        kSelect.value = parsed.kValue;
+                        break;
+                    }
+                }
+            }
+
+            if (parsed.bitwidth !== null) {
+                const bitsSelect = document.getElementById('bitwidth');
+                for (const opt of bitsSelect.options) {
+                    if (parseInt(opt.value) === parsed.bitwidth) {
+                        bitsSelect.value = parsed.bitwidth;
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Real-time: update dropdowns as user types natural input
+        document.getElementById('natural-input').addEventListener('input', function() {
+            parseAndSyncNaturalInput(this.value);
+        });
 
         // ============================================================
         // Generation
@@ -1478,6 +1559,15 @@
                 return;
             }
 
+            // When natural input is provided, parse and override k/bitwidth
+            let effectiveK = kValue;
+            let effectiveBits = bitwidth;
+            if (naturalInput) {
+                const parsed = parseNaturalInput(naturalInput);
+                if (parsed.kValue !== null) effectiveK = parsed.kValue;
+                if (parsed.bitwidth !== null) effectiveBits = parsed.bitwidth;
+            }
+
             hideError();
             setLoading(true);
             currentResults = {};
@@ -1489,8 +1579,8 @@
             const baseRequest = {
                 llm: provider,
                 model: model,
-                k_value: kValue,
-                bitwidth: bitwidth,
+                k_value: effectiveK,
+                bitwidth: effectiveBits,
                 operations: operations,
                 natural_input: naturalInput,
                 stream: streamOutput
@@ -1503,10 +1593,10 @@
             document.getElementById('gen-result-title').textContent = 'Generating...';
             document.getElementById('gen-result-subtitle').textContent = `${provider.toUpperCase()} • ${languages.map(l => l.toUpperCase()).join(', ')}`;
 
-            // Update stats
-            document.getElementById('stat-k').textContent = kValue;
-            document.getElementById('stat-bits').textContent = bitwidth;
-            document.getElementById('stat-mod').textContent = (kValue ** bitwidth).toLocaleString();
+            // Update stats with effective values (parsed from natural input or dropdown)
+            document.getElementById('stat-k').textContent = effectiveK;
+            document.getElementById('stat-bits').textContent = effectiveBits;
+            document.getElementById('stat-mod').textContent = (effectiveK ** effectiveBits).toLocaleString();
             document.getElementById('stat-lang').textContent = languages.map(l => l.toUpperCase()).join(', ');
 
             // Show tabs immediately (with pending status) for multi-language
@@ -1746,7 +1836,8 @@
             document.getElementById('stat-k').textContent = data.k_value;
             document.getElementById('stat-bits').textContent = data.bitwidth;
             document.getElementById('stat-mod').textContent = data.mod_value.toLocaleString();
-            document.getElementById('stat-lang').textContent = data.language.toUpperCase();
+            // Show all generated languages, not just the active tab
+            document.getElementById('stat-lang').textContent = generatedLanguages.map(l => l.toUpperCase()).join(', ');
 
             // Code preview (first 50 lines)
             const allLines = data.code.split('\n');
