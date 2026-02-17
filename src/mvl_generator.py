@@ -51,22 +51,35 @@ class MVLGenerator:
             Path.cwd() / 'config' / 'llm_config.json',        # CWD/config/
         ]
 
+        print(f"   🔍 Searching for llm_config.json (provider: {provider_name})...")
         for config_path in config_locations:
             try:
-                if config_path.exists():
-                    with open(config_path, 'r') as f:
+                resolved = config_path.resolve()
+                exists = config_path.exists()
+                print(f"      Checking: {resolved} -> {'FOUND' if exists else 'not found'}")
+                if exists:
+                    with open(config_path, 'r', encoding='utf-8') as f:
                         config = json.load(f)
                     provider_config = config.get(provider_name, {})
                     api_key = provider_config.get('api_key', '')
                     if api_key:
-                        print(f"   📄 Config loaded from: {config_path}")
+                        print(f"   📄 Config loaded from: {resolved}")
+                        print(f"      API key found for '{provider_name}': {api_key[:4]}***{api_key[-4:]}")
                         return api_key
+                    else:
+                        print(f"      ⚠️ Config found but no api_key for '{provider_name}'")
+                        # Check available keys in this config
+                        available = [k for k, v in config.items() if isinstance(v, dict) and v.get('api_key')]
+                        if available:
+                            print(f"      Available providers with keys: {', '.join(available)}")
                     # Also check for model override from config
                     model_from_config = provider_config.get('model', '')
                     if model_from_config and not self.model:
                         self.model = model_from_config
-            except Exception:
+            except Exception as e:
+                print(f"      ❌ Error reading {config_path}: {e}")
                 continue
+        print(f"   ⚠️ No API key found for '{provider_name}' in any config file")
         return None
 
     def _setup_llm(self):
