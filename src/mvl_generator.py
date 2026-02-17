@@ -21,16 +21,19 @@ class MVLGenerator:
     def __init__(
             self,
             llm_provider: str = 'groq',
+            model: Optional[str] = None,
             output_dir: Optional[str] = None,
             project_root: Optional[str] = None
     ):
         self.llm_provider_name = llm_provider.lower()
+        self.model = model
         self.llm = self._setup_llm()
         self.output_dir = self._setup_output_dir(output_dir, project_root)
         self.project_root = Path(project_root) if project_root else Path.cwd()
 
         print(f"🔢 MVL Generator initialized")
         print(f"   LLM Provider: {self.llm_provider_name}")
+        print(f"   Model: {self.model or 'default'}")
         print(f"   Output directory: {self.output_dir}")
 
     def _setup_llm(self):
@@ -44,7 +47,10 @@ class MVLGenerator:
                 OpenAIProvider,
                 ClaudeProvider,
                 GroqProvider,
-                DeepSeekProvider
+                DeepSeekProvider,
+                QwenProvider,
+                MistralProvider,
+                TogetherProvider,
             )
 
             providers = {
@@ -54,6 +60,9 @@ class MVLGenerator:
                 'claude': ClaudeProvider,
                 'groq': GroqProvider,
                 'deepseek': DeepSeekProvider,
+                'qwen': QwenProvider,
+                'mistral': MistralProvider,
+                'together': TogetherProvider,
             }
 
             if self.llm_provider_name not in providers:
@@ -62,9 +71,18 @@ class MVLGenerator:
                 self.llm_provider_name = 'groq'
 
             provider_class = providers[self.llm_provider_name]
-            llm = provider_class()
 
-            print(f"✅ LLM provider loaded: {provider_class.__name__}")
+            if self.model:
+                llm = provider_class(model=self.model)
+                print(f"✅ LLM provider loaded: {provider_class.__name__} with model: {self.model}")
+            else:
+                llm = provider_class()
+                print(f"✅ LLM provider loaded: {provider_class.__name__} with default model")
+
+            # Log the actual model being used
+            if hasattr(llm, 'model'):
+                print(f"   🤖 Actual model in use: {llm.model}")
+
             return llm
 
         except ImportError as e:
