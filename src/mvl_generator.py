@@ -339,6 +339,9 @@ class MVLGenerator:
             # Fix common issues
             code = self._fix_code(code, language)
 
+            # Validate generated code quality
+            validation_warnings = self._validate_code(code, language, k_value, bitwidth, mod_value)
+
             # Save file
             file_path = self._save_code(code, k_value, bitwidth, language, natural_input=natural_input)
 
@@ -353,7 +356,8 @@ class MVLGenerator:
                 'bitwidth': bitwidth,
                 'language': language,
                 'mod_value': mod_value,
-                'llm': self.llm_provider_name
+                'llm': self.llm_provider_name,
+                'validation_warnings': validation_warnings
             }
 
         except Exception as e:
@@ -439,6 +443,10 @@ class MVLGenerator:
                 return
 
             code = self._fix_code(code, language)
+
+            # Validate generated code quality
+            validation_warnings = self._validate_code(code, language, k_value, bitwidth, mod_value)
+
             file_path = self._save_code(code, k_value, bitwidth, language, natural_input=natural_input)
 
             print(f"✅ Code saved: {file_path}")
@@ -452,7 +460,8 @@ class MVLGenerator:
                 'bitwidth': bitwidth,
                 'language': language,
                 'mod_value': mod_value,
-                'llm': self.llm_provider_name
+                'llm': self.llm_provider_name,
+                'validation_warnings': validation_warnings
             })
 
         except Exception as e:
@@ -464,32 +473,135 @@ class MVLGenerator:
     def _create_natural_prompt(self, natural_input: str, k: int, bits: int, mod: int,
                                  operations: List[str], language: str) -> str:
         """Create prompt based on natural language input, supplemented with structured parameters."""
+        import math
         ops_str = ', '.join(operations)
+        data_width = math.ceil(math.log2(mod)) if mod > 1 else 1
 
         lang_instructions = {
-            'c': 'Output ONLY C code. Must be complete and compilable with gcc. Include main() with test cases.',
-            'python': 'Output ONLY Python code. Must be complete and runnable with python3. Include test cases at the bottom.',
-            'verilog': 'Output ONLY Verilog code. Must be synthesizable. Include a testbench module.',
-            'vhdl': 'Output ONLY VHDL code. Must be synthesizable. Include a testbench.'
+            'c': f"""Output ONLY C code. Must be complete and compilable with gcc -lm.
+REQUIRED STRUCTURE:
+- #include <stdio.h>, <stdlib.h>, <stdint.h>, <stdbool.h>, <time.h>, <math.h>
+- Use uint64_t for intermediate multiplication results to avoid overflow ({mod-1} * {mod-1} = {(mod-1)**2})
+- #define K_VALUE {k}
+- #define TRIT_WIDTH {bits}
+- #define MOD_VALUE {mod}
+- Operation enum: OP_ADD=0, OP_SUB=1, OP_MUL=2, OP_NEG=3, OP_INC=4, OP_DEC=5
+- Flags struct with z (zero), n (negative), c (carry) fields
+- alu_exec(a, b, op) function returning result and flags via struct
+- main() with srand(time(NULL)) and at least 20 random test vectors
+- printf format: "Test %2d: %-3s A=%u B=%u -> R=%u Z=%d N=%d C=%d\\n"
+OPERATION DEFINITIONS (all results mod {mod}):
+- ADD: (a + b) % {mod}
+- SUB: (a - b + {mod}) % {mod}
+- MUL: ((uint64_t)a * b) % {mod}
+- NEG: ({mod} - a) % {mod}
+- INC: (a + 1) % {mod}   -- INCREMENT BY 1, NOT BY {k}^({bits}-1)
+- DEC: (a - 1 + {mod}) % {mod}   -- DECREMENT BY 1""",
+
+            'python': f"""Output ONLY Python code. Must be complete and runnable with python3.
+REQUIRED STRUCTURE:
+- import random
+- MOD = {mod}
+- class or dataclass for Flags(z, n, c)
+- alu_exec(a, b, op) function returning (result, flags)
+- if __name__ == "__main__": block with at least 20 random test vectors
+OPERATION DEFINITIONS (all results mod {mod}):
+- ADD: (a + b) % {mod}
+- SUB: (a - b) % {mod}   -- Python handles negative mod correctly
+- MUL: (a * b) % {mod}
+- NEG: (-a) % {mod}
+- INC: (a + 1) % {mod}   -- INCREMENT BY 1, NOT by {k}**({bits}-1)
+- DEC: (a - 1) % {mod}   -- DECREMENT BY 1
+COMMON MISTAKES TO AVOID:
+- INC adds exactly 1, not '{k}' or '{k}^{bits-1}' or any other value
+- DEC subtracts exactly 1, not '{k}' or '{k}^{bits-1}' or any other value
+- When using trit string representation, "{'0' * (bits-1)}1" represents 1, NOT "1{'0' * (bits-1)}" """,
+
+            'verilog': f"""Output ONLY Verilog code (NOT VHDL). Must be synthesizable and simulatable with iverilog.
+CRITICAL BIT WIDTH: Each operand needs {data_width} bits to represent values 0 to {mod-1}.
+  Formula: ceil(log2({mod})) = {data_width} bits. Do NOT use {bits} bits — that is the trit count, not the bit count!
+MODULE INTERFACE (use this EXACT interface):
+module mvl_alu_{k}_{bits}bit (
+    input wire clk,
+    input wire rst,
+    input wire [{data_width-1}:0] a,
+    input wire [{data_width-1}:0] b,
+    input wire [3:0] opcode,
+    output reg [{data_width-1}:0] result,
+    output reg zero,
+    output reg negative,
+    output reg carry
+);
+OPCODES:
+- 4'b0000: ADD = (a + b) % {mod}
+- 4'b0001: SUB = (a - b + {mod}) % {mod}
+- 4'b0010: MUL = (a * b) % {mod}
+- 4'b0011: NEG = ({mod} - a) % {mod}
+- 4'b0100: INC = (a + 1) % {mod}
+- 4'b0101: DEC = (a - 1 + {mod}) % {mod}
+TESTBENCH: Include a testbench module mvl_alu_{k}_{bits}bit_tb with at least 20 test vectors using $display.
+VERILOG REQUIREMENTS:
+- Declare 'result' as 'output reg' since it is assigned inside always block
+- Use 'reg' type for signals assigned in procedural blocks""",
+
+            'vhdl': f"""Output ONLY VHDL code (NOT Verilog). Must be synthesizable and simulatable with GHDL.
+CRITICAL: Do NOT output Verilog syntax (module, wire, reg, always). Use ONLY VHDL syntax (library, entity, architecture, signal, process).
+CRITICAL BIT WIDTH: Each operand needs {data_width} bits to represent values 0 to {mod-1}.
+  Formula: ceil(log2({mod})) = {data_width} bits. Do NOT use {bits} bits — that is the trit count, not the bit count!
+ENTITY INTERFACE (use this EXACT interface):
+library IEEE;
+use IEEE.STD_LOGIC_1164.ALL;
+use IEEE.NUMERIC_STD.ALL;
+entity mvl_alu_{k}_{bits}bit is
+    port (
+        clk     : in  std_logic;
+        rst     : in  std_logic;
+        a       : in  std_logic_vector({data_width-1} downto 0);
+        b       : in  std_logic_vector({data_width-1} downto 0);
+        opcode  : in  std_logic_vector(3 downto 0);
+        result  : out std_logic_vector({data_width-1} downto 0);
+        zero    : out std_logic;
+        negative: out std_logic;
+        carry   : out std_logic
+    );
+end entity;
+OPCODES (all results mod {mod}):
+- "0000": ADD = (a + b) mod {mod}
+- "0001": SUB = (a - b + {mod}) mod {mod}
+- "0010": MUL = (a * b) mod {mod}  -- use integer or wider signal to avoid overflow
+- "0011": NEG = ({mod} - a) mod {mod}
+- "0100": INC = (a + 1) mod {mod}
+- "0101": DEC = (a - 1 + {mod}) mod {mod}
+VHDL REQUIREMENTS:
+- Use unsigned type for arithmetic, convert with unsigned() and std_logic_vector()
+- For MUL: intermediate result needs {data_width * 2} bits (two {data_width}-bit operands multiplied)
+- Include BOTH entity/architecture AND a testbench entity mvl_alu_{k}_{bits}bit_tb
+- Testbench must have at least 20 test vectors with assert/report statements"""
         }
 
         prompt = f"""Based on the following description, generate a complete implementation:
 
 DESCRIPTION: {natural_input}
 
-CONTEXT PARAMETERS (use these to fill in any details not specified in the description):
-- K-value: {k} (operations are mod {k})
-- Bitwidth: {bits} trits
-- MOD value: {mod} ({k}^{bits})
+CONTEXT PARAMETERS (these are MANDATORY constraints):
+- K-value: {k} (this is a base-{k} system, all operations are mod {k})
+- Trit width: {bits} (number of base-{k} digits per operand)
+- MOD value: {mod} ({k}^{bits}) — all arithmetic results must be taken mod {mod}
+- Binary bit width needed: {data_width} bits (ceil(log2({mod})))
+- Operand range: 0 to {mod - 1}
 - Operations: {ops_str}
 - Output language: {language.upper()}
 
-CRITICAL RULES:
-1. {lang_instructions.get(language.lower(), lang_instructions['c'])}
-2. No markdown, no explanations, only code
-3. The description above takes priority over the context parameters
+LANGUAGE-SPECIFIC INSTRUCTIONS:
+{lang_instructions.get(language.lower(), lang_instructions['c'])}
 
-Generate the complete code now:
+CRITICAL RULES:
+1. No markdown formatting, no explanations — output ONLY {language.upper()} code
+2. The MOD value {mod} and bit width {data_width} are mathematically derived and MUST be used exactly
+3. All 6 operations must be implemented
+4. Include at least 20 test vectors covering: zero inputs, max value ({mod-1}), overflow/underflow, small values, random values
+
+Generate the complete {language.upper()} code now:
 """
         return prompt
 
@@ -663,12 +775,41 @@ Generate the complete VHDL code (entity + architecture + testbench) now:
 """
         return prompt
 
+    @staticmethod
+    def _detect_language(code: str) -> Optional[str]:
+        """Detect the actual language of generated code based on syntax markers."""
+        code_lower = code.lower()
+
+        # VHDL markers (must check before Verilog since both may share some keywords)
+        vhdl_markers = ['library ieee', 'use ieee.', 'entity ', 'architecture ', 'std_logic', 'process(', 'process (']
+        vhdl_score = sum(1 for m in vhdl_markers if m in code_lower)
+
+        # Verilog markers
+        verilog_markers = ['module ', 'endmodule', 'input wire', 'output reg', 'output wire',
+                           'always @', 'always@', 'reg [', 'wire [', '$display', '$finish']
+        verilog_score = sum(1 for m in verilog_markers if m in code_lower)
+
+        # C markers
+        c_markers = ['#include', 'int main', 'printf(', 'uint32_t', 'uint64_t', 'typedef ', '#define ']
+        c_score = sum(1 for m in c_markers if m in code_lower)
+
+        # Python markers
+        python_markers = ['def ', 'import ', 'class ', 'if __name__', 'print(', 'self.']
+        python_score = sum(1 for m in python_markers if m in code_lower)
+
+        scores = {'vhdl': vhdl_score, 'verilog': verilog_score, 'c': c_score, 'python': python_score}
+        best = max(scores, key=scores.get)
+
+        # Only return if there's a clear signal (at least 2 markers)
+        if scores[best] >= 2:
+            return best
+        return None
+
     def _extract_code(self, response: str, language: str) -> Optional[str]:
-        """Extract code from LLM response"""
-        # Remove markdown code blocks
+        """Extract code from LLM response, with language mismatch detection."""
         code = response
 
-        # Try to extract from code blocks
+        # Try to extract from code blocks — prefer language-specific match first
         patterns = [
             rf'```{language}\s*(.*?)```',
             rf'```{language.lower()}\s*(.*?)```',
@@ -683,33 +824,165 @@ Generate the complete VHDL code (entity + architecture + testbench) now:
 
         # Clean up
         code = code.strip()
-
-        # Remove any remaining markdown
         code = re.sub(r'^```\w*\s*', '', code)
         code = re.sub(r'\s*```$', '', code)
 
-        return code if code else None
+        if not code:
+            return None
 
-    def _fix_code(self, code: str, language: str) -> str:
-        """Fix common code issues"""
-        if language.lower() == 'c':
-            # Ensure includes are present
-            if '#include' not in code:
-                includes = """#include <stdio.h>
-#include <stdlib.h>
-#include <stdint.h>
-#include <stdbool.h>
-#include <time.h>
-
-"""
-                code = includes + code
-
-        elif language.lower() == 'python':
-            # Ensure imports
-            if 'import random' not in code:
-                code = 'import random\n' + code
+        # Language validation: detect if the extracted code actually matches the requested language
+        detected = self._detect_language(code)
+        if detected and detected != language.lower():
+            # Map of related HDL languages for clearer warning
+            print(f"\n⚠️  LANGUAGE MISMATCH DETECTED!")
+            print(f"   Requested: {language.upper()}, but LLM generated: {detected.upper()}")
+            print(f"   The generated code will be returned but may not compile as {language.upper()}")
 
         return code
+
+    def _fix_code(self, code: str, language: str) -> str:
+        """Fix common code issues across all languages"""
+        lang = language.lower()
+
+        if lang == 'c':
+            # Ensure essential includes are present
+            essential_includes = {
+                'stdio.h': '#include <stdio.h>',
+                'stdlib.h': '#include <stdlib.h>',
+                'stdint.h': '#include <stdint.h>',
+            }
+            missing = []
+            for header, include_line in essential_includes.items():
+                if header not in code:
+                    missing.append(include_line)
+            if missing:
+                code = '\n'.join(missing) + '\n\n' + code
+
+            # Fix pow() usage without math.h
+            if 'pow(' in code and 'math.h' not in code:
+                code = '#include <math.h>\n' + code
+
+            # Fix time() usage without time.h
+            if 'time(' in code and 'time.h' not in code:
+                code = '#include <time.h>\n' + code
+
+        elif lang == 'python':
+            if 'import random' not in code and 'random.' in code:
+                code = 'import random\n' + code
+
+        elif lang == 'verilog':
+            # Fix 'output' without 'reg' when assigned in always block
+            # Find signals assigned in always blocks
+            always_assigned = set()
+            in_always = False
+            for line in code.split('\n'):
+                stripped = line.strip()
+                if 'always' in stripped and '@' in stripped:
+                    in_always = True
+                elif in_always and ('endmodule' in stripped or (stripped.startswith('always') and '@' in stripped)):
+                    in_always = False
+                elif in_always:
+                    # Look for assignments: signal_name <= or signal_name =
+                    m = re.match(r'\s*(\w+)\s*<?=', stripped)
+                    if m:
+                        always_assigned.add(m.group(1))
+
+            # Fix output declarations that should be output reg
+            for sig in always_assigned:
+                # Replace "output [N:0] sig" with "output reg [N:0] sig" if not already reg
+                code = re.sub(
+                    rf'output\s+(\[.*?\])\s+{sig}\b(?!\s*;)',
+                    rf'output reg \1 {sig}',
+                    code
+                )
+                code = re.sub(
+                    rf'output\s+{sig}\b',
+                    rf'output reg {sig}',
+                    code
+                )
+
+        elif lang == 'vhdl':
+            # Ensure IEEE library is present
+            if 'library ieee' not in code.lower() and 'library IEEE' not in code:
+                code = 'library IEEE;\nuse IEEE.STD_LOGIC_1164.ALL;\nuse IEEE.NUMERIC_STD.ALL;\n\n' + code
+
+        return code
+
+    def _validate_code(self, code: str, language: str, k: int, bits: int, mod: int) -> List[str]:
+        """Validate generated code quality. Returns a list of warning strings."""
+        import math
+        warnings = []
+        lang = language.lower()
+        data_width = math.ceil(math.log2(mod)) if mod > 1 else 1
+        code_lower = code.lower()
+
+        # 1. Language mismatch check
+        detected = self._detect_language(code)
+        if detected and detected != lang:
+            warnings.append(f"LANGUAGE MISMATCH: requested {lang.upper()}, detected {detected.upper()}")
+
+        # 2. Check all 6 operations are present
+        op_keywords = {
+            'c': {'add': ['add', 'op_add'], 'sub': ['sub', 'op_sub'], 'mul': ['mul', 'op_mul'],
+                   'neg': ['neg', 'op_neg'], 'inc': ['inc', 'op_inc'], 'dec': ['dec', 'op_dec']},
+            'python': {'add': ['add', 'op_add'], 'sub': ['sub', 'op_sub'], 'mul': ['mul', 'op_mul'],
+                       'neg': ['neg', 'op_neg'], 'inc': ['inc', 'op_inc'], 'dec': ['dec', 'op_dec']},
+            'verilog': {'add': ['0000', 'add'], 'sub': ['0001', 'sub'], 'mul': ['0010', 'mul'],
+                        'neg': ['0011', 'neg'], 'inc': ['0100', 'inc'], 'dec': ['0101', 'dec']},
+            'vhdl': {'add': ['0000', 'add'], 'sub': ['0001', 'sub'], 'mul': ['0010', 'mul'],
+                     'neg': ['0011', 'neg'], 'inc': ['0100', 'inc'], 'dec': ['0101', 'dec']},
+        }
+        if lang in op_keywords:
+            for op_name, keywords in op_keywords[lang].items():
+                if not any(kw in code_lower for kw in keywords):
+                    warnings.append(f"MISSING OPERATION: {op_name.upper()} not found in code")
+
+        # 3. MOD value check
+        mod_str = str(mod)
+        if mod_str not in code:
+            warnings.append(f"MOD VALUE: {mod} not found in code — arithmetic may be wrong")
+
+        # 4. Bit width check for HDL
+        if lang == 'verilog':
+            # Check for wrong bit widths like [9:0] when should be [15:0]
+            expected_range = f'[{data_width - 1}:0]'
+            if expected_range not in code and f'[{bits - 1}:0]' in code:
+                warnings.append(
+                    f"BIT WIDTH: found [{bits - 1}:0] (trit count) instead of {expected_range} ({data_width} bits needed for mod {mod})")
+        elif lang == 'vhdl':
+            expected_range = f'{data_width - 1} downto 0'
+            if expected_range not in code and f'{bits - 1} downto 0' in code:
+                warnings.append(
+                    f"BIT WIDTH: found '{bits - 1} downto 0' (trit count) instead of '{expected_range}' ({data_width} bits needed for mod {mod})")
+
+        # 5. Test coverage check
+        test_indicators = {
+            'c': ['printf', 'test', 'assert'],
+            'python': ['print', 'test', 'assert'],
+            'verilog': ['$display', 'initial begin', '#'],
+            'vhdl': ['assert', 'report', 'wait for'],
+        }
+        indicators = test_indicators.get(lang, [])
+        test_count = sum(1 for line in code.split('\n')
+                         if any(ind in line.lower() for ind in indicators))
+        if test_count < 10:
+            warnings.append(f"LOW TEST COVERAGE: only ~{test_count} test-related lines found (recommend 20+)")
+
+        # 6. C-specific: check for overflow risk in multiplication
+        if lang == 'c':
+            if 'uint32_t' in code and 'uint64_t' not in code and mod > 256:
+                warnings.append(
+                    f"OVERFLOW RISK: uint32_t may overflow for MUL ({mod - 1}*{mod - 1}={((mod - 1) ** 2)}), use uint64_t")
+
+        # Print warnings
+        if warnings:
+            print(f"\n🔍 Code validation found {len(warnings)} issue(s):")
+            for i, w in enumerate(warnings, 1):
+                print(f"   {i}. {w}")
+        else:
+            print(f"\n✅ Code validation passed — no issues detected")
+
+        return warnings
 
     @staticmethod
     def _sanitize_filename(text: str) -> str:
