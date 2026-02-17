@@ -291,6 +291,91 @@ class MVLGenerator:
             traceback.print_exc()
             return {'success': False, 'error': str(e)}
 
+    def generate_stream(
+            self,
+            k_value: int = 3,
+            bitwidth: int = 8,
+            language: str = 'c',
+            operations: List[str] = None
+    ):
+        """
+        Generate MVL ALU code with streaming output.
+        Yields (event_type, data) tuples:
+          - ("chunk", text_chunk)
+          - ("done", result_dict)
+          - ("error", error_message)
+        """
+        import json
+
+        if operations is None:
+            operations = ['ADD', 'SUB', 'MUL', 'NEG', 'INC', 'DEC']
+
+        mod_value = k_value ** bitwidth
+
+        # Create prompt
+        if language.lower() == 'c':
+            prompt = self._create_c_prompt(k_value, bitwidth, mod_value, operations)
+        elif language.lower() == 'python':
+            prompt = self._create_python_prompt(k_value, bitwidth, mod_value, operations)
+        elif language.lower() == 'verilog':
+            prompt = self._create_verilog_prompt(k_value, bitwidth, mod_value, operations)
+        else:
+            yield ("error", f'Unsupported language: {language}')
+            return
+
+        if self.llm is None:
+            yield ("error", f'LLM provider "{self.llm_provider_name}" failed to initialize.')
+            return
+
+        # Check if provider supports streaming
+        has_stream = hasattr(self.llm, '_call_api_stream')
+        if not has_stream:
+            # Fallback to non-streaming
+            result = self.generate(k_value=k_value, bitwidth=bitwidth, language=language, operations=operations)
+            if result.get('success') and result.get('code'):
+                yield ("chunk", result['code'])
+            yield ("done", result)
+            return
+
+        try:
+            full_response = ""
+            system_prompt = "You are an expert programmer. Generate clean, compilable code without any explanations."
+
+            for chunk in self.llm._call_api_stream(prompt, max_tokens=4096, system_prompt=system_prompt):
+                full_response += chunk
+                yield ("chunk", chunk)
+
+            print(f"✅ LLM streaming response received ({len(full_response)} chars)")
+
+            # Process the full response
+            code = self._extract_code(full_response, language)
+            if not code:
+                yield ("error", 'Failed to extract code from response')
+                return
+
+            code = self._fix_code(code, language)
+            file_path = self._save_code(code, k_value, bitwidth, language)
+
+            print(f"✅ Code saved: {file_path}")
+
+            yield ("done", {
+                'success': True,
+                'code': code,
+                'file_path': str(file_path),
+                'filename': file_path.name,
+                'k_value': k_value,
+                'bitwidth': bitwidth,
+                'language': language,
+                'mod_value': mod_value,
+                'llm': self.llm_provider_name
+            })
+
+        except Exception as e:
+            print(f"❌ Streaming generation failed: {e}")
+            import traceback
+            traceback.print_exc()
+            yield ("error", str(e))
+
     def _create_c_prompt(self, k: int, bits: int, mod: int, operations: List[str]) -> str:
         """Create prompt for C code generation"""
         ops_str = ', '.join(operations)
