@@ -60,22 +60,44 @@ class MVLGenerator:
                 if exists:
                     with open(config_path, 'r', encoding='utf-8') as f:
                         config = json.load(f)
+
+                    # Print top-level keys to understand structure
+                    print(f"      Config top-level keys: {list(config.keys())}")
+
+                    # Try direct lookup: config["together"]
                     provider_config = config.get(provider_name, {})
-                    api_key = provider_config.get('api_key', '')
+
+                    # If not found directly, search common wrapper keys
+                    if not provider_config:
+                        for wrapper_key in ['providers', 'llm_providers', 'llm', 'models']:
+                            wrapper = config.get(wrapper_key, {})
+                            if isinstance(wrapper, dict) and provider_name in wrapper:
+                                provider_config = wrapper[provider_name]
+                                print(f"      Found under '{wrapper_key}.{provider_name}'")
+                                break
+
+                    # Also handle list-style configs where providers are in a list
+                    if not provider_config and isinstance(config.get('providers'), list):
+                        for item in config['providers']:
+                            if isinstance(item, dict) and item.get('name') == provider_name:
+                                provider_config = item
+                                print(f"      Found in providers list by name")
+                                break
+
+                    api_key = provider_config.get('api_key', '') if isinstance(provider_config, dict) else ''
                     if api_key:
                         print(f"   📄 Config loaded from: {resolved}")
                         print(f"      API key found for '{provider_name}': {api_key[:4]}***{api_key[-4:]}")
                         return api_key
                     else:
                         print(f"      ⚠️ Config found but no api_key for '{provider_name}'")
-                        # Check available keys in this config
-                        available = [k for k, v in config.items() if isinstance(v, dict) and v.get('api_key')]
-                        if available:
-                            print(f"      Available providers with keys: {', '.join(available)}")
+                        print(f"      provider_config = {provider_config}")
+
                     # Also check for model override from config
-                    model_from_config = provider_config.get('model', '')
-                    if model_from_config and not self.model:
-                        self.model = model_from_config
+                    if isinstance(provider_config, dict):
+                        model_from_config = provider_config.get('model', '')
+                        if model_from_config and not self.model:
+                            self.model = model_from_config
             except Exception as e:
                 print(f"      ❌ Error reading {config_path}: {e}")
                 continue
