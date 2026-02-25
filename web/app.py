@@ -96,11 +96,11 @@ def api_generate():
         natural_input = data.get('natural_input', '').strip()
 
         # Validate parameters
-        if k_value < 2 or k_value > 8:
-            return jsonify({'success': False, 'error': 'K-value must be between 2 and 8'}), 400
+        if k_value < 2 or k_value > 16:
+            return jsonify({'success': False, 'error': 'K-value must be between 2 and 16'}), 400
 
-        if bitwidth not in [8, 10, 12, 14]:
-            return jsonify({'success': False, 'error': 'Bitwidth must be 8, 10, 12, or 14'}), 400
+        if bitwidth < 1 or bitwidth > 64:
+            return jsonify({'success': False, 'error': 'Bitwidth must be between 1 and 64'}), 400
 
         if language not in ['c', 'python', 'verilog', 'vhdl']:
             return jsonify({'success': False, 'error': 'Language must be c, python, verilog, or vhdl'}), 400
@@ -158,10 +158,10 @@ def api_generate_stream():
         natural_input = data.get('natural_input', '').strip()
 
         # Validate parameters
-        if k_value < 2 or k_value > 8:
-            return jsonify({'success': False, 'error': 'K-value must be between 2 and 8'}), 400
-        if bitwidth not in [8, 10, 12, 14]:
-            return jsonify({'success': False, 'error': 'Bitwidth must be 8, 10, 12, or 14'}), 400
+        if k_value < 2 or k_value > 16:
+            return jsonify({'success': False, 'error': 'K-value must be between 2 and 16'}), 400
+        if bitwidth < 1 or bitwidth > 64:
+            return jsonify({'success': False, 'error': 'Bitwidth must be between 1 and 64'}), 400
         if language not in ['c', 'python', 'verilog', 'vhdl']:
             return jsonify({'success': False, 'error': 'Language must be c, python, verilog, or vhdl'}), 400
 
