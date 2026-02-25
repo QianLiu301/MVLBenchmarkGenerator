@@ -197,44 +197,65 @@
             box-shadow: 0 0 0 3px rgba(217, 119, 6, 0.15);
         }
 
-        /* Select + Number edit row */
-        .select-num-row {
-            display: flex;
-            gap: 8px;
-            align-items: center;
+        /* Editable select: input overlaid on select */
+        .editable-select {
+            position: relative;
         }
 
-        .select-num-row .select-part {
-            flex: 1;
-            min-width: 0;
-        }
-
-        .select-num-row .num-edit {
-            width: 72px;
-            flex-shrink: 0;
-            padding: 12px 8px;
+        .editable-select select {
+            width: 100%;
+            padding: 12px 40px 12px 14px;
             background: var(--bg-white);
             border: 1.5px solid var(--border);
             border-radius: var(--radius);
-            color: var(--text-primary);
-            font-size: 0.95rem;
-            font-weight: 600;
+            color: transparent;
+            font-size: 0.9rem;
             font-family: inherit;
-            text-align: center;
+            cursor: pointer;
+            appearance: none;
             transition: all 0.2s;
         }
 
-        .select-num-row .num-edit:hover {
+        .editable-select select:hover {
             border-color: var(--primary-light);
         }
 
-        .select-num-row .num-edit:focus {
+        .editable-select::after {
+            content: '';
+            position: absolute;
+            right: 14px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 0;
+            height: 0;
+            border-left: 5px solid transparent;
+            border-right: 5px solid transparent;
+            border-top: 5px solid var(--text-secondary);
+            pointer-events: none;
+        }
+
+        .editable-select input {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: calc(100% - 36px);
+            height: 100%;
+            padding: 12px 14px;
+            background: transparent;
+            border: none;
+            color: var(--text-primary);
+            font-size: 0.9rem;
+            font-family: inherit;
             outline: none;
+        }
+
+        .editable-select input:focus ~ select,
+        .editable-select input.input-error ~ select {
             border-color: var(--primary);
             box-shadow: 0 0 0 3px rgba(217, 119, 6, 0.15);
         }
 
-        .select-num-row .num-edit.input-error {
+        .editable-select input.input-error ~ select {
             border-color: #ef4444;
             box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.15);
         }
@@ -948,36 +969,32 @@
             <div class="form-row">
                  <div class="form-group">
                     <label>Bitwidth (Trits)</label>
-                    <div class="select-num-row">
-                        <div class="select-wrapper select-part">
-                            <select id="bitwidth-select" onchange="document.getElementById('bitwidth').value=this.value; validateInputs();">
-                                <option value="8" selected>8-trit</option>
-                                <option value="10">10-trit</option>
-                                <option value="12">12-trit</option>
-                                <option value="14">14-trit</option>
-                            </select>
-                        </div>
-                        <input type="number" id="bitwidth" class="num-edit" value="8" min="1" max="64" step="1">
+                    <div class="editable-select">
+                        <input type="number" id="bitwidth" value="8" min="1" max="64" step="1">
+                        <select id="bitwidth-select" onchange="document.getElementById('bitwidth').value=this.value; validateInputs();">
+                            <option value="8" selected>8-trit</option>
+                            <option value="10">10-trit</option>
+                            <option value="12">12-trit</option>
+                            <option value="14">14-trit</option>
+                        </select>
                     </div>
-                    <div class="hint">Select preset or edit number directly (1 ~ 64)</div>
+                    <div class="hint">Click dropdown to select, or directly edit the number (1 ~ 64)</div>
                     <div class="validation-hint" id="bitwidth-hint"></div>
                 </div>
                 <div class="form-group">
                     <label>K-Value (Logic Values)</label>
-                    <div class="select-num-row">
-                        <div class="select-wrapper select-part">
-                            <select id="k-value-select" onchange="document.getElementById('k-value').value=this.value; validateInputs();">
-                                <option value="2">k = 2 (Binary)</option>
-                                <option value="3" selected>k = 3 (Ternary / GF(3))</option>
-                                <option value="4">k = 4 (Quaternary)</option>
-                                <option value="5">k = 5</option>
-                                <option value="6">k = 6</option>
-                                <option value="7">k = 7</option>
-                            </select>
-                        </div>
-                        <input type="number" id="k-value" class="num-edit" value="3" min="2" max="16" step="1">
+                    <div class="editable-select">
+                        <input type="number" id="k-value" value="3" min="2" max="16" step="1">
+                        <select id="k-value-select" onchange="document.getElementById('k-value').value=this.value; validateInputs();">
+                            <option value="2">k = 2 (Binary)</option>
+                            <option value="3" selected>k = 3 (Ternary / GF(3))</option>
+                            <option value="4">k = 4 (Quaternary)</option>
+                            <option value="5">k = 5</option>
+                            <option value="6">k = 6</option>
+                            <option value="7">k = 7</option>
+                        </select>
                     </div>
-                    <div class="hint">Select preset or edit number directly (2 ~ 16)</div>
+                    <div class="hint">Click dropdown to select, or directly edit the number (2 ~ 16)</div>
                     <div class="validation-hint" id="k-value-hint"></div>
                 </div>
             </div>
