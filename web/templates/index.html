@@ -197,76 +197,41 @@
             box-shadow: 0 0 0 3px rgba(217, 119, 6, 0.15);
         }
 
-        /* Editable select: input overlaid on select */
-        .editable-select {
-            position: relative;
+        /* Custom input row (shown when "Custom..." is selected) */
+        .custom-input-row {
+            margin-top: 8px;
         }
 
-        .editable-select select {
+        .custom-input-row input[type="number"] {
             width: 100%;
-            padding: 12px 40px 12px 14px;
+            padding: 10px 14px;
             background: var(--bg-white);
-            border: 1.5px solid var(--border);
+            border: 1.5px solid var(--primary-light);
             border-radius: var(--radius);
-            color: transparent;
-            font-size: 0.9rem;
-            font-family: inherit;
-            cursor: pointer;
-            appearance: none;
-            transition: all 0.2s;
-        }
-
-        .editable-select select:hover {
-            border-color: var(--primary-light);
-        }
-
-        .editable-select::after {
-            content: '';
-            position: absolute;
-            right: 14px;
-            top: 50%;
-            transform: translateY(-50%);
-            width: 0;
-            height: 0;
-            border-left: 5px solid transparent;
-            border-right: 5px solid transparent;
-            border-top: 5px solid var(--text-secondary);
-            pointer-events: none;
-        }
-
-        .editable-select input {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: calc(100% - 36px);
-            height: 100%;
-            padding: 12px 14px;
-            background: transparent;
-            border: none;
             color: var(--text-primary);
             font-size: 0.9rem;
             font-family: inherit;
-            outline: none;
+            transition: all 0.2s;
         }
 
-        .editable-select input:focus ~ select,
-        .editable-select input.input-error ~ select {
+        .custom-input-row input[type="number"]:focus {
+            outline: none;
             border-color: var(--primary);
             box-shadow: 0 0 0 3px rgba(217, 119, 6, 0.15);
         }
 
-        .editable-select input.input-error ~ select {
+        .custom-input-row input[type="number"].input-error {
             border-color: #ef4444;
             box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.15);
         }
 
-        .validation-hint {
+        .custom-input-row .validation-hint {
             font-size: 0.72rem;
             margin-top: 4px;
             min-height: 0;
         }
 
-        .validation-hint.error {
+        .custom-input-row .validation-hint.error {
             color: #ef4444;
         }
 
@@ -969,33 +934,39 @@
             <div class="form-row">
                  <div class="form-group">
                     <label>Bitwidth (Trits)</label>
-                    <div class="editable-select">
-                        <input type="number" id="bitwidth" value="8" min="1" max="64" step="1">
-                        <select id="bitwidth-select" onchange="document.getElementById('bitwidth').value=this.value; validateInputs();">
+                    <div class="select-wrapper">
+                        <select id="bitwidth" onchange="onBitwidthChange()">
                             <option value="8" selected>8-trit</option>
                             <option value="10">10-trit</option>
                             <option value="12">12-trit</option>
                             <option value="14">14-trit</option>
+                            <option value="custom">Custom...</option>
                         </select>
                     </div>
-                    <div class="hint">Click dropdown to select, or directly edit the number (1 ~ 64)</div>
-                    <div class="validation-hint" id="bitwidth-hint"></div>
+                    <div class="custom-input-row" id="bitwidth-custom-row" style="display:none;">
+                        <input type="number" id="bitwidth-custom" min="1" max="64" step="1" placeholder="Enter 1-64">
+                        <div class="validation-hint" id="bitwidth-hint"></div>
+                    </div>
+                    <div class="hint">Number of digits in each operand</div>
                 </div>
                 <div class="form-group">
                     <label>K-Value (Logic Values)</label>
-                    <div class="editable-select">
-                        <input type="number" id="k-value" value="3" min="2" max="16" step="1">
-                        <select id="k-value-select" onchange="document.getElementById('k-value').value=this.value; validateInputs();">
+                    <div class="select-wrapper">
+                        <select id="k-value" onchange="onKValueChange()">
                             <option value="2">k = 2 (Binary)</option>
                             <option value="3" selected>k = 3 (Ternary / GF(3))</option>
                             <option value="4">k = 4 (Quaternary)</option>
                             <option value="5">k = 5</option>
                             <option value="6">k = 6</option>
                             <option value="7">k = 7</option>
+                            <option value="custom">Custom...</option>
                         </select>
                     </div>
-                    <div class="hint">Click dropdown to select, or directly edit the number (2 ~ 16)</div>
-                    <div class="validation-hint" id="k-value-hint"></div>
+                    <div class="custom-input-row" id="k-value-custom-row" style="display:none;">
+                        <input type="number" id="k-value-custom" min="2" max="16" step="1" placeholder="Enter 2-16">
+                        <div class="validation-hint" id="k-value-hint"></div>
+                    </div>
+                    <div class="hint">Number of distinct logic values in the system</div>
                 </div>
             </div>
 
@@ -1538,46 +1509,102 @@
         }
 
         // ============================================================
-        // Validation for K-Value and Bitwidth inputs
+        // Custom Input for K-Value and Bitwidth
         // ============================================================
         const K_MIN = 2, K_MAX = 16;
         const BITS_MIN = 1, BITS_MAX = 64;
 
-        function validateField(inputId, hintId, min, max, label) {
-            const input = document.getElementById(inputId);
-            const hint = document.getElementById(hintId);
-            const v = parseInt(input.value);
-            input.classList.remove('input-error');
-            hint.textContent = '';
-            hint.className = 'validation-hint';
-
-            if (input.value === '' || isNaN(v)) {
-                input.classList.add('input-error');
-                hint.className = 'validation-hint error';
-                hint.textContent = `Please enter a ${label} value`;
-                return `${label} is required`;
+        function onBitwidthChange() {
+            const sel = document.getElementById('bitwidth');
+            const row = document.getElementById('bitwidth-custom-row');
+            if (sel.value === 'custom') {
+                row.style.display = 'block';
+                document.getElementById('bitwidth-custom').focus();
+            } else {
+                row.style.display = 'none';
             }
-            if (v < min || v > max) {
-                input.classList.add('input-error');
-                hint.className = 'validation-hint error';
-                hint.textContent = `Must be between ${min} and ${max}`;
-                return `${label} must be between ${min} and ${max}`;
-            }
-            return null;
         }
 
-        function validateInputs() {
-            const errors = [];
-            const e1 = validateField('k-value', 'k-value-hint', K_MIN, K_MAX, 'K-Value');
-            const e2 = validateField('bitwidth', 'bitwidth-hint', BITS_MIN, BITS_MAX, 'Bitwidth');
-            if (e1) errors.push(e1);
-            if (e2) errors.push(e2);
+        function onKValueChange() {
+            const sel = document.getElementById('k-value');
+            const row = document.getElementById('k-value-custom-row');
+            if (sel.value === 'custom') {
+                row.style.display = 'block';
+                document.getElementById('k-value-custom').focus();
+            } else {
+                row.style.display = 'none';
+            }
+        }
+
+        // Get the effective value (dropdown or custom input)
+        function getEffectiveBitwidth() {
+            const sel = document.getElementById('bitwidth');
+            if (sel.value === 'custom') {
+                return parseInt(document.getElementById('bitwidth-custom').value);
+            }
+            return parseInt(sel.value);
+        }
+
+        function getEffectiveKValue() {
+            const sel = document.getElementById('k-value');
+            if (sel.value === 'custom') {
+                return parseInt(document.getElementById('k-value-custom').value);
+            }
+            return parseInt(sel.value);
+        }
+
+        // Validate custom inputs, return error message or null
+        function validateCustomInputs() {
+            let errors = [];
+
+            const kSel = document.getElementById('k-value');
+            const kHint = document.getElementById('k-value-hint');
+            const kInput = document.getElementById('k-value-custom');
+            if (kSel.value === 'custom') {
+                const v = parseInt(kInput.value);
+                kInput.classList.remove('input-error');
+                kHint.textContent = '';
+                kHint.className = 'validation-hint';
+                if (isNaN(v) || v === '') {
+                    kInput.classList.add('input-error');
+                    kHint.className = 'validation-hint error';
+                    kHint.textContent = 'Please enter a value';
+                    errors.push('K-Value is required');
+                } else if (v < K_MIN || v > K_MAX) {
+                    kInput.classList.add('input-error');
+                    kHint.className = 'validation-hint error';
+                    kHint.textContent = `Must be between ${K_MIN} and ${K_MAX}`;
+                    errors.push(`K-Value must be between ${K_MIN} and ${K_MAX}`);
+                }
+            }
+
+            const bSel = document.getElementById('bitwidth');
+            const bHint = document.getElementById('bitwidth-hint');
+            const bInput = document.getElementById('bitwidth-custom');
+            if (bSel.value === 'custom') {
+                const v = parseInt(bInput.value);
+                bInput.classList.remove('input-error');
+                bHint.textContent = '';
+                bHint.className = 'validation-hint';
+                if (isNaN(v) || v === '') {
+                    bInput.classList.add('input-error');
+                    bHint.className = 'validation-hint error';
+                    bHint.textContent = 'Please enter a value';
+                    errors.push('Bitwidth is required');
+                } else if (v < BITS_MIN || v > BITS_MAX) {
+                    bInput.classList.add('input-error');
+                    bHint.className = 'validation-hint error';
+                    bHint.textContent = `Must be between ${BITS_MIN} and ${BITS_MAX}`;
+                    errors.push(`Bitwidth must be between ${BITS_MIN} and ${BITS_MAX}`);
+                }
+            }
+
             return errors;
         }
 
-        // Live validation on input
-        document.getElementById('k-value').addEventListener('input', validateInputs);
-        document.getElementById('bitwidth').addEventListener('input', validateInputs);
+        // Live validation on custom inputs
+        document.getElementById('k-value-custom').addEventListener('input', validateCustomInputs);
+        document.getElementById('bitwidth-custom').addEventListener('input', validateCustomInputs);
 
         /**
          * Parse k_value and bitwidth from natural language text.
@@ -1628,10 +1655,20 @@
         /**
          * When natural input changes, sync the dropdown values and update stats.
          */
-        function syncSelectToValue(selectId, value) {
+        function syncSelectOrCustom(selectId, customRowId, customInputId, value) {
             const sel = document.getElementById(selectId);
-            const match = Array.from(sel.options).find(o => o.value === String(value));
-            if (match) sel.value = String(value);
+            const row = document.getElementById(customRowId);
+            const inp = document.getElementById(customInputId);
+            // Check if value matches a preset option
+            const options = Array.from(sel.options).map(o => o.value);
+            if (options.includes(String(value))) {
+                sel.value = String(value);
+                row.style.display = 'none';
+            } else {
+                sel.value = 'custom';
+                row.style.display = 'block';
+                inp.value = value;
+            }
         }
 
         function parseAndSyncNaturalInput(text) {
@@ -1639,14 +1676,13 @@
             const parsed = parseNaturalInput(text);
 
             if (parsed.kValue !== null) {
-                document.getElementById('k-value').value = parsed.kValue;
-                syncSelectToValue('k-value-select', parsed.kValue);
+                syncSelectOrCustom('k-value', 'k-value-custom-row', 'k-value-custom', parsed.kValue);
             }
+
             if (parsed.bitwidth !== null) {
-                document.getElementById('bitwidth').value = parsed.bitwidth;
-                syncSelectToValue('bitwidth-select', parsed.bitwidth);
+                syncSelectOrCustom('bitwidth', 'bitwidth-custom-row', 'bitwidth-custom', parsed.bitwidth);
             }
-            validateInputs();
+            validateCustomInputs();
         }
 
         // Real-time: update dropdowns as user types natural input
@@ -1672,15 +1708,15 @@
             const provider = document.getElementById('llm-provider').value;
             const modelGroup = document.getElementById('llm-model-group');
             const model = modelGroup.style.display !== 'none' ? document.getElementById('llm-model').value : null;
-            const kValue = parseInt(document.getElementById('k-value').value);
-            const bitwidth = parseInt(document.getElementById('bitwidth').value);
+            const kValue = getEffectiveKValue();
+            const bitwidth = getEffectiveBitwidth();
             const languages = getSelectedItems('language-group');
             const operations = getSelectedItems('operations-group');
             const naturalInput = document.getElementById('natural-input').value.trim();
             const streamOutput = document.getElementById('stream-toggle').checked;
 
-            // Validate inputs
-            const validationErrors = validateInputs();
+            // Validate custom inputs
+            const validationErrors = validateCustomInputs();
             if (validationErrors.length > 0) {
                 showError(validationErrors[0]);
                 return;
