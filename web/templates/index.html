@@ -197,6 +197,92 @@
             box-shadow: 0 0 0 3px rgba(217, 119, 6, 0.15);
         }
 
+        /* Number input wrapper */
+        .input-wrapper {
+            position: relative;
+        }
+
+        input[type="number"] {
+            width: 100%;
+            padding: 12px 14px;
+            background: var(--bg-white);
+            border: 1.5px solid var(--border);
+            border-radius: var(--radius);
+            color: var(--text-primary);
+            font-size: 0.9rem;
+            font-family: inherit;
+            transition: all 0.2s;
+            -moz-appearance: textfield;
+        }
+
+        input[type="number"]::-webkit-outer-spin-button,
+        input[type="number"]::-webkit-inner-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+
+        input[type="number"]:hover {
+            border-color: var(--primary-light);
+        }
+
+        input[type="number"]:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(217, 119, 6, 0.15);
+        }
+
+        input[type="number"].input-error {
+            border-color: #ef4444;
+            box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.15);
+        }
+
+        input[type="number"].input-warning {
+            border-color: #f59e0b;
+            box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.15);
+        }
+
+        .validation-hint {
+            font-size: 0.72rem;
+            margin-top: 4px;
+            min-height: 1em;
+            transition: all 0.2s;
+        }
+
+        .validation-hint.error {
+            color: #ef4444;
+        }
+
+        .validation-hint.warning {
+            color: #f59e0b;
+        }
+
+        .validation-hint.ok {
+            color: #10b981;
+        }
+
+        .mod-info {
+            text-align: center;
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            padding: 8px 12px;
+            background: var(--bg-light);
+            border-radius: var(--radius);
+            margin-bottom: 4px;
+            border: 1px dashed var(--border);
+        }
+
+        .mod-info.mod-warning {
+            border-color: #f59e0b;
+            background: rgba(245, 158, 11, 0.08);
+            color: #b45309;
+        }
+
+        .mod-info.mod-error {
+            border-color: #ef4444;
+            background: rgba(239, 68, 68, 0.08);
+            color: #dc2626;
+        }
+
         /* Input */
         input[type="text"], textarea {
             width: 100%;
@@ -896,30 +982,25 @@
             <div class="form-row">
                  <div class="form-group">
                     <label>Bitwidth (Trits)</label>
-                    <div class="select-wrapper">
-                        <select id="bitwidth">
-                            <option value="8" selected>8-trit</option>
-                            <option value="10">10-trit</option>
-                            <option value="12">12-trit</option>
-                            <option value="14">14-trit</option>
-                        </select>
+                    <div class="input-wrapper">
+                        <input type="number" id="bitwidth" value="8" min="1" max="64" step="1" placeholder="1-64">
                     </div>
-                    <div class="hint">Number of digits in each operand</div>
+                    <div class="hint">Range: 1 ~ 64 trits per operand</div>
+                    <div class="validation-hint" id="bitwidth-hint"></div>
                 </div>
                 <div class="form-group">
                     <label>K-Value (Logic Values)</label>
-                    <div class="select-wrapper">
-                        <select id="k-value">
-                            <option value="2">k = 2 (Binary)</option>
-                            <option value="3" selected>k = 3 (Ternary / GF(3))</option>
-                            <option value="4">k = 4 (Quaternary)</option>
-                            <option value="5">k = 5</option>
-                            <option value="6">k = 6</option>
-                            <option value="7">k = 7</option>
-                        </select>
+                    <div class="input-wrapper">
+                        <input type="number" id="k-value" value="3" min="2" max="16" step="1" placeholder="2-16">
                     </div>
-                    <div class="hint">Number of distinct logic values in the system</div>
+                    <div class="hint">Range: 2 ~ 16 (e.g. 2=Binary, 3=Ternary, 4=Quaternary)</div>
+                    <div class="validation-hint" id="k-value-hint"></div>
                 </div>
+            </div>
+
+            <!-- Mod value info display -->
+            <div class="mod-info" id="mod-info">
+                MOD = K<sup>Bitwidth</sup> = <span id="mod-display">3<sup>8</sup> = 6561</span>
             </div>
 
             <!-- Row 2: LLM Provider and Model -->
@@ -1460,6 +1541,92 @@
             parseAndSyncNaturalInput(text);
         }
 
+        // ============================================================
+        // Input Validation for K-Value and Bitwidth
+        // ============================================================
+        const K_MIN = 2, K_MAX = 16;
+        const BITS_MIN = 1, BITS_MAX = 64;
+        const MOD_WARN_THRESHOLD = 1e15;  // warn if mod value is very large
+        const MOD_ERROR_THRESHOLD = 1e18; // error if mod value is astronomical
+
+        function validateInputs() {
+            const kInput = document.getElementById('k-value');
+            const bitsInput = document.getElementById('bitwidth');
+            const kHint = document.getElementById('k-value-hint');
+            const bitsHint = document.getElementById('bitwidth-hint');
+            const modInfo = document.getElementById('mod-info');
+            const modDisplay = document.getElementById('mod-display');
+
+            const kVal = parseInt(kInput.value);
+            const bitsVal = parseInt(bitsInput.value);
+            let valid = true;
+
+            // Validate K-Value
+            kInput.classList.remove('input-error', 'input-warning');
+            kHint.className = 'validation-hint';
+            if (isNaN(kVal) || kVal < K_MIN) {
+                kInput.classList.add('input-error');
+                kHint.className = 'validation-hint error';
+                kHint.textContent = `K-value must be at least ${K_MIN}`;
+                valid = false;
+            } else if (kVal > K_MAX) {
+                kInput.classList.add('input-error');
+                kHint.className = 'validation-hint error';
+                kHint.textContent = `K-value must not exceed ${K_MAX}`;
+                valid = false;
+            } else {
+                kHint.textContent = '';
+            }
+
+            // Validate Bitwidth
+            bitsInput.classList.remove('input-error', 'input-warning');
+            bitsHint.className = 'validation-hint';
+            if (isNaN(bitsVal) || bitsVal < BITS_MIN) {
+                bitsInput.classList.add('input-error');
+                bitsHint.className = 'validation-hint error';
+                bitsHint.textContent = `Bitwidth must be at least ${BITS_MIN}`;
+                valid = false;
+            } else if (bitsVal > BITS_MAX) {
+                bitsInput.classList.add('input-error');
+                bitsHint.className = 'validation-hint error';
+                bitsHint.textContent = `Bitwidth must not exceed ${BITS_MAX}`;
+                valid = false;
+            } else {
+                bitsHint.textContent = '';
+            }
+
+            // Update MOD display
+            if (!isNaN(kVal) && !isNaN(bitsVal) && kVal >= K_MIN && bitsVal >= BITS_MIN) {
+                const modVal = Math.pow(kVal, bitsVal);
+                modDisplay.innerHTML = `${kVal}<sup>${bitsVal}</sup> = ${modVal > 1e15 ? modVal.toExponential(2) : modVal.toLocaleString()}`;
+                modInfo.classList.remove('mod-warning', 'mod-error');
+
+                if (modVal > MOD_ERROR_THRESHOLD) {
+                    modInfo.classList.add('mod-error');
+                    modDisplay.innerHTML += ' &mdash; value too large, may cause overflow in generated code';
+                    bitsInput.classList.add('input-warning');
+                    bitsHint.className = 'validation-hint warning';
+                    bitsHint.textContent = 'Consider reducing bitwidth to avoid overflow';
+                } else if (modVal > MOD_WARN_THRESHOLD) {
+                    modInfo.classList.add('mod-warning');
+                    modDisplay.innerHTML += ' &mdash; large value, generated code may need 64-bit types';
+                }
+                modInfo.style.display = 'block';
+            } else {
+                modInfo.style.display = 'block';
+                modDisplay.innerHTML = '—';
+                modInfo.classList.remove('mod-warning', 'mod-error');
+            }
+
+            return valid;
+        }
+
+        // Attach validation to input events
+        document.getElementById('k-value').addEventListener('input', validateInputs);
+        document.getElementById('bitwidth').addEventListener('input', validateInputs);
+        // Run initial validation
+        validateInputs();
+
         /**
          * Parse k_value and bitwidth from natural language text.
          * Mirrors the backend _parse_natural_input logic.
@@ -1514,24 +1681,13 @@
             const parsed = parseNaturalInput(text);
 
             if (parsed.kValue !== null) {
-                const kSelect = document.getElementById('k-value');
-                // Set dropdown if the value exists as an option
-                for (const opt of kSelect.options) {
-                    if (parseInt(opt.value) === parsed.kValue) {
-                        kSelect.value = parsed.kValue;
-                        break;
-                    }
-                }
+                document.getElementById('k-value').value = parsed.kValue;
+                validateInputs();
             }
 
             if (parsed.bitwidth !== null) {
-                const bitsSelect = document.getElementById('bitwidth');
-                for (const opt of bitsSelect.options) {
-                    if (parseInt(opt.value) === parsed.bitwidth) {
-                        bitsSelect.value = parsed.bitwidth;
-                        break;
-                    }
-                }
+                document.getElementById('bitwidth').value = parsed.bitwidth;
+                validateInputs();
             }
         }
 
@@ -1564,6 +1720,22 @@
             const operations = getSelectedItems('operations-group');
             const naturalInput = document.getElementById('natural-input').value.trim();
             const streamOutput = document.getElementById('stream-toggle').checked;
+
+            // Validate K-Value and Bitwidth inputs
+            if (!validateInputs()) {
+                showError('Please fix the K-Value or Bitwidth input errors before generating');
+                return;
+            }
+
+            if (isNaN(kValue) || kValue < K_MIN || kValue > K_MAX) {
+                showError(`K-Value must be between ${K_MIN} and ${K_MAX}`);
+                return;
+            }
+
+            if (isNaN(bitwidth) || bitwidth < BITS_MIN || bitwidth > BITS_MAX) {
+                showError(`Bitwidth must be between ${BITS_MIN} and ${BITS_MAX}`);
+                return;
+            }
 
             if (languages.length === 0) {
                 showError('Please select at least one output language');
