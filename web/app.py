@@ -89,8 +89,10 @@ def api_generate():
 
         llm_provider = data.get('llm', 'groq')
         model = data.get('model', None)
+        module_type = data.get('module_type', 'alu')
         k_value = int(data.get('k_value', 3))
         bitwidth = int(data.get('bitwidth', 8))
+        logic_type = data.get('logic_type', 'auto')
         language = data.get('language', 'c')
         operations = data.get('operations', ['ADD', 'SUB', 'MUL', 'NEG', 'INC', 'DEC'])
         natural_input = data.get('natural_input', '').strip()
@@ -105,11 +107,16 @@ def api_generate():
         if language not in ['c', 'python', 'verilog', 'vhdl']:
             return jsonify({'success': False, 'error': 'Language must be c, python, verilog, or vhdl'}), 400
 
+        valid_module_types = ['alu', 'counter', 'register', 'cpu-risc-v']
+        if module_type not in valid_module_types:
+            return jsonify({'success': False, 'error': f'Module type must be one of: {", ".join(valid_module_types)}'}), 400
+
         # Create generator and generate
         print(f"\n📋 [API] Generate request:")
         print(f"   Requested provider: {llm_provider}")
         print(f"   Requested model: {model or '(default)'}")
-        print(f"   Parameters: k={k_value}, bitwidth={bitwidth}, lang={language}")
+        print(f"   Module type: {module_type}")
+        print(f"   Parameters: k={k_value}, bitwidth={bitwidth}, logic_type={logic_type}, lang={language}")
         if natural_input:
             print(f"   Natural input: {natural_input}")
 
@@ -130,7 +137,9 @@ def api_generate():
             bitwidth=bitwidth,
             language=language,
             operations=operations,
-            natural_input=natural_input
+            natural_input=natural_input,
+            module_type=module_type,
+            logic_type=logic_type
         )
 
         return jsonify(result)
@@ -151,8 +160,10 @@ def api_generate_stream():
 
         llm_provider = data.get('llm', 'groq')
         model = data.get('model', None)
+        module_type = data.get('module_type', 'alu')
         k_value = int(data.get('k_value', 3))
         bitwidth = int(data.get('bitwidth', 8))
+        logic_type = data.get('logic_type', 'auto')
         language = data.get('language', 'c')
         operations = data.get('operations', ['ADD', 'SUB', 'MUL', 'NEG', 'INC', 'DEC'])
         natural_input = data.get('natural_input', '').strip()
@@ -167,7 +178,8 @@ def api_generate_stream():
 
         print(f"\n📋 [API] Stream generate request:")
         print(f"   Requested provider: {llm_provider}")
-        print(f"   Parameters: k={k_value}, bitwidth={bitwidth}, lang={language}")
+        print(f"   Module type: {module_type}")
+        print(f"   Parameters: k={k_value}, bitwidth={bitwidth}, logic_type={logic_type}, lang={language}")
         if natural_input:
             print(f"   Natural input: {natural_input}")
 
@@ -184,7 +196,9 @@ def api_generate_stream():
                     bitwidth=bitwidth,
                     language=language,
                     operations=operations,
-                    natural_input=natural_input
+                    natural_input=natural_input,
+                    module_type=module_type,
+                    logic_type=logic_type
                 ):
                     if event_type == "chunk":
                         yield f"data: {json.dumps({'type': 'chunk', 'content': event_data})}\n\n"

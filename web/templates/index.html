@@ -930,9 +930,44 @@
                 </div>
             </div>
 
-            <!-- Row 1: K-Value and Bitwidth -->
+            <!-- Row 1: Module Type and K-Value -->
             <div class="form-row">
-                 <div class="form-group">
+                <div class="form-group">
+                    <label>Module Type</label>
+                    <div class="select-wrapper">
+                        <select id="module-type">
+                            <option value="alu" selected>ALU</option>
+                            <option value="counter">Counter</option>
+                            <option value="register">Register</option>
+                            <option value="cpu-risc-v">CPU-RISC-V</option>
+                        </select>
+                    </div>
+                    <div class="hint">Type of hardware module to generate</div>
+                </div>
+                <div class="form-group">
+                    <label>K-Value (Logic Values)</label>
+                    <div class="select-wrapper">
+                        <select id="k-value" onchange="onKValueChange()">
+                            <option value="2">k = 2 (Binary)</option>
+                            <option value="3" selected>k = 3 (Ternary)</option>
+                            <option value="4">k = 4 (Quaternary)</option>
+                            <option value="5">k = 5</option>
+                            <option value="6">k = 6</option>
+                            <option value="7">k = 7</option>
+                            <option value="custom">Custom...</option>
+                        </select>
+                    </div>
+                    <div class="custom-input-row" id="k-value-custom-row" style="display:none;">
+                        <input type="number" id="k-value-custom" min="2" max="16" step="1" placeholder="Enter 2-16">
+                        <div class="validation-hint" id="k-value-hint"></div>
+                    </div>
+                    <div class="hint">Number of distinct logic values in the system</div>
+                </div>
+            </div>
+
+            <!-- Row 2: Bitwidth and Logic Type -->
+            <div class="form-row">
+                <div class="form-group">
                     <label>Bitwidth (Trits)</label>
                     <div class="select-wrapper">
                         <select id="bitwidth" onchange="onBitwidthChange()">
@@ -950,23 +985,13 @@
                     <div class="hint">Number of digits in each operand</div>
                 </div>
                 <div class="form-group">
-                    <label>K-Value (Logic Values)</label>
+                    <label>Logic Type <span style="font-weight: 400; color: var(--text-muted); font-size: 0.75rem;">— Optional</span></label>
                     <div class="select-wrapper">
-                        <select id="k-value" onchange="onKValueChange()">
-                            <option value="2">k = 2 (Binary)</option>
-                            <option value="3" selected>k = 3 (Ternary / GF(3))</option>
-                            <option value="4">k = 4 (Quaternary)</option>
-                            <option value="5">k = 5</option>
-                            <option value="6">k = 6</option>
-                            <option value="7">k = 7</option>
-                            <option value="custom">Custom...</option>
+                        <select id="logic-type">
+                            <option value="auto" selected>Auto</option>
                         </select>
                     </div>
-                    <div class="custom-input-row" id="k-value-custom-row" style="display:none;">
-                        <input type="number" id="k-value-custom" min="2" max="16" step="1" placeholder="Enter 2-16">
-                        <div class="validation-hint" id="k-value-hint"></div>
-                    </div>
-                    <div class="hint">Number of distinct logic values in the system</div>
+                    <div class="hint" id="logic-type-hint">Auto → GF(3) — prime field, mod 3 arithmetic</div>
                 </div>
             </div>
 
@@ -1058,12 +1083,12 @@
             <!-- Natural Language Input -->
             <div class="form-group">
                 <label>Natural Language Input</label>
-                <input type="text" id="natural-input" placeholder="e.g., 8-trit GF(3) ALU with ADD, SUB, MUL operations">
+                <input type="text" id="natural-input" placeholder="e.g., 8-trit ternary ALU with ADD, SUB, MUL operations">
                 <div class="example-tags">
-                    <span class="example-tag" onclick="setExample('8-trit GF(3) ALU')">8-trit GF(3) ALU</span>
+                    <span class="example-tag" onclick="setExample('8-trit ternary ALU')">8-trit ternary ALU</span>
                     <span class="example-tag" onclick="setExample('10-trit ternary calculator')">10-trit ternary calculator</span>
                     <span class="example-tag" onclick="setExample('quaternary 8-bit multiplier')">quaternary 8-bit multiplier</span>
-                    <span class="example-tag" onclick="setExample('GF(5) arithmetic unit')">GF(5) arithmetic unit</span>
+                    <span class="example-tag" onclick="setExample('k=5 12-trit arithmetic unit')">k=5 12-trit arithmetic unit</span>
                 </div>
             </div>
 
@@ -1098,7 +1123,7 @@
                 <div class="result-icon" id="gen-result-icon">✓</div>
                 <div class="result-info">
                     <h3 id="gen-result-title">Generation Complete</h3>
-                    <p id="gen-result-subtitle">mvl_alu_gf3_8bit.c • Gemini</p>
+                    <p id="gen-result-subtitle">mvl_alu_k3_8bit.c • Gemini</p>
                 </div>
             </div>
 
@@ -1423,6 +1448,7 @@
             checkTools();
             setupCheckboxes();
             onLlmProviderChange();
+            updateLogicTypeOptions();
         });
 
         function setupCheckboxes() {
@@ -1534,7 +1560,79 @@
             } else {
                 row.style.display = 'none';
             }
+            updateLogicTypeOptions();
         }
+
+        // ============================================================
+        // Logic Type (Galois Field) — auto-populated based on K-Value
+        // ============================================================
+        function isPrime(n) {
+            if (n < 2) return false;
+            if (n < 4) return true;
+            if (n % 2 === 0 || n % 3 === 0) return false;
+            for (let i = 5; i * i <= n; i += 6) {
+                if (n % i === 0 || n % (i + 2) === 0) return false;
+            }
+            return true;
+        }
+
+        function getPrimePower(n) {
+            if (n < 2) return null;
+            if (isPrime(n)) return { p: n, m: 1 };
+            for (let p = 2; p * p <= n; p++) {
+                if (!isPrime(p)) continue;
+                let val = p, m = 1;
+                while (val < n) { val *= p; m++; }
+                if (val === n) return { p, m };
+            }
+            return null;
+        }
+
+        function gfLabel(pp) {
+            if (!pp) return null;
+            if (pp.m === 1) return `GF(${pp.p})`;
+            return `GF(${pp.p}\u00B2${pp.m > 2 ? '\u00B3'.replace('\u00B3', superscript(pp.m)) : ''})`.replace(
+                `GF(${pp.p}\u00B2${pp.m > 2 ? '\u00B3'.replace('\u00B3', superscript(pp.m)) : ''})`,
+                `GF(${pp.p}${toSuperscript(pp.m)})`
+            );
+        }
+
+        function toSuperscript(n) {
+            const sup = { '0':'⁰','1':'¹','2':'²','3':'³','4':'⁴','5':'⁵','6':'⁶','7':'⁷','8':'⁸','9':'⁹' };
+            return String(n).split('').map(c => sup[c] || c).join('');
+        }
+
+        function updateLogicTypeOptions() {
+            const k = getEffectiveKValue();
+            const sel = document.getElementById('logic-type');
+            const hint = document.getElementById('logic-type-hint');
+
+            if (isNaN(k) || k < 2) {
+                sel.innerHTML = '<option value="auto" selected>Auto</option>';
+                hint.textContent = '';
+                return;
+            }
+
+            const pp = getPrimePower(k);
+            sel.innerHTML = '';
+
+            if (pp) {
+                const label = pp.m === 1 ? `GF(${pp.p})` : `GF(${pp.p}${toSuperscript(pp.m)})`;
+                const desc = pp.m === 1 ? 'prime field' : 'extension field';
+                sel.innerHTML = `<option value="auto" selected>Auto</option>` +
+                                `<option value="gf">${label}</option>`;
+                hint.textContent = `Auto → ${label} — ${desc}, mod ${k} arithmetic`;
+            } else {
+                sel.innerHTML = `<option value="auto" selected>Auto</option>`;
+                hint.textContent = `Auto → mod ${k} — no Galois Field exists for k=${k}`;
+                hint.style.color = '#b45309';
+            }
+        }
+
+        // Update Logic Type when custom K-Value input changes
+        document.getElementById('k-value-custom').addEventListener('input', function() {
+            updateLogicTypeOptions();
+        });
 
         // Get the effective value (dropdown or custom input)
         function getEffectiveBitwidth() {
@@ -1708,8 +1806,10 @@
             const provider = document.getElementById('llm-provider').value;
             const modelGroup = document.getElementById('llm-model-group');
             const model = modelGroup.style.display !== 'none' ? document.getElementById('llm-model').value : null;
+            const moduleType = document.getElementById('module-type').value;
             const kValue = getEffectiveKValue();
             const bitwidth = getEffectiveBitwidth();
+            const logicType = document.getElementById('logic-type').value;
             const languages = getSelectedItems('language-group');
             const operations = getSelectedItems('operations-group');
             const naturalInput = document.getElementById('natural-input').value.trim();
@@ -1762,8 +1862,10 @@
             const baseRequest = {
                 llm: provider,
                 model: model,
+                module_type: moduleType,
                 k_value: effectiveK,
                 bitwidth: effectiveBits,
+                logic_type: logicType,
                 operations: operations,
                 natural_input: naturalInput,
                 stream: streamOutput
