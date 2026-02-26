@@ -247,16 +247,56 @@ class MVLGenerator:
 
         return result
 
+    @staticmethod
+    def _resolve_logic_type(k_value: int, logic_type: str = 'auto') -> str:
+        """Resolve 'auto' logic type to the appropriate Galois Field notation.
+
+        Returns a human-readable string like 'GF(3)', 'GF(2^2)', or 'mod 6'.
+        """
+        def _is_prime(n):
+            if n < 2: return False
+            if n < 4: return True
+            if n % 2 == 0 or n % 3 == 0: return False
+            i = 5
+            while i * i <= n:
+                if n % i == 0 or n % (i + 2) == 0: return False
+                i += 6
+            return True
+
+        def _prime_power(n):
+            if n < 2: return None
+            if _is_prime(n): return (n, 1)
+            for p in range(2, int(n**0.5) + 1):
+                if not _is_prime(p): continue
+                val, m = p, 1
+                while val < n:
+                    val *= p
+                    m += 1
+                if val == n:
+                    return (p, m)
+            return None
+
+        pp = _prime_power(k_value)
+        if pp:
+            p, m = pp
+            if m == 1:
+                return f'GF({p})'
+            else:
+                return f'GF({p}^{m})'
+        return f'mod {k_value}'
+
     def generate(
             self,
             k_value: int = 3,
             bitwidth: int = 8,
             language: str = 'c',
             operations: List[str] = None,
-            natural_input: str = ''
+            natural_input: str = '',
+            module_type: str = 'alu',
+            logic_type: str = 'auto'
     ) -> Dict:
         """
-        Generate MVL ALU code.
+        Generate MVL code for the specified module type.
 
         Args:
             k_value: Number of logic values (2-8)
@@ -264,6 +304,8 @@ class MVLGenerator:
             language: Output language ('c', 'python', 'verilog', 'vhdl')
             operations: List of operations to include
             natural_input: Natural language description (takes priority for prompt/naming when provided)
+            module_type: Hardware module type ('alu', 'counter', 'register', 'cpu-risc-v')
+            logic_type: Logic type / Galois Field ('auto' or specific GF)
 
         Returns:
             Dict with generation results
@@ -279,13 +321,18 @@ class MVLGenerator:
             if parsed['bitwidth'] is not None:
                 bitwidth = parsed['bitwidth']
 
+        resolved_logic = self._resolve_logic_type(k_value, logic_type)
+        module_label = module_type.upper().replace('-', ' ')
+
         actual_model = getattr(self.llm, 'model', 'N/A') if self.llm else 'N/A'
         actual_class = type(self.llm).__name__ if self.llm else 'None'
         print(f"\n{'=' * 60}")
-        print(f"🔢 Generating MVL ALU")
+        print(f"🔢 Generating MVL {module_label}")
         if natural_input:
             print(f"   Natural input: {natural_input}")
-        print(f"   K-value: {k_value} (GF({k_value}))")
+        print(f"   Module type: {module_label}")
+        print(f"   K-value: {k_value}")
+        print(f"   Logic type: {resolved_logic}")
         print(f"   Bitwidth: {bitwidth}-trit")
         print(f"   Language: {language.upper()}")
         print(f"   Operations: {', '.join(operations)}")
@@ -346,7 +393,8 @@ class MVLGenerator:
             validation_warnings = self._validate_code(code, language, k_value, bitwidth, mod_value)
 
             # Save file
-            file_path = self._save_code(code, k_value, bitwidth, language, natural_input=natural_input)
+            file_path = self._save_code(code, k_value, bitwidth, language,
+                                        natural_input=natural_input, module_type=module_type)
 
             print(f"✅ Code saved: {file_path}")
 
@@ -359,6 +407,8 @@ class MVLGenerator:
                 'bitwidth': bitwidth,
                 'language': language,
                 'mod_value': mod_value,
+                'module_type': module_type,
+                'logic_type': resolved_logic,
                 'llm': self.llm_provider_name,
                 'validation_warnings': validation_warnings
             }
@@ -375,10 +425,12 @@ class MVLGenerator:
             bitwidth: int = 8,
             language: str = 'c',
             operations: List[str] = None,
-            natural_input: str = ''
+            natural_input: str = '',
+            module_type: str = 'alu',
+            logic_type: str = 'auto'
     ):
         """
-        Generate MVL ALU code with streaming output.
+        Generate MVL code with streaming output.
         Yields (event_type, data) tuples:
           - ("chunk", text_chunk)
           - ("done", result_dict)
@@ -397,6 +449,7 @@ class MVLGenerator:
             if parsed['bitwidth'] is not None:
                 bitwidth = parsed['bitwidth']
 
+        resolved_logic = self._resolve_logic_type(k_value, logic_type)
         mod_value = k_value ** bitwidth
 
         # Create prompt: use natural_input when provided
@@ -423,7 +476,8 @@ class MVLGenerator:
         if not has_stream:
             # Fallback to non-streaming
             result = self.generate(k_value=k_value, bitwidth=bitwidth, language=language,
-                                   operations=operations, natural_input=natural_input)
+                                   operations=operations, natural_input=natural_input,
+                                   module_type=module_type, logic_type=logic_type)
             if result.get('success') and result.get('code'):
                 yield ("chunk", result['code'])
             yield ("done", result)
@@ -453,7 +507,8 @@ class MVLGenerator:
             # Validate generated code quality
             validation_warnings = self._validate_code(code, language, k_value, bitwidth, mod_value)
 
-            file_path = self._save_code(code, k_value, bitwidth, language, natural_input=natural_input)
+            file_path = self._save_code(code, k_value, bitwidth, language,
+                                        natural_input=natural_input, module_type=module_type)
 
             print(f"✅ Code saved: {file_path}")
 
@@ -466,6 +521,8 @@ class MVLGenerator:
                 'bitwidth': bitwidth,
                 'language': language,
                 'mod_value': mod_value,
+                'module_type': module_type,
+                'logic_type': resolved_logic,
                 'llm': self.llm_provider_name,
                 'validation_warnings': validation_warnings
             })
@@ -590,7 +647,7 @@ VHDL REQUIREMENTS:
 DESCRIPTION: {natural_input}
 
 CONTEXT PARAMETERS (these are MANDATORY constraints):
-- K-value: {k} (this is a base-{k} system, all operations are mod {k})
+- K-value: {k} (base-{k} system, all operations are modular arithmetic)
 - Trit width: {bits} (number of base-{k} digits per operand)
 - MOD value: {mod} ({k}^{bits}) — all arithmetic results must be taken mod {mod}
 - Binary bit width needed: {data_width} bits (ceil(log2({mod})))
@@ -623,7 +680,7 @@ Generate the complete {language.upper()} code now:
         """Create prompt for C code generation"""
         ops_str = ', '.join(operations)
 
-        prompt = f"""Generate a complete, compilable C program for a {bits}-trit ALU over GF({k}).
+        prompt = f"""Generate a complete, compilable C program for a {bits}-trit ALU operating in base-{k}.
 
 CRITICAL RULES:
 1. Output ONLY C code, no markdown, no explanations
@@ -665,7 +722,7 @@ Generate the complete C code now:
         """Create prompt for Python code generation"""
         ops_str = ', '.join(operations)
 
-        prompt = f"""Generate a complete Python program for a {bits}-trit ALU over GF({k}).
+        prompt = f"""Generate a complete Python program for a {bits}-trit ALU operating in base-{k}.
 
 CRITICAL RULES:
 1. Output ONLY Python code, no markdown, no explanations
@@ -707,7 +764,7 @@ Generate the complete Python code now:
         import math
         data_width = math.ceil(math.log2(mod)) if mod > 1 else 1
 
-        prompt = f"""Generate a complete Verilog module for a {bits}-trit ALU over GF({k}).
+        prompt = f"""Generate a complete Verilog module for a {bits}-trit ALU operating in base-{k}.
 
 CRITICAL RULES:
 1. Output ONLY Verilog code, no markdown, no explanations
@@ -760,7 +817,7 @@ Generate the complete Verilog module with testbench now:
         import math
         data_width = math.ceil(math.log2(mod)) if mod > 1 else 1
 
-        prompt = f"""Generate a complete VHDL design for a {bits}-trit ALU over GF({k}).
+        prompt = f"""Generate a complete VHDL design for a {bits}-trit ALU operating in base-{k}.
 
 CRITICAL RULES:
 1. Output ONLY VHDL code, no markdown, no explanations
@@ -1103,7 +1160,8 @@ Output the complete enhanced code now:"""
             name = name[:60].rstrip('_')
         return name.lower()
 
-    def _save_code(self, code: str, k: int, bits: int, language: str, natural_input: str = '') -> Path:
+    def _save_code(self, code: str, k: int, bits: int, language: str,
+                   natural_input: str = '', module_type: str = 'alu') -> Path:
         """Save generated code to file"""
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
 
@@ -1116,14 +1174,17 @@ Output the complete enhanced code now:"""
         }
         ext = extensions.get(language.lower(), 'txt')
 
+        # Module type label for filename
+        mod_label = module_type.replace('-', '_')
+
         # When natural_input is provided, use it for the filename
         if natural_input:
             safe_name = self._sanitize_filename(natural_input)
             filename = f"{safe_name}_{timestamp}.{ext}"
             description = natural_input
         else:
-            filename = f"mvl_alu_gf{k}_{bits}bit_{timestamp}.{ext}"
-            description = f"GF({k}) {bits}-trit"
+            filename = f"mvl_{mod_label}_k{k}_{bits}trit_{timestamp}.{ext}"
+            description = f"k={k} {bits}-trit {module_type.upper()}"
 
         file_path = self.output_dir / filename
 
