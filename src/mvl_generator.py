@@ -830,7 +830,9 @@ VHDL REQUIREMENTS:
 - Testbench must have at least 20 test vectors with assert/report statements
 - ⚠️ Each test MUST explicitly assign BOTH a AND b — even if same values as previous test.
   Changing only the opcode uses stale a/b and causes wrong results.
-- Testbench expected values (verified): ADD({mod-1},{mod-1})={2*(mod-1)%mod}, NEG(0)=0, NEG({mod-1})=1"""
+- Testbench expected values (verified — use these EXACT values, do NOT recompute):
+  ADD({mod-1},{mod-1})={2*(mod-1)%mod}, NEG(0)=0, NEG({mod-1})=1, NEG(10)={(mod-10)%mod}, NEG(1)={(mod-1)%mod}
+  ⚠️ NEG(10) = {mod} - 10 = {(mod-10)%mod}. Do NOT miscalculate this!"""
         }
 
         prompt = f"""Based on the following description, generate a complete implementation:
@@ -1070,6 +1072,11 @@ Generate the complete Verilog module with testbench now:
         inc_max = (max_val + 1) % mod
         dec_max = (max_val - 1 + mod) % mod
         neg_half = mod // 2
+        # Pre-compute small-value NEG results (LLMs often miscalculate these)
+        neg_10 = (mod - 10) % mod
+        neg_1 = (mod - 1) % mod
+        sub_10_20 = (10 - 20 + mod) % mod
+        mul_10_20 = (10 * 20) % mod
 
         # Pre-compute VHDL-safe literals (hex for values > 2^31-1)
         mod_val_lit = self._vhdl_unsigned_literal(mod, data_width + 1)
@@ -1081,6 +1088,9 @@ Generate the complete Verilog module with testbench now:
         mul_max_slv = self._vhdl_slv_literal(mul_max, data_width)
         neg_max_slv = self._vhdl_slv_literal(neg_max, data_width)
         dec_max_slv = self._vhdl_slv_literal(dec_max, data_width)
+        neg_10_slv = self._vhdl_slv_literal(neg_10, data_width)
+        neg_1_slv = self._vhdl_slv_literal(neg_1, data_width)
+        sub_10_20_slv = self._vhdl_slv_literal(sub_10_20, data_width)
 
         prompt = f"""Generate a complete VHDL design for a {bits}-trit ALU operating in base-{k}.
 
@@ -1209,7 +1219,7 @@ DEC SPECIAL CASE:
       v_carry := '0';
     end if;
 
-TESTBENCH EXPECTED VALUES (pre-computed, mathematically verified):
+TESTBENCH EXPECTED VALUES (pre-computed, mathematically verified — use these EXACT values):
   ADD(0, 0) = 0
   SUB(0, 0) = 0
   MUL(0, 0) = 0
@@ -1222,6 +1232,15 @@ TESTBENCH EXPECTED VALUES (pre-computed, mathematically verified):
   NEG({max_val}) = {neg_max}
   INC({max_val}) = {inc_max}
   DEC({max_val}) = {dec_max}
+  ⚠️ Small-value tests (DO NOT compute these yourself — use these pre-verified values):
+  ADD(10, 20) = 30
+  SUB(20, 10) = 10
+  SUB(10, 20) = {sub_10_20}
+  MUL(10, 20) = {mul_10_20}
+  NEG(10) = {neg_10}  ← this is {mod} - 10, NOT {mod} - 5 or any other value!
+  NEG(1) = {neg_1}
+  INC(10) = 11
+  DEC(10) = 9
 
 ⚠️ MANDATORY TESTBENCH REQUIREMENT:
 You MUST include a testbench entity mvl_alu_{k}_{bits}bit_tb with AT LEAST 20 assert/report test vectors. Code with fewer than 20 tests will be REJECTED.
@@ -1232,13 +1251,15 @@ Include:
 ⚠️ EACH test MUST explicitly assign BOTH a_sig AND b_sig before setting the opcode — even if the values
 are the same as the previous test! Do NOT rely on previous test values. Changing only the opcode will
 use stale a/b values and cause wrong results (e.g., SUB(10,20) gives a different result than SUB(20,10)).
+⚠️ CRITICAL: Use the pre-computed expected values above — do NOT compute NEG/SUB/DEC results yourself!
+  LLMs frequently miscalculate large subtractions. For example, NEG(10) = {neg_10}, NOT {neg_10 + 5} or {neg_10 - 5}.
 CORRECT pattern for EVERY test:
-  a_sig <= std_logic_vector(to_unsigned(VALUE_A, {data_width}));  -- use hex literal if VALUE_A > 2^31-1
+  a_sig <= std_logic_vector(to_unsigned(VALUE_A, {data_width}));
   b_sig <= std_logic_vector(to_unsigned(VALUE_B, {data_width}));
   opcode_sig <= "XXXX";
   wait for 10 ns;
   assert result_sig = std_logic_vector(to_unsigned(EXPECTED, {data_width})) report "Test N: ..." severity error;
-{"⚠️ INTEGER OVERFLOW WARNING: VHDL integer max = 2^31-1 = 2147483647." + chr(10) + "   Values > 2147483647 CANNOT use to_unsigned() — the integer argument overflows!" + chr(10) + "   For max_val = " + str(max_val) + ", use hex literal: " + max_val_slv + chr(10) + "   For DEC(0) = " + str((0-1+mod)%mod) + ", use: " + dec0_slv + chr(10) + "   For ADD(max,max) = " + str(add_max) + ", use: " + add_max_slv + chr(10) + "   For DEC(max) = " + str(dec_max) + ", use: " + dec_max_slv + chr(10) + "   For negative threshold " + str(neg_half) + ", use: " + neg_half_lit if mod > 2147483647 else ""}
+{"⚠️ INTEGER OVERFLOW WARNING: VHDL integer max = 2^31-1 = 2147483647." + chr(10) + "   ANY value > 2147483647 CANNOT use to_unsigned() — the integer argument overflows!" + chr(10) + "   This includes NEG results, SUB results where a < b, DEC(0), and max_val operands!" + chr(10) + "   Pre-computed hex literals (copy these EXACTLY):" + chr(10) + "   max_val " + str(max_val) + ": " + max_val_slv + chr(10) + "   DEC(0) = " + str((0-1+mod)%mod) + ": " + dec0_slv + chr(10) + "   ADD(max,max) = " + str(add_max) + ": " + add_max_slv + chr(10) + "   DEC(max) = " + str(dec_max) + ": " + dec_max_slv + chr(10) + "   NEG(10) = " + str(neg_10) + ": " + neg_10_slv + chr(10) + "   NEG(1) = " + str(neg_1) + ": " + neg_1_slv + chr(10) + "   SUB(10,20) = " + str(sub_10_20) + ": " + sub_10_20_slv + chr(10) + "   negative threshold " + str(neg_half) + ": " + neg_half_lit if mod > 2147483647 else ""}
 Format: report "Test N: OP A=X B=Y -> R=Z"
 
 Generate the complete VHDL code (entity + architecture + testbench) now:
