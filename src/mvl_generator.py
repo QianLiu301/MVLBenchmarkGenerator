@@ -375,13 +375,15 @@ class MVLGenerator:
   - ADD: (a + b) % {mod}
   - SUB: (a - b + {mod}) % {mod}
   - MUL: ({c_mul_type})(a) * b) % {mod}  — {c_mul_note}
-  - NEG: ({mod} - a) % {mod}
+  - NEG: ({mod} - a) % {mod}   ⚠️ The % {mod} is MANDATORY! NEG(0) must be 0, not {mod}.
   - INC: (a + 1) % {mod}   — adds exactly 1, NOT {k} or any other value
   - DEC: (a - 1 + {mod}) % {mod}   — subtracts exactly 1
 
   CARRY/FLAG DETECTION (must be checked BEFORE taking mod):
   - ADD carry: (a + b) >= {mod}
   - SUB borrow: a < b
+  - MUL carry: always 0 (no carry for multiplication)
+  - NEG carry: always 0
   - INC carry: a == {max_val}
   - DEC borrow: a == 0
   - Z (zero): result == 0
@@ -398,13 +400,15 @@ class MVLGenerator:
   - ADD: (a + b) % {mod}
   - SUB: (a - b + {mod}) % {mod}
   - MUL: ({c_mul_type})(a) * b) % {mod}  — {c_mul_note}
-  - NEG: ({mod} - a) % {mod}
+  - NEG: ({mod} - a) % {mod}   ⚠️ The % {mod} is MANDATORY! NEG(0) must be 0, not {mod}.
   - INC: (a + 1) % {mod}   — adds exactly 1, NOT {k} or any other value
   - DEC: (a - 1 + {mod}) % {mod}   — subtracts exactly 1
 
   CARRY/FLAG DETECTION (must be checked BEFORE taking mod):
   - ADD carry: (a + b) >= {mod}
   - SUB borrow: a < b
+  - MUL carry: always 0 (no carry for multiplication)
+  - NEG carry: always 0
   - INC carry: a == {max_val}
   - DEC borrow: a == 0
   - Z (zero): result == 0
@@ -689,6 +693,7 @@ REQUIRED STRUCTURE:
 - Result struct containing BOTH the uint64_t result value AND Flags (z, n, c)
 - alu_exec(a, b, op) function that RETURNS a struct with BOTH result AND flags
   ⚠️ The function MUST return the computed result — do NOT discard it as a local variable!
+- ⚠️ NEG MUST use (MOD - a) % MOD, NOT just (MOD - a). When a=0, (MOD-0)=MOD which is out of range!
 - main() with srand(time(NULL)) and at least 20 random test vectors
 - Use the result from the returned struct in printf, NOT a separately computed value
 - printf format: "Test %2d: %-3s A=%llu B=%llu -> R=%llu Z=%d N=%d C=%d\\n" """,
@@ -723,8 +728,11 @@ ARCHITECTURE REQUIREMENTS:
 - Use ONLY ONE always block — do NOT split into combinational + sequential
 - ALL reg declarations MUST be at module level, NOT inside always blocks or case statements
 - For MUL: declare temp as reg [{data_width * 2 - 1}:0] at MODULE LEVEL
-- Use BLOCKING assignment (=) for intermediate calculations inside always block,
-  then NON-BLOCKING (<=) for output ports. This avoids reading stale values.
+- Declare temp_result and temp_carry as reg at module level for intermediate calculations
+- Use BLOCKING assignment (=) for temp_result/temp_carry inside always block,
+  then NON-BLOCKING (<=) for ALL output ports (result, zero, negative, carry).
+  Do NOT mix: carry = ... (blocking) alongside result <= ... (non-blocking).
+- MUL carry = 0, NEG carry = 0 (these operations do not generate carry)
 TESTBENCH: Include a testbench module mvl_alu_{k}_{bits}bit_tb with at least 20 test vectors using $display.""",
 
             'vhdl': f"""Output ONLY VHDL code (NOT Verilog). Must be synthesizable and simulatable with GHDL.
@@ -752,9 +760,15 @@ VHDL REQUIREMENTS:
 {"⚠️ MOD value " + str(mod) + " EXCEEDS VHDL integer range (max 2^31-1)! MUST use unsigned constant:" + chr(10) + "   constant MOD_VAL : unsigned(" + str(data_width) + " downto 0) := to_unsigned(" + str(mod) + ", " + str(data_width+1) + ");" + chr(10) + "   Do NOT use integer type for MOD!" if mod > 2147483647 else "- MOD constant MUST be set to exactly " + str(mod) + " — do NOT use (others => '1') or any other value"}
 - Use unsigned type for ALL arithmetic, convert with unsigned() and std_logic_vector()
 - Use variables (not signals) inside process for intermediate computations
-- Do NOT use concurrent signal assignment syntax (when...else) inside a process — use if/else instead
+- ⚠️ ALL variable declarations MUST be in the process declarative region (between "process" and "begin").
+  Do NOT declare variables inside case/when branches — this is ILLEGAL in VHDL and will NOT compile!
+- Do NOT use "when...else" for variable assignment inside a process (VHDL-93 does not support it).
+  Use if/else instead: if cond then v := '1'; else v := '0'; end if;
+- NEVER compare unsigned with < 0 — unsigned is ALWAYS >= 0, the comparison is always false!
+  For SUB: compare operands FIRST (if unsigned(a) < unsigned(b) then ...) before subtraction.
+  For DEC(0): check if a = 0 FIRST, then assign MOD-1 directly instead of subtracting.
 - ADD/SUB: resize operands to {data_width+1} bits BEFORE adding (to detect carry)
-- MUL: use resize() for zero-extension to {data_width*2} bits. Do NOT use unsigned'(N downto M => '0') syntax.
+- MUL: use resize() for zero-extension to {data_width*2} bits. MUL carry = '0'. NEG carry = '0'.
 - NEG(0) must equal 0, NOT {mod}
 - Include BOTH entity/architecture AND a testbench entity mvl_alu_{k}_{bits}bit_tb
 - Testbench must have at least 20 test vectors with assert/report statements
@@ -837,9 +851,11 @@ REQUIRED STRUCTURE:
    ⚠️ alu_exec() MUST return a struct with both the result value AND the flags!
    Do NOT return only flags while discarding the result as a local variable.
 5. For MUL: use {c_mul_type} for intermediate product ({mod-1} * {mod-1} = {mul_product_max})
-6. alu_exec(a, b, op) function with switch-case
-7. op_name() function to get operation name string
-8. main() with srand() and AT LEAST 20 printf test lines — use the result FROM alu_exec()
+6. ⚠️ NEG: MUST use (MOD - a) % MOD, NOT just (MOD - a). When a=0, (MOD-0)=MOD which is NOT in range!
+   NEG(0) must equal 0. The % MOD is mandatory.
+7. alu_exec(a, b, op) function with switch-case
+8. op_name() function to get operation name string
+9. main() with srand() and AT LEAST 20 printf test lines — use the result FROM alu_exec()
 
 ⚠️ MANDATORY TEST REQUIREMENT:
 main() MUST include AT LEAST 20 test vectors using printf. Code with fewer than 20 tests will be REJECTED.
@@ -948,14 +964,22 @@ ARCHITECTURE REQUIREMENTS:
 - ⚠️ NON-BLOCKING ASSIGNMENT TIMING: Inside a clocked always block, non-blocking assignments (<=)
   update at the END of the time step. Reading a signal on the RHS after assigning it with <= gives
   the OLD value. To fix this, compute the result into a temporary reg using BLOCKING assignment (=),
-  then assign all outputs from that temporary:
+  then assign ALL outputs from those temporaries:
     reg [{data_width - 1}:0] temp_result;
+    reg temp_carry;
     always @(posedge clk) begin
       temp_result = (a + b) % {mod};  // BLOCKING: immediate update
+      temp_carry = (a + b) >= {mod};  // BLOCKING: immediate update
       result <= temp_result;           // NON-BLOCKING: output port
       zero <= (temp_result == 0);      // reads NEW value correctly
       negative <= (temp_result >= {mod // 2});
+      carry <= temp_carry;             // NON-BLOCKING: output port
     end
+  ⚠️ ALL output ports (result, zero, negative, carry) MUST use non-blocking (<=).
+  Use blocking (=) ONLY for temp_result/temp_carry intermediate calculations.
+  Do NOT mix: carry = ... (blocking) alongside result <= ... (non-blocking).
+- ⚠️ MUL CARRY: MUL does NOT generate carry. Set carry = 0 for MUL opcode.
+  NEG also does NOT generate carry. Set carry = 0 for NEG opcode.
 - Use 'output reg' for result/flags since they are assigned in always block
 
 ⚠️ MANDATORY TESTBENCH REQUIREMENT:
@@ -1026,30 +1050,89 @@ end entity mvl_alu_{k}_{bits}bit;
 VHDL ARCHITECTURE REQUIREMENTS:
 ⚠️ MOD constant MUST equal exactly {mod}. Do NOT use (others => '1') or any other value!
 {"⚠️ CRITICAL: " + str(mod) + " EXCEEDS the VHDL integer range (max 2^31-1 = 2147483647)!" + chr(10) + "   You MUST declare MOD_VAL as an unsigned constant, NOT integer:" + chr(10) + "   constant MOD_VAL : unsigned(" + str(data_width) + " downto 0) := to_unsigned(" + str(mod) + ", " + str(data_width + 1) + ");" + chr(10) + "   Do NOT write: constant MOD_VAL : integer := " + str(mod) + ";  -- THIS WILL FAIL!" if mod > 2147483647 else "   constant MOD_VAL : unsigned(" + str(data_width) + " downto 0) := to_unsigned(" + str(mod) + ", " + str(data_width + 1) + ");"}
+
+⚠️ VHDL VARIABLE DECLARATION RULES (CRITICAL — violations cause compilation failure):
+1. ALL variable declarations MUST be in the process DECLARATIVE REGION (between "process" and "begin").
+   Do NOT declare variables inside case/when branches or if/else blocks — this is ILLEGAL in VHDL!
+   CORRECT:
+     process(clk, rst)
+       variable v_result : unsigned({data_width - 1} downto 0);
+       variable sum_tmp  : unsigned({data_width} downto 0);
+       variable mul_tmp  : unsigned({data_width * 2 - 1} downto 0);
+       variable v_carry  : std_logic;
+     begin
+       -- use variables here in case/when branches
+   WRONG (will NOT compile):
+     when "0000" =>
+       variable sum_tmp : unsigned({data_width} downto 0);  -- ❌ ILLEGAL
+
+2. Do NOT use "when...else" syntax for variable assignment inside a process.
+   It is only valid in VHDL-2008 and GHDL defaults to VHDL-93.
+   WRONG:  v_carry := '1' when condition else '0';   -- ❌ VHDL-93 error
+   CORRECT:
+     if condition then
+       v_carry := '1';
+     else
+       v_carry := '0';
+     end if;
+
+3. NEVER compare unsigned with < 0. Unsigned types are ALWAYS >= 0 in VHDL.
+   The comparison "unsigned_var < 0" is ALWAYS false and is a logic bug!
+   For SUB underflow detection, compare the ORIGINAL operands BEFORE subtraction:
+   WRONG:  sub_tmp := unsigned(a) - unsigned(b); if sub_tmp < 0 then ...  -- ❌ always false
+   CORRECT:
+     if unsigned(a) < unsigned(b) then
+       sub_tmp := resize(unsigned(a), {data_width + 1}) + MOD_VAL - resize(unsigned(b), {data_width + 1});
+     else
+       sub_tmp := resize(unsigned(a), {data_width + 1}) - resize(unsigned(b), {data_width + 1});
+     end if;
+
 - Use variables (NOT signals) inside process for intermediate results — signals update one delta later
-- Do NOT use concurrent signal assignment syntax (when...else) inside a process — use if/else instead
 - Use unsigned type for ALL arithmetic, convert with unsigned() and std_logic_vector()
 
 ADDITION/SUBTRACTION WIDTH:
 - Two {data_width}-bit operands added can produce a ({data_width}+1)-bit result
 - You MUST resize operands to {data_width + 1} bits BEFORE adding:
-    variable sum_tmp : unsigned({data_width} downto 0);  -- {data_width + 1} bits
     sum_tmp := resize(unsigned(a), {data_width + 1}) + resize(unsigned(b), {data_width + 1});
     v_result := resize(sum_tmp mod MOD_VAL, {data_width});  -- truncate back to {data_width} bits
-- Carry flag: sum_tmp >= MOD_VAL (check BEFORE mod)
+- Carry flag: use if/else to check sum_tmp >= MOD_VAL (check BEFORE mod)
+
+SUBTRACTION:
+- Do NOT subtract then check < 0 — unsigned can never be < 0!
+- Compare operands FIRST, then compute:
+    if unsigned(a) < unsigned(b) then
+      sub_tmp := resize(unsigned(a), {data_width + 1}) + MOD_VAL - resize(unsigned(b), {data_width + 1});
+      v_carry := '1';
+    else
+      sub_tmp := resize(unsigned(a), {data_width + 1}) - resize(unsigned(b), {data_width + 1});
+      v_carry := '0';
+    end if;
+    v_result := resize(sub_tmp mod MOD_VAL, {data_width});
 
 MULTIPLICATION:
 - Intermediate variable needs {data_width * 2} bits
 - Correct zero-extension syntax using resize():
-    variable mul_tmp : unsigned({data_width * 2 - 1} downto 0);  -- {data_width * 2} bits
     mul_tmp := resize(unsigned(a), {data_width * 2}) * resize(unsigned(b), {data_width * 2});
     v_result := resize(mul_tmp mod MOD_VAL, {data_width});  -- truncate back to {data_width} bits
 - Do NOT use: unsigned'({data_width * 2 - 1} downto {data_width} => '0') — this is INVALID syntax
 - The resize() function from IEEE.NUMERIC_STD handles zero-extension correctly
+- MUL carry is always '0'
 
 NEG SPECIAL CASE:
 - NEG(0) = 0, NOT {mod}. Because ({mod} - 0) mod {mod} = 0.
-- You MUST handle a=0 explicitly or let the mod operation handle it.
+- Use: v_result := resize((MOD_VAL - resize(unsigned(a), {data_width + 1})) mod MOD_VAL, {data_width});
+- NEG carry is always '0'
+
+DEC SPECIAL CASE:
+- DEC(0) = {mod - 1}. Do NOT use unsigned subtraction then check < 0!
+- Use:
+    if unsigned(a) = 0 then
+      v_result := resize(MOD_VAL - 1, {data_width});
+      v_carry := '1';
+    else
+      v_result := resize(resize(unsigned(a), {data_width + 1}) - 1, {data_width});
+      v_carry := '0';
+    end if;
 
 TESTBENCH EXPECTED VALUES (pre-computed, mathematically verified):
   ADD(0, 0) = 0
