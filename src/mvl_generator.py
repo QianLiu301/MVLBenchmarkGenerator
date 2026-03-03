@@ -762,17 +762,23 @@ VHDL REQUIREMENTS:
 - Use variables (not signals) inside process for intermediate computations
 - ⚠️ ALL variable declarations MUST be in the process declarative region (between "process" and "begin").
   Do NOT declare variables inside case/when branches — this is ILLEGAL in VHDL and will NOT compile!
-- Do NOT use "when...else" for variable assignment inside a process (VHDL-93 does not support it).
-  Use if/else instead: if cond then v := '1'; else v := '0'; end if;
+- ⚠️ Do NOT use "when...else" for ANY variable assignment inside a process (VHDL-93 does not support it).
+  This applies to carry, zero, AND negative flags too!
+  WRONG: v_carry := '1' when cond else '0';  WRONG: v_zero := '1' when v_result = 0 else '0';
+  CORRECT: if cond then v_carry := '1'; else v_carry := '0'; end if;
 - NEVER compare unsigned with < 0 — unsigned is ALWAYS >= 0, the comparison is always false!
   For SUB: compare operands FIRST (if unsigned(a) < unsigned(b) then ...) before subtraction.
   For DEC(0): check if a = 0 FIRST, then assign MOD-1 directly instead of subtracting.
 - ADD/SUB: resize operands to {data_width+1} bits BEFORE adding (to detect carry)
-- MUL: use resize() for zero-extension to {data_width*2} bits. MUL carry = '0'. NEG carry = '0'.
+- ⚠️ MUL: use unsigned(a) * unsigned(b) DIRECTLY — do NOT resize before multiplying!
+  VHDL "*" returns length = left'length + right'length, so {data_width}*{data_width} = {data_width*2} bits automatically.
+  resize before multiply would give {data_width*4} bits causing a length mismatch error.
+- MUL carry = '0'. NEG carry = '0'.
 - NEG(0) must equal 0, NOT {mod}
 - Include BOTH entity/architecture AND a testbench entity mvl_alu_{k}_{bits}bit_tb
 - Testbench must have at least 20 test vectors with assert/report statements
-- Each test MUST explicitly assign BOTH a AND b (do NOT rely on previous test values)
+- ⚠️ Each test MUST explicitly assign BOTH a AND b — even if same values as previous test.
+  Changing only the opcode uses stale a/b and causes wrong results.
 - Testbench expected values (verified): ADD({mod-1},{mod-1})={2*(mod-1)%mod}, NEG(0)=0, NEG({mod-1})=1"""
         }
 
@@ -1066,15 +1072,16 @@ VHDL ARCHITECTURE REQUIREMENTS:
      when "0000" =>
        variable sum_tmp : unsigned({data_width} downto 0);  -- ❌ ILLEGAL
 
-2. Do NOT use "when...else" syntax for variable assignment inside a process.
+2. Do NOT use "when...else" syntax for variable assignment inside a process — ANYWHERE!
    It is only valid in VHDL-2008 and GHDL defaults to VHDL-93.
-   WRONG:  v_carry := '1' when condition else '0';   -- ❌ VHDL-93 error
-   CORRECT:
-     if condition then
-       v_carry := '1';
-     else
-       v_carry := '0';
-     end if;
+   This applies to ALL variable assignments including carry, zero, and negative flags.
+   WRONG:  v_carry := '1' when condition else '0';          -- ❌ VHDL-93 error
+   WRONG:  v_zero := '1' when v_result = 0 else '0';       -- ❌ VHDL-93 error
+   WRONG:  v_negative := '1' when v_result >= X else '0';   -- ❌ VHDL-93 error
+   CORRECT (use if/else for EVERY conditional variable assignment):
+     if sum_tmp >= MOD_VAL then v_carry := '1'; else v_carry := '0'; end if;
+     if v_result = to_unsigned(0, {data_width}) then v_zero := '1'; else v_zero := '0'; end if;
+     if v_result >= to_unsigned({mod // 2}, {data_width}) then v_negative := '1'; else v_negative := '0'; end if;
 
 3. NEVER compare unsigned with < 0. Unsigned types are ALWAYS >= 0 in VHDL.
    The comparison "unsigned_var < 0" is ALWAYS false and is a logic bug!
@@ -1110,12 +1117,16 @@ SUBTRACTION:
     v_result := resize(sub_tmp mod MOD_VAL, {data_width});
 
 MULTIPLICATION:
-- Intermediate variable needs {data_width * 2} bits
-- Correct zero-extension syntax using resize():
-    mul_tmp := resize(unsigned(a), {data_width * 2}) * resize(unsigned(b), {data_width * 2});
-    v_result := resize(mul_tmp mod MOD_VAL, {data_width});  -- truncate back to {data_width} bits
-- Do NOT use: unsigned'({data_width * 2 - 1} downto {data_width} => '0') — this is INVALID syntax
-- The resize() function from IEEE.NUMERIC_STD handles zero-extension correctly
+- In VHDL numeric_std, the "*" operator returns length = left'length + right'length.
+  So unsigned(a) * unsigned(b) with {data_width}-bit operands returns {data_width * 2}-bit result automatically.
+- ⚠️ Do NOT resize operands before multiplying! resize(a,{data_width*2}) * resize(b,{data_width*2}) returns {data_width*4} bits,
+  which causes a length mismatch when assigned to a {data_width*2}-bit variable!
+- CORRECT multiplication:
+    variable mul_tmp : unsigned({data_width * 2 - 1} downto 0);  -- {data_width * 2} bits
+    mul_tmp := unsigned(a) * unsigned(b);  -- {data_width}*2 = {data_width * 2} bits, matches mul_tmp
+    v_result := resize(mul_tmp mod MOD_VAL, {data_width});
+- WRONG (will cause bound check failure):
+    mul_tmp := resize(unsigned(a), {data_width * 2}) * resize(unsigned(b), {data_width * 2});  -- ❌ returns {data_width * 4} bits!
 - MUL carry is always '0'
 
 NEG SPECIAL CASE:
@@ -1154,8 +1165,15 @@ Include:
 - 6 edge-case tests (one per opcode with a=0, b=0)
 - 6 max-value tests using the pre-computed expected values above
 - 8+ additional tests with various values
-⚠️ EACH test MUST explicitly assign BOTH a AND b before setting the opcode. Do NOT rely on previous test values.
-Each test: assign a_sig, b_sig, opcode_sig → wait for 10 ns → assert/report result
+⚠️ EACH test MUST explicitly assign BOTH a_sig AND b_sig before setting the opcode — even if the values
+are the same as the previous test! Do NOT rely on previous test values. Changing only the opcode will
+use stale a/b values and cause wrong results (e.g., SUB(10,20) gives a different result than SUB(20,10)).
+CORRECT pattern for EVERY test:
+  a_sig <= std_logic_vector(to_unsigned(VALUE_A, {data_width}));
+  b_sig <= std_logic_vector(to_unsigned(VALUE_B, {data_width}));
+  opcode_sig <= "XXXX";
+  wait for 10 ns;
+  assert result_sig = std_logic_vector(to_unsigned(EXPECTED, {data_width})) report "Test N: ..." severity error;
 Format: report "Test N: OP A=X B=Y -> R=Z"
 
 Generate the complete VHDL code (entity + architecture + testbench) now:
