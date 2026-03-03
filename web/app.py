@@ -92,7 +92,6 @@ def api_generate():
         module_type = data.get('module_type', 'alu')
         k_value = int(data.get('k_value', 3))
         bitwidth = int(data.get('bitwidth', 8))
-        logic_type = data.get('logic_type', 'auto')
         language = data.get('language', 'c')
         operations = data.get('operations', ['ADD', 'SUB', 'MUL', 'NEG', 'INC', 'DEC'])
         natural_input = data.get('natural_input', '').strip()
@@ -116,7 +115,7 @@ def api_generate():
         print(f"   Requested provider: {llm_provider}")
         print(f"   Requested model: {model or '(default)'}")
         print(f"   Module type: {module_type}")
-        print(f"   Parameters: k={k_value}, bitwidth={bitwidth}, logic_type={logic_type}, lang={language}")
+        print(f"   Parameters: k={k_value}, bitwidth={bitwidth}, lang={language}")
         if natural_input:
             print(f"   Natural input: {natural_input}")
 
@@ -138,8 +137,7 @@ def api_generate():
             language=language,
             operations=operations,
             natural_input=natural_input,
-            module_type=module_type,
-            logic_type=logic_type
+            module_type=module_type
         )
 
         return jsonify(result)
@@ -163,7 +161,6 @@ def api_generate_stream():
         module_type = data.get('module_type', 'alu')
         k_value = int(data.get('k_value', 3))
         bitwidth = int(data.get('bitwidth', 8))
-        logic_type = data.get('logic_type', 'auto')
         language = data.get('language', 'c')
         operations = data.get('operations', ['ADD', 'SUB', 'MUL', 'NEG', 'INC', 'DEC'])
         natural_input = data.get('natural_input', '').strip()
@@ -179,7 +176,7 @@ def api_generate_stream():
         print(f"\n📋 [API] Stream generate request:")
         print(f"   Requested provider: {llm_provider}")
         print(f"   Module type: {module_type}")
-        print(f"   Parameters: k={k_value}, bitwidth={bitwidth}, logic_type={logic_type}, lang={language}")
+        print(f"   Parameters: k={k_value}, bitwidth={bitwidth}, lang={language}")
         if natural_input:
             print(f"   Natural input: {natural_input}")
 
@@ -197,8 +194,7 @@ def api_generate_stream():
                     language=language,
                     operations=operations,
                     natural_input=natural_input,
-                    module_type=module_type,
-                    logic_type=logic_type
+                    module_type=module_type
                 ):
                     if event_type == "chunk":
                         yield f"data: {json.dumps({'type': 'chunk', 'content': event_data})}\n\n"
