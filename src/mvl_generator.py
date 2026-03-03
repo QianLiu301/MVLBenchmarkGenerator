@@ -720,10 +720,11 @@ module mvl_alu_{k}_{bits}bit (
     output reg carry
 );
 ARCHITECTURE REQUIREMENTS:
-- Use ONLY ONE always block for result/flag computation — do NOT split into combinational + sequential
-- For MUL: temp register must be [{data_width * 2 - 1}:0] to hold the full product
-- Declare 'result' as 'output reg' since it is assigned inside always block
-- Use 'reg' type for signals assigned in procedural blocks
+- Use ONLY ONE always block — do NOT split into combinational + sequential
+- ALL reg declarations MUST be at module level, NOT inside always blocks or case statements
+- For MUL: declare temp as reg [{data_width * 2 - 1}:0] at MODULE LEVEL
+- Use BLOCKING assignment (=) for intermediate calculations inside always block,
+  then NON-BLOCKING (<=) for output ports. This avoids reading stale values.
 TESTBENCH: Include a testbench module mvl_alu_{k}_{bits}bit_tb with at least 20 test vectors using $display.""",
 
             'vhdl': f"""Output ONLY VHDL code (NOT Verilog). Must be synthesizable and simulatable with GHDL.
@@ -748,14 +749,17 @@ entity mvl_alu_{k}_{bits}bit is
     );
 end entity;
 VHDL REQUIREMENTS:
-- MOD constant MUST be set to exactly {mod} — do NOT use (others => '1') or any other value
-- Use unsigned type for arithmetic, convert with unsigned() and std_logic_vector()
-- For MUL: intermediate result needs {data_width * 2} bits (two {data_width}-bit operands multiplied)
+{"⚠️ MOD value " + str(mod) + " EXCEEDS VHDL integer range (max 2^31-1)! MUST use unsigned constant:" + chr(10) + "   constant MOD_VAL : unsigned(" + str(data_width) + " downto 0) := to_unsigned(" + str(mod) + ", " + str(data_width+1) + ");" + chr(10) + "   Do NOT use integer type for MOD!" if mod > 2147483647 else "- MOD constant MUST be set to exactly " + str(mod) + " — do NOT use (others => '1') or any other value"}
+- Use unsigned type for ALL arithmetic, convert with unsigned() and std_logic_vector()
 - Use variables (not signals) inside process for intermediate computations
 - Do NOT use concurrent signal assignment syntax (when...else) inside a process — use if/else instead
+- ADD/SUB: resize operands to {data_width+1} bits BEFORE adding (to detect carry)
+- MUL: use resize() for zero-extension to {data_width*2} bits. Do NOT use unsigned'(N downto M => '0') syntax.
+- NEG(0) must equal 0, NOT {mod}
 - Include BOTH entity/architecture AND a testbench entity mvl_alu_{k}_{bits}bit_tb
 - Testbench must have at least 20 test vectors with assert/report statements
-- Testbench assertions must use CORRECT expected values (verify by hand: e.g. ADD({mod-1},{mod-1})={2*(mod-1)%mod})"""
+- Each test MUST explicitly assign BOTH a AND b (do NOT rely on previous test values)
+- Testbench expected values (verified): ADD({mod-1},{mod-1})={2*(mod-1)%mod}, NEG(0)=0, NEG({mod-1})=1"""
         }
 
         prompt = f"""Based on the following description, generate a complete implementation:
@@ -938,7 +942,20 @@ ARCHITECTURE REQUIREMENTS:
 ⚠️ Use ONLY ONE always block — do NOT split outputs into combinational + sequential blocks!
   Having result/zero/negative/carry driven by two always blocks creates a MULTI-DRIVER conflict.
   Use a single always @(posedge clk) block that handles reset and computation.
-- For MUL: declare temp as reg [{data_width * 2 - 1}:0] to hold the full {data_width}-bit × {data_width}-bit product
+- ALL reg declarations MUST be at module level. Do NOT declare reg inside always blocks or case statements!
+  Example: declare "reg [{data_width * 2 - 1}:0] temp;" at module level, NOT inside a case branch.
+- For MUL: declare temp as reg [{data_width * 2 - 1}:0] at module level to hold the full product.
+- ⚠️ NON-BLOCKING ASSIGNMENT TIMING: Inside a clocked always block, non-blocking assignments (<=)
+  update at the END of the time step. Reading a signal on the RHS after assigning it with <= gives
+  the OLD value. To fix this, compute the result into a temporary reg using BLOCKING assignment (=),
+  then assign all outputs from that temporary:
+    reg [{data_width - 1}:0] temp_result;
+    always @(posedge clk) begin
+      temp_result = (a + b) % {mod};  // BLOCKING: immediate update
+      result <= temp_result;           // NON-BLOCKING: output port
+      zero <= (temp_result == 0);      // reads NEW value correctly
+      negative <= (temp_result >= {mod // 2});
+    end
 - Use 'output reg' for result/flags since they are assigned in always block
 
 ⚠️ MANDATORY TESTBENCH REQUIREMENT:
@@ -1008,13 +1025,39 @@ end entity mvl_alu_{k}_{bits}bit;
 
 VHDL ARCHITECTURE REQUIREMENTS:
 ⚠️ MOD constant MUST equal exactly {mod}. Do NOT use (others => '1') or any other value!
-   constant MOD_VAL : integer := {mod};  -- or use natural/unsigned as appropriate
+{"⚠️ CRITICAL: " + str(mod) + " EXCEEDS the VHDL integer range (max 2^31-1 = 2147483647)!" + chr(10) + "   You MUST declare MOD_VAL as an unsigned constant, NOT integer:" + chr(10) + "   constant MOD_VAL : unsigned(" + str(data_width) + " downto 0) := to_unsigned(" + str(mod) + ", " + str(data_width + 1) + ");" + chr(10) + "   Do NOT write: constant MOD_VAL : integer := " + str(mod) + ";  -- THIS WILL FAIL!" if mod > 2147483647 else "   constant MOD_VAL : unsigned(" + str(data_width) + " downto 0) := to_unsigned(" + str(mod) + ", " + str(data_width + 1) + ");"}
 - Use variables (NOT signals) inside process for intermediate results — signals update one delta later
 - Do NOT use concurrent signal assignment syntax (when...else) inside a process — use if/else instead
-- For MUL: intermediate variable needs {data_width * 2} bits
-- Use unsigned type for arithmetic, convert with unsigned() and std_logic_vector()
+- Use unsigned type for ALL arithmetic, convert with unsigned() and std_logic_vector()
+
+ADDITION/SUBTRACTION WIDTH:
+- Two {data_width}-bit operands added can produce a ({data_width}+1)-bit result
+- You MUST resize operands to {data_width + 1} bits BEFORE adding:
+    variable sum_tmp : unsigned({data_width} downto 0);  -- {data_width + 1} bits
+    sum_tmp := resize(unsigned(a), {data_width + 1}) + resize(unsigned(b), {data_width + 1});
+    v_result := resize(sum_tmp mod MOD_VAL, {data_width});  -- truncate back to {data_width} bits
+- Carry flag: sum_tmp >= MOD_VAL (check BEFORE mod)
+
+MULTIPLICATION:
+- Intermediate variable needs {data_width * 2} bits
+- Correct zero-extension syntax using resize():
+    variable mul_tmp : unsigned({data_width * 2 - 1} downto 0);  -- {data_width * 2} bits
+    mul_tmp := resize(unsigned(a), {data_width * 2}) * resize(unsigned(b), {data_width * 2});
+    v_result := resize(mul_tmp mod MOD_VAL, {data_width});  -- truncate back to {data_width} bits
+- Do NOT use: unsigned'({data_width * 2 - 1} downto {data_width} => '0') — this is INVALID syntax
+- The resize() function from IEEE.NUMERIC_STD handles zero-extension correctly
+
+NEG SPECIAL CASE:
+- NEG(0) = 0, NOT {mod}. Because ({mod} - 0) mod {mod} = 0.
+- You MUST handle a=0 explicitly or let the mod operation handle it.
 
 TESTBENCH EXPECTED VALUES (pre-computed, mathematically verified):
+  ADD(0, 0) = 0
+  SUB(0, 0) = 0
+  MUL(0, 0) = 0
+  NEG(0) = 0
+  INC(0) = 1
+  DEC(0) = {(0 - 1 + mod) % mod}
   ADD({max_val}, {max_val}) = {add_max}
   SUB({max_val}, {max_val}) = 0
   MUL({max_val}, {max_val}) = {mul_max}
@@ -1028,7 +1071,8 @@ Include:
 - 6 edge-case tests (one per opcode with a=0, b=0)
 - 6 max-value tests using the pre-computed expected values above
 - 8+ additional tests with various values
-Each test: assign a, b, opcode → wait for 10 ns → assert/report result
+⚠️ EACH test MUST explicitly assign BOTH a AND b before setting the opcode. Do NOT rely on previous test values.
+Each test: assign a_sig, b_sig, opcode_sig → wait for 10 ns → assert/report result
 Format: report "Test N: OP A=X B=Y -> R=Z"
 
 Generate the complete VHDL code (entity + architecture + testbench) now:
