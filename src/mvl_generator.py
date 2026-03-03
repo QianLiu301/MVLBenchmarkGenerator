@@ -14,6 +14,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
 
+try:
+    from src.galois_field import resolve_logic_type, format_table_for_prompt
+except ImportError:
+    from galois_field import resolve_logic_type, format_table_for_prompt
+
 
 class MVLGenerator:
     """Generate MVL ALU code using LLM"""
@@ -248,42 +253,125 @@ class MVLGenerator:
         return result
 
     @staticmethod
-    def _resolve_logic_type(k_value: int) -> str:
-        """Determine the Galois Field notation for the given K-value.
+    def _resolve_logic_type(k_value: int) -> Dict:
+        """Determine the algebraic structure for the given K-value.
 
-        Returns a human-readable string like 'GF(3)', 'GF(2^2)', or 'mod 6'.
+        Returns a dict with 'display', 'category', 'p', 'n', 'tables'.
+        See galois_field.resolve_logic_type() for details.
         """
-        def _is_prime(n):
-            if n < 2: return False
-            if n < 4: return True
-            if n % 2 == 0 or n % 3 == 0: return False
-            i = 5
-            while i * i <= n:
-                if n % i == 0 or n % (i + 2) == 0: return False
-                i += 6
-            return True
+        return resolve_logic_type(k_value)
 
-        def _prime_power(n):
-            if n < 2: return None
-            if _is_prime(n): return (n, 1)
-            for p in range(2, int(n**0.5) + 1):
-                if not _is_prime(p): continue
-                val, m = p, 1
-                while val < n:
-                    val *= p
-                    m += 1
-                if val == n:
-                    return (p, m)
-            return None
+    @staticmethod
+    def _build_algebra_section(k: int, bits: int, mod: int, logic_info: Dict, language: str = 'c') -> str:
+        """Build the algebra-specific operation description for LLM prompts.
 
-        pp = _prime_power(k_value)
-        if pp:
-            p, m = pp
-            if m == 1:
-                return f'GF({p})'
-            else:
-                return f'GF({p}^{m})'
-        return f'mod {k_value}'
+        Returns a prompt section that describes how operations should be implemented
+        based on the algebraic structure (prime field, extension field, or integer ring).
+        """
+        category = logic_info['category']
+        display = logic_info['display']
+
+        if category == 'extension_field' and logic_info.get('tables'):
+            # GF(p^n) extension field — digit-wise operations using pre-computed tables
+            p = logic_info['p']
+            n = logic_info['n']
+            tables = logic_info['tables']
+            add_tbl = tables['add_table']
+            mul_tbl = tables['mul_table']
+            irr_poly = tables['irreducible_poly']
+
+            # Format tables as 2D array literals
+            add_literal = "[\n" + ",\n".join(
+                "    [" + ", ".join(str(v) for v in row) + "]" for row in add_tbl
+            ) + "\n  ]"
+            mul_literal = "[\n" + ",\n".join(
+                "    [" + ", ".join(str(v) for v in row) + "]" for row in mul_tbl
+            ) + "\n  ]"
+
+            # Format readable tables
+            add_readable = format_table_for_prompt(add_tbl, 'GF_ADD', k)
+            mul_readable = format_table_for_prompt(mul_tbl, 'GF_MUL', k)
+
+            section = f"""ALGEBRAIC STRUCTURE: {display} — Extension Field
+  Irreducible polynomial: {irr_poly} over GF({p})
+  ⚠️  This is NOT simple modular arithmetic. GF({k}) ≠ Z/{k}Z.
+
+  Each operand is a {bits}-digit number in base {k}. Each digit is an element of GF({k}).
+  Operations are performed DIGIT-BY-DIGIT using the field tables below — NO carry propagation between digits.
+
+  GF({k}) Addition Table (pre-computed, mathematically verified):
+  {add_readable}
+
+  GF({k}) Multiplication Table (pre-computed, mathematically verified):
+  {mul_readable}
+
+  The tables as arrays (copy directly into your code):
+  GF_ADD = {add_literal}
+  GF_MUL = {mul_literal}
+
+  OPERATION DEFINITIONS (all digit-wise, using the tables above):
+  - ADD: for each digit position i: result_digit[i] = GF_ADD[a_digit[i]][b_digit[i]]
+  - SUB: for each digit position i: find x such that GF_ADD[x][b_digit[i]] == a_digit[i] (additive inverse then add)
+  - MUL: convolution of digits using GF_MUL, then reduce each digit mod the field.
+         For simplicity, implement as schoolbook polynomial multiplication:
+         for i in range({bits}): for j in range({bits}):
+           if i+j < {bits}: result[i+j] = GF_ADD[result[i+j]][GF_MUL[a[i]][b[j]]]
+  - NEG: for each digit position i: result_digit[i] = ({p} - a_digit[i]) % {p}
+         (additive inverse in GF({p}), since digit addition is mod {p})
+  - INC: add 1 to the least significant digit using GF_ADD: result_digit[0] = GF_ADD[a_digit[0]][1], rest unchanged
+  - DEC: subtract 1 from the least significant digit: find additive inverse of 1, then GF_ADD
+
+  HELPER FUNCTIONS NEEDED:
+  1. to_digits(value, k={k}, width={bits}): convert integer to array of {bits} base-{k} digits
+  2. from_digits(digits, k={k}): convert digit array back to integer
+  3. gf_add_digits(a_digits, b_digits): digit-wise addition using GF_ADD table
+  4. gf_mul_digits(a_digits, b_digits): polynomial multiplication using GF_MUL table
+
+  FLAGS:
+  - Z (zero): result == 0
+  - N (negative): always false (field elements are non-negative)
+  - C (carry): not applicable for field arithmetic, always false"""
+
+        elif category == 'prime_field':
+            # GF(p) — standard modular integer arithmetic
+            p = logic_info['p']
+            section = f"""ALGEBRAIC STRUCTURE: {display} — Prime Field
+  All operations use standard modular integer arithmetic mod {mod} (= {k}^{bits}).
+  This is equivalent to base-{k} integer arithmetic with carry propagation.
+
+  OPERATION DEFINITIONS (all results mod {mod}):
+  - ADD: (a + b) % {mod}
+  - SUB: (a - b + {mod}) % {mod}
+  - MUL: (a * b) % {mod}  — use 64-bit intermediate to avoid overflow
+  - NEG: ({mod} - a) % {mod}
+  - INC: (a + 1) % {mod}
+  - DEC: (a - 1 + {mod}) % {mod}
+
+  FLAGS:
+  - Z (zero): result == 0
+  - N (negative): result has high bit set (result >= {mod // 2})
+  - C (carry): operation produced overflow/underflow before mod"""
+
+        else:
+            # Z/kZ — integer ring, same as prime field arithmetic
+            section = f"""ALGEBRAIC STRUCTURE: Z/{k}Z — Integer Ring (modular arithmetic)
+  All operations use standard modular integer arithmetic mod {mod} (= {k}^{bits}).
+  Note: not all elements have multiplicative inverses (non-field).
+
+  OPERATION DEFINITIONS (all results mod {mod}):
+  - ADD: (a + b) % {mod}
+  - SUB: (a - b + {mod}) % {mod}
+  - MUL: (a * b) % {mod}  — use 64-bit intermediate to avoid overflow
+  - NEG: ({mod} - a) % {mod}
+  - INC: (a + 1) % {mod}
+  - DEC: (a - 1 + {mod}) % {mod}
+
+  FLAGS:
+  - Z (zero): result == 0
+  - N (negative): result has high bit set (result >= {mod // 2})
+  - C (carry): operation produced overflow/underflow before mod"""
+
+        return section
 
     def generate(
             self,
@@ -319,7 +407,8 @@ class MVLGenerator:
             if parsed['bitwidth'] is not None:
                 bitwidth = parsed['bitwidth']
 
-        resolved_logic = self._resolve_logic_type(k_value)
+        logic_info = self._resolve_logic_type(k_value)
+        resolved_logic = logic_info['display']
         module_label = module_type.upper().replace('-', ' ')
 
         actual_model = getattr(self.llm, 'model', 'N/A') if self.llm else 'N/A'
@@ -330,6 +419,7 @@ class MVLGenerator:
             print(f"   Natural input: {natural_input}")
         print(f"   Module type: {module_label}")
         print(f"   K-value: {k_value} ({resolved_logic})")
+        print(f"   Logic type: {logic_info['category']}")
         print(f"   Bitwidth: {bitwidth}-trit")
         print(f"   Language: {language.upper()}")
         print(f"   Operations: {', '.join(operations)}")
@@ -342,15 +432,15 @@ class MVLGenerator:
 
         # Create prompt: use natural_input when provided, otherwise use structured prompt
         if natural_input:
-            prompt = self._create_natural_prompt(natural_input, k_value, bitwidth, mod_value, operations, language)
+            prompt = self._create_natural_prompt(natural_input, k_value, bitwidth, mod_value, operations, language, logic_info)
         elif language.lower() == 'c':
-            prompt = self._create_c_prompt(k_value, bitwidth, mod_value, operations)
+            prompt = self._create_c_prompt(k_value, bitwidth, mod_value, operations, logic_info)
         elif language.lower() == 'python':
-            prompt = self._create_python_prompt(k_value, bitwidth, mod_value, operations)
+            prompt = self._create_python_prompt(k_value, bitwidth, mod_value, operations, logic_info)
         elif language.lower() == 'verilog':
-            prompt = self._create_verilog_prompt(k_value, bitwidth, mod_value, operations)
+            prompt = self._create_verilog_prompt(k_value, bitwidth, mod_value, operations, logic_info)
         elif language.lower() == 'vhdl':
-            prompt = self._create_vhdl_prompt(k_value, bitwidth, mod_value, operations)
+            prompt = self._create_vhdl_prompt(k_value, bitwidth, mod_value, operations, logic_info)
         else:
             return {'success': False, 'error': f'Unsupported language: {language}'}
 
@@ -445,20 +535,21 @@ class MVLGenerator:
             if parsed['bitwidth'] is not None:
                 bitwidth = parsed['bitwidth']
 
-        resolved_logic = self._resolve_logic_type(k_value)
+        logic_info = self._resolve_logic_type(k_value)
+        resolved_logic = logic_info['display']
         mod_value = k_value ** bitwidth
 
         # Create prompt: use natural_input when provided
         if natural_input:
-            prompt = self._create_natural_prompt(natural_input, k_value, bitwidth, mod_value, operations, language)
+            prompt = self._create_natural_prompt(natural_input, k_value, bitwidth, mod_value, operations, language, logic_info)
         elif language.lower() == 'c':
-            prompt = self._create_c_prompt(k_value, bitwidth, mod_value, operations)
+            prompt = self._create_c_prompt(k_value, bitwidth, mod_value, operations, logic_info)
         elif language.lower() == 'python':
-            prompt = self._create_python_prompt(k_value, bitwidth, mod_value, operations)
+            prompt = self._create_python_prompt(k_value, bitwidth, mod_value, operations, logic_info)
         elif language.lower() == 'verilog':
-            prompt = self._create_verilog_prompt(k_value, bitwidth, mod_value, operations)
+            prompt = self._create_verilog_prompt(k_value, bitwidth, mod_value, operations, logic_info)
         elif language.lower() == 'vhdl':
-            prompt = self._create_vhdl_prompt(k_value, bitwidth, mod_value, operations)
+            prompt = self._create_vhdl_prompt(k_value, bitwidth, mod_value, operations, logic_info)
         else:
             yield ("error", f'Unsupported language: {language}')
             return
@@ -530,11 +621,15 @@ class MVLGenerator:
             yield ("error", str(e))
 
     def _create_natural_prompt(self, natural_input: str, k: int, bits: int, mod: int,
-                                 operations: List[str], language: str) -> str:
+                                 operations: List[str], language: str, logic_info: Dict = None) -> str:
         """Create prompt based on natural language input, supplemented with structured parameters."""
         import math
         ops_str = ', '.join(operations)
         data_width = math.ceil(math.log2(mod)) if mod > 1 else 1
+        if logic_info is None:
+            logic_info = self._resolve_logic_type(k)
+
+        algebra_section = self._build_algebra_section(k, bits, mod, logic_info, language)
 
         lang_instructions = {
             'c': f"""Output ONLY C code. Must be complete and compilable with gcc -lm.
@@ -548,14 +643,7 @@ REQUIRED STRUCTURE:
 - Flags struct with z (zero), n (negative), c (carry) fields
 - alu_exec(a, b, op) function returning result and flags via struct
 - main() with srand(time(NULL)) and at least 20 random test vectors
-- printf format: "Test %2d: %-3s A=%u B=%u -> R=%u Z=%d N=%d C=%d\\n"
-OPERATION DEFINITIONS (all results mod {mod}):
-- ADD: (a + b) % {mod}
-- SUB: (a - b + {mod}) % {mod}
-- MUL: ((uint64_t)a * b) % {mod}
-- NEG: ({mod} - a) % {mod}
-- INC: (a + 1) % {mod}   -- INCREMENT BY 1, NOT BY {k}^({bits}-1)
-- DEC: (a - 1 + {mod}) % {mod}   -- DECREMENT BY 1""",
+- printf format: "Test %2d: %-3s A=%u B=%u -> R=%u Z=%d N=%d C=%d\\n" """,
 
             'python': f"""Output ONLY Python code. Must be complete and runnable with python3.
 REQUIRED STRUCTURE:
@@ -564,17 +652,9 @@ REQUIRED STRUCTURE:
 - class or dataclass for Flags(z, n, c)
 - alu_exec(a, b, op) function returning (result, flags)
 - if __name__ == "__main__": block with at least 20 random test vectors
-OPERATION DEFINITIONS (all results mod {mod}):
-- ADD: (a + b) % {mod}
-- SUB: (a - b) % {mod}   -- Python handles negative mod correctly
-- MUL: (a * b) % {mod}
-- NEG: (-a) % {mod}
-- INC: (a + 1) % {mod}   -- INCREMENT BY 1, NOT by {k}**({bits}-1)
-- DEC: (a - 1) % {mod}   -- DECREMENT BY 1
 COMMON MISTAKES TO AVOID:
 - INC adds exactly 1, not '{k}' or '{k}^{bits-1}' or any other value
-- DEC subtracts exactly 1, not '{k}' or '{k}^{bits-1}' or any other value
-- When using trit string representation, "{'0' * (bits-1)}1" represents 1, NOT "1{'0' * (bits-1)}" """,
+- DEC subtracts exactly 1, not '{k}' or '{k}^{bits-1}' or any other value""",
 
             'verilog': f"""Output ONLY Verilog code (NOT VHDL). Must be synthesizable and simulatable with iverilog.
 CRITICAL BIT WIDTH: Each operand needs {data_width} bits to represent values 0 to {mod-1}.
@@ -591,13 +671,6 @@ module mvl_alu_{k}_{bits}bit (
     output reg negative,
     output reg carry
 );
-OPCODES:
-- 4'b0000: ADD = (a + b) % {mod}
-- 4'b0001: SUB = (a - b + {mod}) % {mod}
-- 4'b0010: MUL = (a * b) % {mod}
-- 4'b0011: NEG = ({mod} - a) % {mod}
-- 4'b0100: INC = (a + 1) % {mod}
-- 4'b0101: DEC = (a - 1 + {mod}) % {mod}
 TESTBENCH: Include a testbench module mvl_alu_{k}_{bits}bit_tb with at least 20 test vectors using $display.
 VERILOG REQUIREMENTS:
 - Declare 'result' as 'output reg' since it is assigned inside always block
@@ -624,13 +697,6 @@ entity mvl_alu_{k}_{bits}bit is
         carry   : out std_logic
     );
 end entity;
-OPCODES (all results mod {mod}):
-- "0000": ADD = (a + b) mod {mod}
-- "0001": SUB = (a - b + {mod}) mod {mod}
-- "0010": MUL = (a * b) mod {mod}  -- use integer or wider signal to avoid overflow
-- "0011": NEG = ({mod} - a) mod {mod}
-- "0100": INC = (a + 1) mod {mod}
-- "0101": DEC = (a - 1 + {mod}) mod {mod}
 VHDL REQUIREMENTS:
 - Use unsigned type for arithmetic, convert with unsigned() and std_logic_vector()
 - For MUL: intermediate result needs {data_width * 2} bits (two {data_width}-bit operands multiplied)
@@ -643,13 +709,15 @@ VHDL REQUIREMENTS:
 DESCRIPTION: {natural_input}
 
 CONTEXT PARAMETERS (these are MANDATORY constraints):
-- K-value: {k} (base-{k} system, all operations are modular arithmetic)
+- K-value: {k} (base-{k} system)
 - Trit width: {bits} (number of base-{k} digits per operand)
-- MOD value: {mod} ({k}^{bits}) — all arithmetic results must be taken mod {mod}
+- MOD value: {mod} ({k}^{bits})
 - Binary bit width needed: {data_width} bits (ceil(log2({mod})))
 - Operand range: 0 to {mod - 1}
 - Operations: {ops_str}
 - Output language: {language.upper()}
+
+{algebra_section}
 
 LANGUAGE-SPECIFIC INSTRUCTIONS:
 {lang_instructions.get(language.lower(), lang_instructions['c'])}
@@ -672,9 +740,13 @@ Generate the complete {language.upper()} code now:
 """
         return prompt
 
-    def _create_c_prompt(self, k: int, bits: int, mod: int, operations: List[str]) -> str:
+    def _create_c_prompt(self, k: int, bits: int, mod: int, operations: List[str], logic_info: Dict = None) -> str:
         """Create prompt for C code generation"""
         ops_str = ', '.join(operations)
+        if logic_info is None:
+            logic_info = self._resolve_logic_type(k)
+
+        algebra_section = self._build_algebra_section(k, bits, mod, logic_info, 'c')
 
         prompt = f"""Generate a complete, compilable C program for a {bits}-trit ALU operating in base-{k}.
 
@@ -684,21 +756,22 @@ CRITICAL RULES:
 3. main() MUST contain AT LEAST 20 test vectors — this is a HARD REQUIREMENT
 
 SPECIFICATIONS:
-- K-value: {k} (operations are mod {k})
+- K-value: {k}
 - Bitwidth: {bits} trits
 - MOD value: {mod} ({k}^{bits})
 - Operations: {ops_str}
 - Each operand range: 0 to {mod - 1}
+
+{algebra_section}
 
 REQUIRED STRUCTURE:
 1. #include statements (stdio.h, stdlib.h, stdint.h, stdbool.h, time.h)
 2. Operation enum (OP_ADD=0, OP_SUB=1, OP_MUL=2, OP_NEG=3, OP_INC=4, OP_DEC=5)
 3. #define MOD {mod}
 4. Flags struct (Z: zero, N: negative, C: carry)
-5. mod{mod}() helper function for negative number handling
-6. alu_exec() function with switch-case for operations
-7. op_name() function to get operation name string
-8. main() with srand() and AT LEAST 20 printf test lines
+5. alu_exec() function with switch-case for operations
+6. op_name() function to get operation name string
+7. main() with srand() and AT LEAST 20 printf test lines
 
 ⚠️ MANDATORY TEST REQUIREMENT:
 main() MUST include AT LEAST 20 test vectors using printf. Code with fewer than 20 tests will be REJECTED.
@@ -714,9 +787,13 @@ Generate the complete C code now:
 """
         return prompt
 
-    def _create_python_prompt(self, k: int, bits: int, mod: int, operations: List[str]) -> str:
+    def _create_python_prompt(self, k: int, bits: int, mod: int, operations: List[str], logic_info: Dict = None) -> str:
         """Create prompt for Python code generation"""
         ops_str = ', '.join(operations)
+        if logic_info is None:
+            logic_info = self._resolve_logic_type(k)
+
+        algebra_section = self._build_algebra_section(k, bits, mod, logic_info, 'python')
 
         prompt = f"""Generate a complete Python program for a {bits}-trit ALU operating in base-{k}.
 
@@ -731,6 +808,8 @@ SPECIFICATIONS:
 - MOD value: {mod} ({k}^{bits})
 - Operations: {ops_str}
 - Each operand range: 0 to {mod - 1}
+
+{algebra_section}
 
 REQUIRED STRUCTURE:
 1. imports (random, dataclasses or namedtuple)
@@ -752,26 +831,31 @@ Generate the complete Python code now:
 """
         return prompt
 
-    def _create_verilog_prompt(self, k: int, bits: int, mod: int, operations: List[str]) -> str:
+    def _create_verilog_prompt(self, k: int, bits: int, mod: int, operations: List[str], logic_info: Dict = None) -> str:
         """Create prompt for Verilog code generation"""
         ops_str = ', '.join(operations)
+        if logic_info is None:
+            logic_info = self._resolve_logic_type(k)
 
         # Calculate bit width needed to represent mod value
         import math
         data_width = math.ceil(math.log2(mod)) if mod > 1 else 1
+
+        algebra_section = self._build_algebra_section(k, bits, mod, logic_info, 'verilog')
 
         prompt = f"""Generate a complete Verilog module for a {bits}-trit ALU operating in base-{k}.
 
 CRITICAL RULES:
 1. Output ONLY Verilog code, no markdown, no explanations
 2. Must be synthesizable and simulatable with iverilog
-3. Use mod {mod} for all arithmetic operations
 
 SPECIFICATIONS:
 - K-value: {k}
 - Bitwidth: {bits} trits (need {data_width} bits to represent 0 to {mod - 1})
 - MOD value: {mod} ({k}^{bits})
 - Operations: {ops_str}
+
+{algebra_section}
 
 MODULE INTERFACE:
 module mvl_alu_{k}_{bits}bit (
@@ -786,14 +870,6 @@ module mvl_alu_{k}_{bits}bit (
     output reg carry
 );
 
-OPCODES:
-- 4'b0000: ADD (a + b) mod {mod}
-- 4'b0001: SUB (a - b) mod {mod}
-- 4'b0010: MUL (a * b) mod {mod}
-- 4'b0011: NEG (-a) mod {mod}
-- 4'b0100: INC (a + 1) mod {mod}
-- 4'b0101: DEC (a - 1) mod {mod}
-
 ⚠️ MANDATORY TESTBENCH REQUIREMENT:
 You MUST include a testbench module mvl_alu_{k}_{bits}bit_tb with AT LEAST 20 $display test vectors. Code with fewer than 20 tests will be REJECTED.
 Include:
@@ -806,26 +882,31 @@ Generate the complete Verilog module with testbench now:
 """
         return prompt
 
-    def _create_vhdl_prompt(self, k: int, bits: int, mod: int, operations: List[str]) -> str:
+    def _create_vhdl_prompt(self, k: int, bits: int, mod: int, operations: List[str], logic_info: Dict = None) -> str:
         """Create prompt for VHDL code generation"""
         ops_str = ', '.join(operations)
+        if logic_info is None:
+            logic_info = self._resolve_logic_type(k)
 
         import math
         data_width = math.ceil(math.log2(mod)) if mod > 1 else 1
+
+        algebra_section = self._build_algebra_section(k, bits, mod, logic_info, 'vhdl')
 
         prompt = f"""Generate a complete VHDL design for a {bits}-trit ALU operating in base-{k}.
 
 CRITICAL RULES:
 1. Output ONLY VHDL code, no markdown, no explanations
 2. Must be synthesizable and simulatable with GHDL
-3. Use mod {mod} for all arithmetic operations
-4. Include BOTH the entity/architecture AND a testbench
+3. Include BOTH the entity/architecture AND a testbench
 
 SPECIFICATIONS:
 - K-value: {k}
 - Bitwidth: {bits} trits (need {data_width} bits to represent 0 to {mod - 1})
 - MOD value: {mod} ({k}^{bits})
 - Operations: {ops_str}
+
+{algebra_section}
 
 ENTITY INTERFACE:
 library IEEE;
@@ -845,14 +926,6 @@ entity mvl_alu_{k}_{bits}bit is
         carry   : out std_logic
     );
 end entity mvl_alu_{k}_{bits}bit;
-
-OPCODES:
-- "0000": ADD (a + b) mod {mod}
-- "0001": SUB (a - b) mod {mod}
-- "0010": MUL (a * b) mod {mod}
-- "0011": NEG (-a) mod {mod}
-- "0100": INC (a + 1) mod {mod}
-- "0101": DEC (a - 1) mod {mod}
 
 ⚠️ MANDATORY TESTBENCH REQUIREMENT:
 You MUST include a testbench entity mvl_alu_{k}_{bits}bit_tb with AT LEAST 20 assert/report test vectors. Code with fewer than 20 tests will be REJECTED.
