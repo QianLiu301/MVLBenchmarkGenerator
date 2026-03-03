@@ -1133,6 +1133,10 @@ VHDL ARCHITECTURE REQUIREMENTS:
    constant MOD_VAL : unsigned({data_width} downto 0) := {mod_val_lit};
 {"⚠️ CRITICAL: " + str(mod) + " EXCEEDS the VHDL integer range (max 2^31-1 = 2147483647)!" + chr(10) + "   Do NOT use to_unsigned(" + str(mod) + ", ...) — the integer argument overflows!" + chr(10) + "   Do NOT use integer type for MOD_VAL!" + chr(10) + "   The hex literal above is the ONLY correct way to declare this constant." if mod > 2147483647 else ""}
 
+⚠️ VHDL COMMENT SYNTAX: Comments MUST use "--", NOT "!" or "//" or "#".
+   WRONG: !this is a comment    WRONG: //this is a comment
+   CORRECT: -- this is a comment
+
 ⚠️ VHDL VARIABLE DECLARATION RULES (CRITICAL — violations cause compilation failure):
 1. ALL variable declarations MUST be in the process DECLARATIVE REGION (between "process" and "begin").
    Do NOT declare variables inside case/when branches or if/else blocks — this is ILLEGAL in VHDL!
@@ -1210,6 +1214,18 @@ NEG SPECIAL CASE:
 - Use: v_result := resize((MOD_VAL - resize(unsigned(a), {data_width + 1})) mod MOD_VAL, {data_width});
 - NEG carry is always '0'
 
+INC SPECIAL CASE:
+- INC(max_val) = 0 with carry. max_val = {max_val} which exceeds VHDL integer range!
+- ⚠️ Do NOT use to_unsigned({max_val}, {data_width}) — integer overflow! Use resize(MOD_VAL - 1, {data_width}).
+- Copy this EXACT code (do NOT modify it):
+    if unsigned(a) = resize(MOD_VAL - 1, {data_width}) then
+      v_result := to_unsigned(0, {data_width});
+      v_carry := '1';
+    else
+      v_result := unsigned(a) + 1;
+      v_carry := '0';
+    end if;
+
 DEC SPECIAL CASE:
 - DEC(0) = {mod - 1}. Do NOT use unsigned subtraction then check < 0!
 - ⚠️ Do NOT use (others => '0') in comparisons — VHDL cannot infer its length! Use "= 0" instead.
@@ -1247,6 +1263,10 @@ TESTBENCH EXPECTED VALUES (pre-computed, mathematically verified — use these E
   DEC(10) = 9
 
 ⚠️ MANDATORY TESTBENCH REQUIREMENT:
+The testbench MUST begin with library/use declarations:
+  library IEEE;
+  use IEEE.STD_LOGIC_1164.ALL;
+  use IEEE.NUMERIC_STD.ALL;
 You MUST include a testbench entity mvl_alu_{k}_{bits}bit_tb with AT LEAST 20 assert/report test vectors. Code with fewer than 20 tests will be REJECTED.
 Include:
 - 6 edge-case tests (one per opcode with a=0, b=0)
@@ -1257,13 +1277,7 @@ are the same as the previous test! Do NOT rely on previous test values. Changing
 use stale a/b values and cause wrong results (e.g., SUB(10,20) gives a different result than SUB(20,10)).
 ⚠️ CRITICAL: Use the pre-computed expected values above — do NOT compute NEG/SUB/DEC results yourself!
   LLMs frequently miscalculate large subtractions. For example, NEG(10) = {neg_10}, NOT {neg_10 + 5} or {neg_10 - 5}.
-CORRECT pattern for EVERY test:
-  a_sig <= std_logic_vector(to_unsigned(VALUE_A, {data_width}));
-  b_sig <= std_logic_vector(to_unsigned(VALUE_B, {data_width}));
-  opcode_sig <= "XXXX";
-  wait for 10 ns;
-  assert result_sig = std_logic_vector(to_unsigned(EXPECTED, {data_width})) report "Test N: ..." severity error;
-{"⚠️ INTEGER OVERFLOW WARNING: VHDL integer max = 2^31-1 = 2147483647." + chr(10) + "   ANY value > 2147483647 CANNOT use to_unsigned() — the integer argument overflows!" + chr(10) + "   This includes NEG results, SUB results where a < b, DEC(0), and max_val operands!" + chr(10) + "   Pre-computed hex literals (copy these EXACTLY):" + chr(10) + "   max_val " + str(max_val) + ": " + max_val_slv + chr(10) + "   DEC(0) = " + str((0-1+mod)%mod) + ": " + dec0_slv + chr(10) + "   ADD(max,max) = " + str(add_max) + ": " + add_max_slv + chr(10) + "   DEC(max) = " + str(dec_max) + ": " + dec_max_slv + chr(10) + "   NEG(10) = " + str(neg_10) + ": " + neg_10_slv + chr(10) + "   NEG(1) = " + str(neg_1) + ": " + neg_1_slv + chr(10) + "   SUB(10,20) = " + str(sub_10_20) + ": " + sub_10_20_slv + chr(10) + "   negative threshold " + str(neg_half) + ": " + neg_half_lit if mod > 2147483647 else ""}
+{"CORRECT testbench pattern — for SMALL values (≤ 2147483647), use to_unsigned:" + chr(10) + "  a_sig <= std_logic_vector(to_unsigned(VALUE_A, " + str(data_width) + "));" + chr(10) + "  assert result_sig = std_logic_vector(to_unsigned(EXPECTED, " + str(data_width) + ")) report ...;" + chr(10) + "CORRECT testbench pattern — for LARGE values (> 2147483647), use hex literal DIRECTLY:" + chr(10) + "  a_sig <= " + max_val_slv + ";  -- max_val = " + str(max_val) + chr(10) + "  assert result_sig = " + neg_10_slv + " report ...;  -- NEG(10) = " + str(neg_10) + chr(10) + "⚠️ CRITICAL: to_unsigned(N, " + str(data_width) + ") WILL FAIL for ANY N > 2147483647!" + chr(10) + "   This includes: max_val, NEG(small), SUB(small,larger), DEC(0), ADD(max,max), MUL(max,max)." + chr(10) + "   You MUST use hex for ALL of these — there is NO exception!" + chr(10) + "   Pre-computed hex literals (copy-paste these EXACTLY):" + chr(10) + "   max_val " + str(max_val) + ": " + max_val_slv + chr(10) + "   DEC(0) = " + str((0-1+mod)%mod) + ": " + dec0_slv + chr(10) + "   ADD(max,max) = " + str(add_max) + ": " + add_max_slv + chr(10) + "   MUL(max,max) = " + str(mul_max) + ": " + mul_max_slv + chr(10) + "   DEC(max) = " + str(dec_max) + ": " + dec_max_slv + chr(10) + "   NEG(max) = " + str(neg_max) + ": " + neg_max_slv + chr(10) + "   NEG(10) = " + str(neg_10) + ": " + neg_10_slv + chr(10) + "   NEG(1) = " + str(neg_1) + ": " + neg_1_slv + chr(10) + "   SUB(10,20) = " + str(sub_10_20) + ": " + sub_10_20_slv if mod > 2147483647 else "CORRECT pattern for EVERY test:" + chr(10) + "  a_sig <= std_logic_vector(to_unsigned(VALUE_A, " + str(data_width) + "));" + chr(10) + "  b_sig <= std_logic_vector(to_unsigned(VALUE_B, " + str(data_width) + "));" + chr(10) + "  opcode_sig <= " + '"' + "XXXX" + '"' + ";" + chr(10) + "  wait for 10 ns;" + chr(10) + "  assert result_sig = std_logic_vector(to_unsigned(EXPECTED, " + str(data_width) + ")) report " + '"' + "Test N: ..." + '"' + " severity error;"}
 Format: report "Test N: OP A=X B=Y -> R=Z"
 
 Generate the complete VHDL code (entity + architecture + testbench) now:
