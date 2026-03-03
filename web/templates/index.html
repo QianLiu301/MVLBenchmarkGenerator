@@ -986,10 +986,9 @@
                 </div>
                 <div class="form-group">
                     <label>Logic Type</label>
-                    <div class="checkbox-group" id="logic-type-group">
-                        <label class="checkbox-item selected" data-value="GF(3)">
-                            <input type="checkbox" value="GF(3)" checked> GF(3) — prime field
-                        </label>
+                    <div>
+                        <input type="text" id="logic-type-display" value="GF(3) — prime field" readonly
+                               style="width:100%; padding:12px 14px; background:var(--bg-white); border:1.5px solid var(--border); border-radius:var(--radius); color:var(--text-primary); font-size:0.9rem; font-family:inherit; cursor:default;">
                     </div>
                     <div class="hint">Algebraic structure determined by K-Value</div>
                 </div>
@@ -1595,28 +1594,23 @@
 
         function updateLogicType() {
             const k = getEffectiveKValue();
-            const group = document.getElementById('logic-type-group');
+            const display = document.getElementById('logic-type-display');
 
             if (isNaN(k) || k < 2) {
-                group.innerHTML = '<span class="hint" style="margin:0;">Select a K-Value first</span>';
+                display.value = '';
                 return;
             }
 
             const pp = getPrimePower(k);
-            let label, desc;
             if (pp) {
-                label = pp.m === 1 ? `GF(${pp.p})` : `GF(${pp.p}${toSuperscript(pp.m)})`;
-                desc = pp.m === 1 ? 'prime field' : 'extension field';
+                const label = pp.m === 1 ? `GF(${pp.p})` : `GF(${pp.p}${toSuperscript(pp.m)})`;
+                const desc = pp.m === 1 ? 'prime field' : 'extension field';
+                display.value = `${label} — ${desc}`;
+                display.style.color = 'var(--text-primary)';
             } else {
-                label = `mod ${k}`;
-                desc = 'no Galois Field';
+                display.value = `mod ${k} — no Galois Field`;
+                display.style.color = '#b45309';
             }
-
-            group.innerHTML = `
-                <label class="checkbox-item selected" data-value="${label}">
-                    <input type="checkbox" value="${label}" checked> ${label} — ${desc}
-                </label>
-            `;
         }
 
         // Update Logic Type when custom K-Value input changes
