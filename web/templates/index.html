@@ -961,11 +961,11 @@
                         <input type="number" id="k-value-custom" min="2" max="16" step="1" placeholder="Enter 2-16">
                         <div class="validation-hint" id="k-value-hint"></div>
                     </div>
-                    <div class="hint" id="k-value-gf-hint">GF(3) — prime field, mod 3 arithmetic</div>
+                    <div class="hint">Number of logic values per digit</div>
                 </div>
             </div>
 
-            <!-- Row 2: Bitwidth -->
+            <!-- Row 2: Bitwidth and Logic Type -->
             <div class="form-row">
                 <div class="form-group">
                     <label>Bitwidth (Trits)</label>
@@ -983,6 +983,15 @@
                         <div class="validation-hint" id="bitwidth-hint"></div>
                     </div>
                     <div class="hint">Number of digits in each operand</div>
+                </div>
+                <div class="form-group">
+                    <label>Logic Type</label>
+                    <div class="checkbox-group" id="logic-type-group">
+                        <label class="checkbox-item selected" data-value="GF(3)">
+                            <input type="checkbox" value="GF(3)" checked> GF(3) — prime field
+                        </label>
+                    </div>
+                    <div class="hint">Algebraic structure determined by K-Value</div>
                 </div>
             </div>
 
@@ -1551,11 +1560,11 @@
             } else {
                 row.style.display = 'none';
             }
-            updateKValueHint();
+            updateLogicType();
         }
 
         // ============================================================
-        // K-Value GF Hint — show Galois Field info below K-Value
+        // Logic Type — auto-populate pill based on K-Value
         // ============================================================
         function isPrime(n) {
             if (n < 2) return false;
@@ -1584,31 +1593,35 @@
             return String(n).split('').map(c => sup[c] || c).join('');
         }
 
-        function updateKValueHint() {
+        function updateLogicType() {
             const k = getEffectiveKValue();
-            const hint = document.getElementById('k-value-gf-hint');
+            const group = document.getElementById('logic-type-group');
 
             if (isNaN(k) || k < 2) {
-                hint.textContent = '';
-                hint.style.color = '';
+                group.innerHTML = '<span class="hint" style="margin:0;">Select a K-Value first</span>';
                 return;
             }
 
             const pp = getPrimePower(k);
+            let label, desc;
             if (pp) {
-                const label = pp.m === 1 ? `GF(${pp.p})` : `GF(${pp.p}${toSuperscript(pp.m)})`;
-                const desc = pp.m === 1 ? 'prime field' : 'extension field';
-                hint.textContent = `${label} — ${desc}, mod ${k} arithmetic`;
-                hint.style.color = '';
+                label = pp.m === 1 ? `GF(${pp.p})` : `GF(${pp.p}${toSuperscript(pp.m)})`;
+                desc = pp.m === 1 ? 'prime field' : 'extension field';
             } else {
-                hint.textContent = `mod ${k} arithmetic — no Galois Field exists for k=${k}`;
-                hint.style.color = '#b45309';
+                label = `mod ${k}`;
+                desc = 'no Galois Field';
             }
+
+            group.innerHTML = `
+                <label class="checkbox-item selected" data-value="${label}">
+                    <input type="checkbox" value="${label}" checked> ${label} — ${desc}
+                </label>
+            `;
         }
 
-        // Update GF hint when custom K-Value input changes
+        // Update Logic Type when custom K-Value input changes
         document.getElementById('k-value-custom').addEventListener('input', function() {
-            updateKValueHint();
+            updateLogicType();
         });
 
         // Get the effective value (dropdown or custom input)
