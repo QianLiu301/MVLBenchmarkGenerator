@@ -961,11 +961,11 @@
                         <input type="number" id="k-value-custom" min="2" max="16" step="1" placeholder="Enter 2-16">
                         <div class="validation-hint" id="k-value-hint"></div>
                     </div>
-                    <div class="hint">Number of distinct logic values in the system</div>
+                    <div class="hint" id="k-value-gf-hint">GF(3) — prime field, mod 3 arithmetic</div>
                 </div>
             </div>
 
-            <!-- Row 2: Bitwidth and Logic Type -->
+            <!-- Row 2: Bitwidth -->
             <div class="form-row">
                 <div class="form-group">
                     <label>Bitwidth (Trits)</label>
@@ -983,15 +983,6 @@
                         <div class="validation-hint" id="bitwidth-hint"></div>
                     </div>
                     <div class="hint">Number of digits in each operand</div>
-                </div>
-                <div class="form-group">
-                    <label>Logic Type <span style="font-weight: 400; color: var(--text-muted); font-size: 0.75rem;">— Optional</span></label>
-                    <div class="select-wrapper">
-                        <select id="logic-type">
-                            <option value="auto" selected>Auto</option>
-                        </select>
-                    </div>
-                    <div class="hint" id="logic-type-hint">Auto → GF(3) — prime field, mod 3 arithmetic</div>
                 </div>
             </div>
 
@@ -1448,7 +1439,7 @@
             checkTools();
             setupCheckboxes();
             onLlmProviderChange();
-            updateLogicTypeOptions();
+            updateKValueHint();
         });
 
         function setupCheckboxes() {
@@ -1560,11 +1551,11 @@
             } else {
                 row.style.display = 'none';
             }
-            updateLogicTypeOptions();
+            updateKValueHint();
         }
 
         // ============================================================
-        // Logic Type (Galois Field) — auto-populated based on K-Value
+        // K-Value GF Hint — show Galois Field info below K-Value
         // ============================================================
         function isPrime(n) {
             if (n < 2) return false;
@@ -1588,50 +1579,36 @@
             return null;
         }
 
-        function gfLabel(pp) {
-            if (!pp) return null;
-            if (pp.m === 1) return `GF(${pp.p})`;
-            return `GF(${pp.p}\u00B2${pp.m > 2 ? '\u00B3'.replace('\u00B3', superscript(pp.m)) : ''})`.replace(
-                `GF(${pp.p}\u00B2${pp.m > 2 ? '\u00B3'.replace('\u00B3', superscript(pp.m)) : ''})`,
-                `GF(${pp.p}${toSuperscript(pp.m)})`
-            );
-        }
-
         function toSuperscript(n) {
             const sup = { '0':'⁰','1':'¹','2':'²','3':'³','4':'⁴','5':'⁵','6':'⁶','7':'⁷','8':'⁸','9':'⁹' };
             return String(n).split('').map(c => sup[c] || c).join('');
         }
 
-        function updateLogicTypeOptions() {
+        function updateKValueHint() {
             const k = getEffectiveKValue();
-            const sel = document.getElementById('logic-type');
-            const hint = document.getElementById('logic-type-hint');
+            const hint = document.getElementById('k-value-gf-hint');
 
             if (isNaN(k) || k < 2) {
-                sel.innerHTML = '<option value="auto" selected>Auto</option>';
                 hint.textContent = '';
+                hint.style.color = '';
                 return;
             }
 
             const pp = getPrimePower(k);
-            sel.innerHTML = '';
-
             if (pp) {
                 const label = pp.m === 1 ? `GF(${pp.p})` : `GF(${pp.p}${toSuperscript(pp.m)})`;
                 const desc = pp.m === 1 ? 'prime field' : 'extension field';
-                sel.innerHTML = `<option value="auto" selected>Auto</option>` +
-                                `<option value="gf">${label}</option>`;
-                hint.textContent = `Auto → ${label} — ${desc}, mod ${k} arithmetic`;
+                hint.textContent = `${label} — ${desc}, mod ${k} arithmetic`;
+                hint.style.color = '';
             } else {
-                sel.innerHTML = `<option value="auto" selected>Auto</option>`;
-                hint.textContent = `Auto → mod ${k} — no Galois Field exists for k=${k}`;
+                hint.textContent = `mod ${k} arithmetic — no Galois Field exists for k=${k}`;
                 hint.style.color = '#b45309';
             }
         }
 
-        // Update Logic Type when custom K-Value input changes
+        // Update GF hint when custom K-Value input changes
         document.getElementById('k-value-custom').addEventListener('input', function() {
-            updateLogicTypeOptions();
+            updateKValueHint();
         });
 
         // Get the effective value (dropdown or custom input)
@@ -1809,7 +1786,6 @@
             const moduleType = document.getElementById('module-type').value;
             const kValue = getEffectiveKValue();
             const bitwidth = getEffectiveBitwidth();
-            const logicType = document.getElementById('logic-type').value;
             const languages = getSelectedItems('language-group');
             const operations = getSelectedItems('operations-group');
             const naturalInput = document.getElementById('natural-input').value.trim();
@@ -1865,7 +1841,6 @@
                 module_type: moduleType,
                 k_value: effectiveK,
                 bitwidth: effectiveBits,
-                logic_type: logicType,
                 operations: operations,
                 natural_input: naturalInput,
                 stream: streamOutput

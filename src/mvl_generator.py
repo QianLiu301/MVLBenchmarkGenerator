@@ -248,8 +248,8 @@ class MVLGenerator:
         return result
 
     @staticmethod
-    def _resolve_logic_type(k_value: int, logic_type: str = 'auto') -> str:
-        """Resolve 'auto' logic type to the appropriate Galois Field notation.
+    def _resolve_logic_type(k_value: int) -> str:
+        """Determine the Galois Field notation for the given K-value.
 
         Returns a human-readable string like 'GF(3)', 'GF(2^2)', or 'mod 6'.
         """
@@ -292,8 +292,7 @@ class MVLGenerator:
             language: str = 'c',
             operations: List[str] = None,
             natural_input: str = '',
-            module_type: str = 'alu',
-            logic_type: str = 'auto'
+            module_type: str = 'alu'
     ) -> Dict:
         """
         Generate MVL code for the specified module type.
@@ -305,7 +304,6 @@ class MVLGenerator:
             operations: List of operations to include
             natural_input: Natural language description (takes priority for prompt/naming when provided)
             module_type: Hardware module type ('alu', 'counter', 'register', 'cpu-risc-v')
-            logic_type: Logic type / Galois Field ('auto' or specific GF)
 
         Returns:
             Dict with generation results
@@ -321,7 +319,7 @@ class MVLGenerator:
             if parsed['bitwidth'] is not None:
                 bitwidth = parsed['bitwidth']
 
-        resolved_logic = self._resolve_logic_type(k_value, logic_type)
+        resolved_logic = self._resolve_logic_type(k_value)
         module_label = module_type.upper().replace('-', ' ')
 
         actual_model = getattr(self.llm, 'model', 'N/A') if self.llm else 'N/A'
@@ -331,8 +329,7 @@ class MVLGenerator:
         if natural_input:
             print(f"   Natural input: {natural_input}")
         print(f"   Module type: {module_label}")
-        print(f"   K-value: {k_value}")
-        print(f"   Logic type: {resolved_logic}")
+        print(f"   K-value: {k_value} ({resolved_logic})")
         print(f"   Bitwidth: {bitwidth}-trit")
         print(f"   Language: {language.upper()}")
         print(f"   Operations: {', '.join(operations)}")
@@ -426,8 +423,7 @@ class MVLGenerator:
             language: str = 'c',
             operations: List[str] = None,
             natural_input: str = '',
-            module_type: str = 'alu',
-            logic_type: str = 'auto'
+            module_type: str = 'alu'
     ):
         """
         Generate MVL code with streaming output.
@@ -449,7 +445,7 @@ class MVLGenerator:
             if parsed['bitwidth'] is not None:
                 bitwidth = parsed['bitwidth']
 
-        resolved_logic = self._resolve_logic_type(k_value, logic_type)
+        resolved_logic = self._resolve_logic_type(k_value)
         mod_value = k_value ** bitwidth
 
         # Create prompt: use natural_input when provided
@@ -477,7 +473,7 @@ class MVLGenerator:
             # Fallback to non-streaming
             result = self.generate(k_value=k_value, bitwidth=bitwidth, language=language,
                                    operations=operations, natural_input=natural_input,
-                                   module_type=module_type, logic_type=logic_type)
+                                   module_type=module_type)
             if result.get('success') and result.get('code'):
                 yield ("chunk", result['code'])
             yield ("done", result)
