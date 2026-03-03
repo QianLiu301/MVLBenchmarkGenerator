@@ -820,6 +820,8 @@ VHDL REQUIREMENTS:
 - NEVER compare unsigned with < 0 — unsigned is ALWAYS >= 0, the comparison is always false!
   For SUB: compare operands FIRST (if unsigned(a) < unsigned(b) then ...) before subtraction.
   For DEC(0): check if a = 0 FIRST, then assign MOD-1 directly instead of subtracting.
+- ⚠️ Do NOT use (others => '0') in comparisons — VHDL cannot infer its length. Use "= 0" instead.
+- ⚠️ MOD_VAL is {data_width+1} bits, v_result is {data_width} bits. Always use resize() when assigning MOD_VAL expressions to v_result.
 - ADD/SUB: resize operands to {data_width+1} bits BEFORE adding (to detect carry)
 - ⚠️ MUL: use unsigned(a) * unsigned(b) DIRECTLY — do NOT resize before multiplying!
   VHDL "*" returns length = left'length + right'length, so {data_width}*{data_width} = {data_width*2} bits automatically.
@@ -1210,7 +1212,9 @@ NEG SPECIAL CASE:
 
 DEC SPECIAL CASE:
 - DEC(0) = {mod - 1}. Do NOT use unsigned subtraction then check < 0!
-- Use:
+- ⚠️ Do NOT use (others => '0') in comparisons — VHDL cannot infer its length! Use "= 0" instead.
+- ⚠️ Do NOT assign MOD_VAL directly to v_result — MOD_VAL is {data_width + 1} bits but v_result is {data_width} bits! Always wrap with resize().
+- Copy this EXACT code (do NOT modify it):
     if unsigned(a) = 0 then
       v_result := resize(MOD_VAL - 1, {data_width});
       v_carry := '1';
