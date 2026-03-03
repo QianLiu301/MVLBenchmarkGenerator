@@ -262,6 +262,54 @@ class MVLGenerator:
         return resolve_logic_type(k_value)
 
     @staticmethod
+    def _vhdl_unsigned_literal(value: int, width: int) -> str:
+        """Generate a VHDL unsigned literal that avoids integer overflow.
+
+        For values <= 2^31-1, returns: to_unsigned(value, width)
+        For values > 2^31-1, returns hex-based literal to avoid VHDL integer overflow.
+        """
+        if value <= 2147483647:
+            return f"to_unsigned({value}, {width})"
+
+        # Build hex literal for large values
+        hex_str = format(value, 'X')
+        hex_bits = len(hex_str) * 4
+        if hex_bits < width:
+            # Need leading binary bits to reach exact width
+            leading_bits = width - hex_bits
+            leading_val = value >> hex_bits
+            leading_bin = format(leading_val, f'0{leading_bits}b')
+            return f'"{leading_bin}" & x"{hex_str[-hex_bits//4:]}"'
+        elif hex_bits == width:
+            return f'x"{hex_str}"'
+        else:
+            # hex_bits > width: trim leading hex, use binary prefix
+            full_bin = format(value, f'0{width}b')
+            # Split into leading binary + hex portion
+            hex_chars = width // 4
+            remaining_bits = width - hex_chars * 4
+            hex_portion = format(value & ((1 << (hex_chars * 4)) - 1), f'0{hex_chars}X')
+            if remaining_bits > 0:
+                leading_val = value >> (hex_chars * 4)
+                leading_bin = format(leading_val, f'0{remaining_bits}b')
+                return f'"{leading_bin}" & x"{hex_portion}"'
+            else:
+                return f'x"{hex_portion}"'
+
+    @staticmethod
+    def _vhdl_slv_literal(value: int, width: int) -> str:
+        """Generate std_logic_vector literal for VHDL testbench assertions.
+
+        For values <= 2^31-1: std_logic_vector(to_unsigned(value, width))
+        For values > 2^31-1: uses hex-based unsigned literal
+        """
+        if value <= 2147483647:
+            return f"std_logic_vector(to_unsigned({value}, {width}))"
+        else:
+            lit = MVLGenerator._vhdl_unsigned_literal(value, width)
+            return f"std_logic_vector({lit})"
+
+    @staticmethod
     def _build_algebra_section(k: int, bits: int, mod: int, logic_info: Dict, language: str = 'c') -> str:
         """Build the algebra-specific operation description for LLM prompts.
 
@@ -681,6 +729,9 @@ class MVLGenerator:
         else:
             c_mul_type = "__uint128_t"
 
+        # Pre-compute VHDL-safe literals for large values
+        mod_val_lit = self._vhdl_unsigned_literal(mod, data_width + 1)
+
         lang_instructions = {
             'c': f"""Output ONLY C code. Must be complete and compilable with gcc -lm.
 REQUIRED STRUCTURE:
@@ -757,7 +808,7 @@ entity mvl_alu_{k}_{bits}bit is
     );
 end entity;
 VHDL REQUIREMENTS:
-{"⚠️ MOD value " + str(mod) + " EXCEEDS VHDL integer range (max 2^31-1)! MUST use unsigned constant:" + chr(10) + "   constant MOD_VAL : unsigned(" + str(data_width) + " downto 0) := to_unsigned(" + str(mod) + ", " + str(data_width+1) + ");" + chr(10) + "   Do NOT use integer type for MOD!" if mod > 2147483647 else "- MOD constant MUST be set to exactly " + str(mod) + " — do NOT use (others => '1') or any other value"}
+{"⚠️ MOD value " + str(mod) + " EXCEEDS VHDL integer range (max 2^31-1)! MUST use hex literal constant:" + chr(10) + "   constant MOD_VAL : unsigned(" + str(data_width) + " downto 0) := " + mod_val_lit + ";" + chr(10) + "   Do NOT use to_unsigned() or integer type for MOD!" if mod > 2147483647 else "- MOD constant MUST be set to exactly " + str(mod) + " — do NOT use (others => '1') or any other value"}
 - Use unsigned type for ALL arithmetic, convert with unsigned() and std_logic_vector()
 - Use variables (not signals) inside process for intermediate computations
 - ⚠️ ALL variable declarations MUST be in the process declarative region (between "process" and "begin").
@@ -1018,6 +1069,18 @@ Generate the complete Verilog module with testbench now:
         neg_max = (mod - max_val) % mod
         inc_max = (max_val + 1) % mod
         dec_max = (max_val - 1 + mod) % mod
+        neg_half = mod // 2
+
+        # Pre-compute VHDL-safe literals (hex for values > 2^31-1)
+        mod_val_lit = self._vhdl_unsigned_literal(mod, data_width + 1)
+        max_val_slv = self._vhdl_slv_literal(max_val, data_width)
+        neg_half_lit = self._vhdl_unsigned_literal(neg_half, data_width)
+        # Testbench assertion literals
+        dec0_slv = self._vhdl_slv_literal((0 - 1 + mod) % mod, data_width)
+        add_max_slv = self._vhdl_slv_literal(add_max, data_width)
+        mul_max_slv = self._vhdl_slv_literal(mul_max, data_width)
+        neg_max_slv = self._vhdl_slv_literal(neg_max, data_width)
+        dec_max_slv = self._vhdl_slv_literal(dec_max, data_width)
 
         prompt = f"""Generate a complete VHDL design for a {bits}-trit ALU operating in base-{k}.
 
@@ -1055,7 +1118,8 @@ end entity mvl_alu_{k}_{bits}bit;
 
 VHDL ARCHITECTURE REQUIREMENTS:
 ⚠️ MOD constant MUST equal exactly {mod}. Do NOT use (others => '1') or any other value!
-{"⚠️ CRITICAL: " + str(mod) + " EXCEEDS the VHDL integer range (max 2^31-1 = 2147483647)!" + chr(10) + "   You MUST declare MOD_VAL as an unsigned constant, NOT integer:" + chr(10) + "   constant MOD_VAL : unsigned(" + str(data_width) + " downto 0) := to_unsigned(" + str(mod) + ", " + str(data_width + 1) + ");" + chr(10) + "   Do NOT write: constant MOD_VAL : integer := " + str(mod) + ";  -- THIS WILL FAIL!" if mod > 2147483647 else "   constant MOD_VAL : unsigned(" + str(data_width) + " downto 0) := to_unsigned(" + str(mod) + ", " + str(data_width + 1) + ");"}
+   constant MOD_VAL : unsigned({data_width} downto 0) := {mod_val_lit};
+{"⚠️ CRITICAL: " + str(mod) + " EXCEEDS the VHDL integer range (max 2^31-1 = 2147483647)!" + chr(10) + "   Do NOT use to_unsigned(" + str(mod) + ", ...) — the integer argument overflows!" + chr(10) + "   Do NOT use integer type for MOD_VAL!" + chr(10) + "   The hex literal above is the ONLY correct way to declare this constant." if mod > 2147483647 else ""}
 
 ⚠️ VHDL VARIABLE DECLARATION RULES (CRITICAL — violations cause compilation failure):
 1. ALL variable declarations MUST be in the process DECLARATIVE REGION (between "process" and "begin").
@@ -1081,7 +1145,7 @@ VHDL ARCHITECTURE REQUIREMENTS:
    CORRECT (use if/else for EVERY conditional variable assignment):
      if sum_tmp >= MOD_VAL then v_carry := '1'; else v_carry := '0'; end if;
      if v_result = to_unsigned(0, {data_width}) then v_zero := '1'; else v_zero := '0'; end if;
-     if v_result >= to_unsigned({mod // 2}, {data_width}) then v_negative := '1'; else v_negative := '0'; end if;
+     if v_result >= {neg_half_lit} then v_negative := '1'; else v_negative := '0'; end if;
 
 3. NEVER compare unsigned with < 0. Unsigned types are ALWAYS >= 0 in VHDL.
    The comparison "unsigned_var < 0" is ALWAYS false and is a logic bug!
@@ -1169,11 +1233,12 @@ Include:
 are the same as the previous test! Do NOT rely on previous test values. Changing only the opcode will
 use stale a/b values and cause wrong results (e.g., SUB(10,20) gives a different result than SUB(20,10)).
 CORRECT pattern for EVERY test:
-  a_sig <= std_logic_vector(to_unsigned(VALUE_A, {data_width}));
+  a_sig <= std_logic_vector(to_unsigned(VALUE_A, {data_width}));  -- use hex literal if VALUE_A > 2^31-1
   b_sig <= std_logic_vector(to_unsigned(VALUE_B, {data_width}));
   opcode_sig <= "XXXX";
   wait for 10 ns;
   assert result_sig = std_logic_vector(to_unsigned(EXPECTED, {data_width})) report "Test N: ..." severity error;
+{"⚠️ INTEGER OVERFLOW WARNING: VHDL integer max = 2^31-1 = 2147483647." + chr(10) + "   Values > 2147483647 CANNOT use to_unsigned() — the integer argument overflows!" + chr(10) + "   For max_val = " + str(max_val) + ", use hex literal: " + max_val_slv + chr(10) + "   For DEC(0) = " + str((0-1+mod)%mod) + ", use: " + dec0_slv + chr(10) + "   For ADD(max,max) = " + str(add_max) + ", use: " + add_max_slv + chr(10) + "   For DEC(max) = " + str(dec_max) + ", use: " + dec_max_slv + chr(10) + "   For negative threshold " + str(neg_half) + ", use: " + neg_half_lit if mod > 2147483647 else ""}
 Format: report "Test N: OP A=X B=Y -> R=Z"
 
 Generate the complete VHDL code (entity + architecture + testbench) now:
