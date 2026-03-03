@@ -268,8 +268,39 @@ class MVLGenerator:
         Returns a prompt section that describes how operations should be implemented
         based on the algebraic structure (prime field, extension field, or integer ring).
         """
+        import math
         category = logic_info['category']
         display = logic_info['display']
+        max_val = mod - 1
+        mul_product_max = max_val * max_val
+        data_width = math.ceil(math.log2(mod)) if mod > 1 else 1
+
+        # Determine required intermediate width for MUL
+        if mul_product_max > 0:
+            mul_bits_needed = math.ceil(math.log2(mul_product_max + 1))
+        else:
+            mul_bits_needed = 1
+
+        if mul_product_max <= 2**32 - 1:
+            c_mul_type = "uint32_t"
+            c_mul_note = f"uint32_t is sufficient ({max_val} * {max_val} = {mul_product_max} < 2^32)"
+        elif mul_product_max <= 2**64 - 1:
+            c_mul_type = "uint64_t"
+            c_mul_note = f"uint64_t is sufficient ({max_val} * {max_val} = {mul_product_max} < 2^64)"
+        else:
+            c_mul_type = "__uint128_t"
+            c_mul_note = (f"⚠️ uint64_t is NOT sufficient! {max_val} * {max_val} = {mul_product_max} > 2^64. "
+                          f"MUST use __uint128_t (GCC/Clang) or split into high/low 64-bit words")
+
+        mul_overflow_warning = ""
+        if mul_product_max > 2**64 - 1:
+            mul_overflow_warning = f"""
+  ⚠️ CRITICAL OVERFLOW WARNING FOR MUL:
+  Max product = {max_val} × {max_val} = {mul_product_max}
+  This EXCEEDS uint64_t max (18446744073709551615).
+  In C: use {c_mul_type} for the intermediate product.
+  In Verilog: use [{mul_bits_needed - 1}:0] for the temp register.
+  In VHDL: use unsigned({mul_bits_needed - 1} downto 0) for the intermediate."""
 
         if category == 'extension_field' and logic_info.get('tables'):
             # GF(p^n) extension field — digit-wise operations using pre-computed tables
@@ -338,38 +369,46 @@ class MVLGenerator:
             section = f"""ALGEBRAIC STRUCTURE: {display} — Prime Field
   All operations use standard modular integer arithmetic mod {mod} (= {k}^{bits}).
   This is equivalent to base-{k} integer arithmetic with carry propagation.
-
+  Operand range: 0 to {max_val}. Binary bit width: {data_width} bits.
+{mul_overflow_warning}
   OPERATION DEFINITIONS (all results mod {mod}):
   - ADD: (a + b) % {mod}
   - SUB: (a - b + {mod}) % {mod}
-  - MUL: (a * b) % {mod}  — use 64-bit intermediate to avoid overflow
+  - MUL: ({c_mul_type})(a) * b) % {mod}  — {c_mul_note}
   - NEG: ({mod} - a) % {mod}
-  - INC: (a + 1) % {mod}
-  - DEC: (a - 1 + {mod}) % {mod}
+  - INC: (a + 1) % {mod}   — adds exactly 1, NOT {k} or any other value
+  - DEC: (a - 1 + {mod}) % {mod}   — subtracts exactly 1
 
-  FLAGS:
+  CARRY/FLAG DETECTION (must be checked BEFORE taking mod):
+  - ADD carry: (a + b) >= {mod}
+  - SUB borrow: a < b
+  - INC carry: a == {max_val}
+  - DEC borrow: a == 0
   - Z (zero): result == 0
-  - N (negative): result has high bit set (result >= {mod // 2})
-  - C (carry): operation produced overflow/underflow before mod"""
+  - N (negative): result >= {mod // 2}"""
 
         else:
             # Z/kZ — integer ring, same as prime field arithmetic
             section = f"""ALGEBRAIC STRUCTURE: Z/{k}Z — Integer Ring (modular arithmetic)
   All operations use standard modular integer arithmetic mod {mod} (= {k}^{bits}).
   Note: not all elements have multiplicative inverses (non-field).
-
+  Operand range: 0 to {max_val}. Binary bit width: {data_width} bits.
+{mul_overflow_warning}
   OPERATION DEFINITIONS (all results mod {mod}):
   - ADD: (a + b) % {mod}
   - SUB: (a - b + {mod}) % {mod}
-  - MUL: (a * b) % {mod}  — use 64-bit intermediate to avoid overflow
+  - MUL: ({c_mul_type})(a) * b) % {mod}  — {c_mul_note}
   - NEG: ({mod} - a) % {mod}
-  - INC: (a + 1) % {mod}
-  - DEC: (a - 1 + {mod}) % {mod}
+  - INC: (a + 1) % {mod}   — adds exactly 1, NOT {k} or any other value
+  - DEC: (a - 1 + {mod}) % {mod}   — subtracts exactly 1
 
-  FLAGS:
+  CARRY/FLAG DETECTION (must be checked BEFORE taking mod):
+  - ADD carry: (a + b) >= {mod}
+  - SUB borrow: a < b
+  - INC carry: a == {max_val}
+  - DEC borrow: a == 0
   - Z (zero): result == 0
-  - N (negative): result has high bit set (result >= {mod // 2})
-  - C (carry): operation produced overflow/underflow before mod"""
+  - N (negative): result >= {mod // 2}"""
 
         return section
 
@@ -631,26 +670,35 @@ class MVLGenerator:
 
         algebra_section = self._build_algebra_section(k, bits, mod, logic_info, language)
 
+        # Determine C intermediate type for MUL
+        mul_product_max = (mod - 1) * (mod - 1)
+        if mul_product_max <= 2**64 - 1:
+            c_mul_type = "uint64_t"
+        else:
+            c_mul_type = "__uint128_t"
+
         lang_instructions = {
             'c': f"""Output ONLY C code. Must be complete and compilable with gcc -lm.
 REQUIRED STRUCTURE:
 - #include <stdio.h>, <stdlib.h>, <stdint.h>, <stdbool.h>, <time.h>, <math.h>
-- Use uint64_t for intermediate multiplication results to avoid overflow ({mod-1} * {mod-1} = {(mod-1)**2})
+- For MUL: max product = {mod-1} * {mod-1} = {mul_product_max}. Use {c_mul_type} for the intermediate.
 - #define K_VALUE {k}
 - #define TRIT_WIDTH {bits}
 - #define MOD_VALUE {mod}
 - Operation enum: OP_ADD=0, OP_SUB=1, OP_MUL=2, OP_NEG=3, OP_INC=4, OP_DEC=5
-- Flags struct with z (zero), n (negative), c (carry) fields
-- alu_exec(a, b, op) function returning result and flags via struct
+- Result struct containing BOTH the uint64_t result value AND Flags (z, n, c)
+- alu_exec(a, b, op) function that RETURNS a struct with BOTH result AND flags
+  ⚠️ The function MUST return the computed result — do NOT discard it as a local variable!
 - main() with srand(time(NULL)) and at least 20 random test vectors
-- printf format: "Test %2d: %-3s A=%u B=%u -> R=%u Z=%d N=%d C=%d\\n" """,
+- Use the result from the returned struct in printf, NOT a separately computed value
+- printf format: "Test %2d: %-3s A=%llu B=%llu -> R=%llu Z=%d N=%d C=%d\\n" """,
 
             'python': f"""Output ONLY Python code. Must be complete and runnable with python3.
 REQUIRED STRUCTURE:
 - import random
 - MOD = {mod}
 - class or dataclass for Flags(z, n, c)
-- alu_exec(a, b, op) function returning (result, flags)
+- alu_exec(a, b, op) function returning (result, flags) tuple
 - if __name__ == "__main__": block with at least 20 random test vectors
 COMMON MISTAKES TO AVOID:
 - INC adds exactly 1, not '{k}' or '{k}^{bits-1}' or any other value
@@ -671,10 +719,12 @@ module mvl_alu_{k}_{bits}bit (
     output reg negative,
     output reg carry
 );
-TESTBENCH: Include a testbench module mvl_alu_{k}_{bits}bit_tb with at least 20 test vectors using $display.
-VERILOG REQUIREMENTS:
+ARCHITECTURE REQUIREMENTS:
+- Use ONLY ONE always block for result/flag computation — do NOT split into combinational + sequential
+- For MUL: temp register must be [{data_width * 2 - 1}:0] to hold the full product
 - Declare 'result' as 'output reg' since it is assigned inside always block
-- Use 'reg' type for signals assigned in procedural blocks""",
+- Use 'reg' type for signals assigned in procedural blocks
+TESTBENCH: Include a testbench module mvl_alu_{k}_{bits}bit_tb with at least 20 test vectors using $display.""",
 
             'vhdl': f"""Output ONLY VHDL code (NOT Verilog). Must be synthesizable and simulatable with GHDL.
 CRITICAL: Do NOT output Verilog syntax (module, wire, reg, always). Use ONLY VHDL syntax (library, entity, architecture, signal, process).
@@ -698,10 +748,14 @@ entity mvl_alu_{k}_{bits}bit is
     );
 end entity;
 VHDL REQUIREMENTS:
+- MOD constant MUST be set to exactly {mod} — do NOT use (others => '1') or any other value
 - Use unsigned type for arithmetic, convert with unsigned() and std_logic_vector()
 - For MUL: intermediate result needs {data_width * 2} bits (two {data_width}-bit operands multiplied)
+- Use variables (not signals) inside process for intermediate computations
+- Do NOT use concurrent signal assignment syntax (when...else) inside a process — use if/else instead
 - Include BOTH entity/architecture AND a testbench entity mvl_alu_{k}_{bits}bit_tb
-- Testbench must have at least 20 test vectors with assert/report statements"""
+- Testbench must have at least 20 test vectors with assert/report statements
+- Testbench assertions must use CORRECT expected values (verify by hand: e.g. ADD({mod-1},{mod-1})={2*(mod-1)%mod})"""
         }
 
         prompt = f"""Based on the following description, generate a complete implementation:
@@ -742,9 +796,16 @@ Generate the complete {language.upper()} code now:
 
     def _create_c_prompt(self, k: int, bits: int, mod: int, operations: List[str], logic_info: Dict = None) -> str:
         """Create prompt for C code generation"""
+        import math
         ops_str = ', '.join(operations)
         if logic_info is None:
             logic_info = self._resolve_logic_type(k)
+
+        mul_product_max = (mod - 1) * (mod - 1)
+        if mul_product_max <= 2**64 - 1:
+            c_mul_type = "uint64_t"
+        else:
+            c_mul_type = "__uint128_t"
 
         algebra_section = self._build_algebra_section(k, bits, mod, logic_info, 'c')
 
@@ -767,11 +828,14 @@ SPECIFICATIONS:
 REQUIRED STRUCTURE:
 1. #include statements (stdio.h, stdlib.h, stdint.h, stdbool.h, time.h)
 2. Operation enum (OP_ADD=0, OP_SUB=1, OP_MUL=2, OP_NEG=3, OP_INC=4, OP_DEC=5)
-3. #define MOD {mod}
-4. Flags struct (Z: zero, N: negative, C: carry)
-5. alu_exec() function with switch-case for operations
-6. op_name() function to get operation name string
-7. main() with srand() and AT LEAST 20 printf test lines
+3. #define MOD {mod}ULL
+4. Result struct containing BOTH uint64_t result AND Flags (z, n, c)
+   ⚠️ alu_exec() MUST return a struct with both the result value AND the flags!
+   Do NOT return only flags while discarding the result as a local variable.
+5. For MUL: use {c_mul_type} for intermediate product ({mod-1} * {mod-1} = {mul_product_max})
+6. alu_exec(a, b, op) function with switch-case
+7. op_name() function to get operation name string
+8. main() with srand() and AT LEAST 20 printf test lines — use the result FROM alu_exec()
 
 ⚠️ MANDATORY TEST REQUIREMENT:
 main() MUST include AT LEAST 20 test vectors using printf. Code with fewer than 20 tests will be REJECTED.
@@ -781,7 +845,7 @@ Include:
 - 8+ random tests with srand(time(NULL)) and rand() % {mod}
 
 EXAMPLE OUTPUT FORMAT IN main():
-printf("Test %2d: %-3s A=%d B=%d -> R=%d Z=%d N=%d C=%d\\n", ...);
+printf("Test %2d: %-3s A=%llu B=%llu -> R=%llu Z=%d N=%d C=%d\\n", ...);
 
 Generate the complete C code now:
 """
@@ -870,6 +934,13 @@ module mvl_alu_{k}_{bits}bit (
     output reg carry
 );
 
+ARCHITECTURE REQUIREMENTS:
+⚠️ Use ONLY ONE always block — do NOT split outputs into combinational + sequential blocks!
+  Having result/zero/negative/carry driven by two always blocks creates a MULTI-DRIVER conflict.
+  Use a single always @(posedge clk) block that handles reset and computation.
+- For MUL: declare temp as reg [{data_width * 2 - 1}:0] to hold the full {data_width}-bit × {data_width}-bit product
+- Use 'output reg' for result/flags since they are assigned in always block
+
 ⚠️ MANDATORY TESTBENCH REQUIREMENT:
 You MUST include a testbench module mvl_alu_{k}_{bits}bit_tb with AT LEAST 20 $display test vectors. Code with fewer than 20 tests will be REJECTED.
 Include:
@@ -892,6 +963,14 @@ Generate the complete Verilog module with testbench now:
         data_width = math.ceil(math.log2(mod)) if mod > 1 else 1
 
         algebra_section = self._build_algebra_section(k, bits, mod, logic_info, 'vhdl')
+
+        # Pre-compute some expected test results for testbench hints
+        max_val = mod - 1
+        add_max = (2 * max_val) % mod
+        mul_max = (max_val * max_val) % mod
+        neg_max = (mod - max_val) % mod
+        inc_max = (max_val + 1) % mod
+        dec_max = (max_val - 1 + mod) % mod
 
         prompt = f"""Generate a complete VHDL design for a {bits}-trit ALU operating in base-{k}.
 
@@ -927,11 +1006,27 @@ entity mvl_alu_{k}_{bits}bit is
     );
 end entity mvl_alu_{k}_{bits}bit;
 
+VHDL ARCHITECTURE REQUIREMENTS:
+⚠️ MOD constant MUST equal exactly {mod}. Do NOT use (others => '1') or any other value!
+   constant MOD_VAL : integer := {mod};  -- or use natural/unsigned as appropriate
+- Use variables (NOT signals) inside process for intermediate results — signals update one delta later
+- Do NOT use concurrent signal assignment syntax (when...else) inside a process — use if/else instead
+- For MUL: intermediate variable needs {data_width * 2} bits
+- Use unsigned type for arithmetic, convert with unsigned() and std_logic_vector()
+
+TESTBENCH EXPECTED VALUES (pre-computed, mathematically verified):
+  ADD({max_val}, {max_val}) = {add_max}
+  SUB({max_val}, {max_val}) = 0
+  MUL({max_val}, {max_val}) = {mul_max}
+  NEG({max_val}) = {neg_max}
+  INC({max_val}) = {inc_max}
+  DEC({max_val}) = {dec_max}
+
 ⚠️ MANDATORY TESTBENCH REQUIREMENT:
 You MUST include a testbench entity mvl_alu_{k}_{bits}bit_tb with AT LEAST 20 assert/report test vectors. Code with fewer than 20 tests will be REJECTED.
 Include:
 - 6 edge-case tests (one per opcode with a=0, b=0)
-- 6 max-value tests (one per opcode with a={mod-1}, b={mod-1})
+- 6 max-value tests using the pre-computed expected values above
 - 8+ additional tests with various values
 Each test: assign a, b, opcode → wait for 10 ns → assert/report result
 Format: report "Test N: OP A=X B=Y -> R=Z"
