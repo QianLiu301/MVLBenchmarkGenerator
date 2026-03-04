@@ -789,26 +789,48 @@ SPECIFICATIONS:
 - MOD value: {mod} ({k}^{bits}) — counter wraps around at this value
 - Binary bit width needed: {data_width} bits (ceil(log2({mod})))
 - Counter range: 0 to {mod - 1}
+- Maximum value: {mod - 1} (NOT {2**data_width - 1} — do NOT rely on register bit-width overflow!)
 
 {algebra_section}
 
-COUNTER OPERATIONS:
-- COUNT_UP: increment counter by 1, wrap at {mod} (i.e., (count + 1) % {mod})
-- COUNT_DOWN: decrement counter by 1, wrap at 0 (i.e., (count - 1 + {mod}) % {mod})
-- RESET: set counter to 0
-- LOAD: load an external value into counter
-- Overflow flag: set when COUNT_UP wraps (count was {mod - 1})
-- Underflow flag: set when COUNT_DOWN wraps (count was 0)
-- Zero flag: set when counter value is 0
+MODULE NAMING:
+- Module name MUST be: mvl_counter_{k}_{bits}bit
+- Testbench name MUST be: mvl_counter_{k}_{bits}bit_tb
+
+COUNTER OPERATIONS (2-bit opcode):
+- 00 = COUNT_UP: count = (count + 1) % {mod}. Sets overflow when count was {mod - 1}.
+- 01 = COUNT_DOWN: count = (count - 1 + {mod}) % {mod}. Sets underflow when count was 0.
+- 10 = RESET: count = 0
+- 11 = LOAD: count = load_value (must be in range 0 to {mod - 1})
+
+FLAG RULES:
+- Overflow flag: set to 1 ONLY when COUNT_UP wraps (count was {mod - 1}), else 0
+- Underflow flag: set to 1 ONLY when COUNT_DOWN wraps (count was 0), else 0
+- Zero flag: set to 1 when the NEW counter value equals 0, else 0
+  ⚠️ The zero flag must reflect the RESULT, not be hardcoded!
+  Example: COUNT_DOWN from 1 → result is 0 → zero MUST be 1
+  Example: COUNT_UP from {mod - 1} → result is 0 (overflow) → zero MUST be 1
+  Example: LOAD(0) → zero MUST be 1
+
+⚠️ CRITICAL — DO NOT RELY ON REGISTER OVERFLOW:
+The counter MUST explicitly compare against {mod - 1} (not {2**data_width - 1}) and wrap using modulo {mod}.
+{"This matters because MOD=" + str(mod) + " ≠ 2^" + str(data_width) + "=" + str(2**data_width) + ". Using register overflow would give WRONG results!" if mod != 2**data_width else "For this specific case MOD=" + str(mod) + " = 2^" + str(data_width) + ", but still use explicit MOD constant for clarity."}
 
 REQUIRED STRUCTURE:
-- Counter state register holding value 0 to {mod - 1}
-- Step function that takes operation and optional load_value
-- Test section: exercise all operations including edge cases at 0 and {mod - 1}
-  - Test COUNT_UP from 0, from {mod - 2}, from {mod - 1} (overflow)
-  - Test COUNT_DOWN from {mod - 1}, from 1, from 0 (underflow)
-  - Test RESET and LOAD with various values
-  - At least 20 test vectors total
+- Define MOD constant = {mod}
+- Counter register: {data_width} bits wide, holds values 0 to {mod - 1}
+- Synchronous logic on clock edge, asynchronous reset
+- Test section with AT LEAST 20 test vectors, each with $display/printf/print showing:
+  operation, count value, overflow, underflow, zero flags
+- Test cases MUST include:
+  - COUNT_UP from 0 (result=1, zero=0)
+  - COUNT_UP from {mod - 2} (result={mod - 1}, zero=0)
+  - COUNT_UP from {mod - 1} (result=0, overflow=1, zero=1)
+  - COUNT_DOWN from {mod - 1} (result={mod - 2}, zero=0)
+  - COUNT_DOWN from 1 (result=0, zero=1)
+  - COUNT_DOWN from 0 (result={mod - 1}, underflow=1, zero=0)
+  - RESET (result=0, zero=1)
+  - LOAD with values: 0, 1, {mod // 2}, {mod - 1}
 
 Generate the complete {lang_upper} code now:
 """
