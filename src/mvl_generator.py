@@ -471,7 +471,9 @@ class MVLGenerator:
             language: str = 'c',
             operations: List[str] = None,
             natural_input: str = '',
-            module_type: str = 'alu'
+            module_type: str = 'alu',
+            register_count: int = None,
+            pipeline_stages: int = None
     ) -> Dict:
         """
         Generate MVL code for the specified module type.
@@ -483,6 +485,8 @@ class MVLGenerator:
             operations: List of operations to include
             natural_input: Natural language description (takes priority for prompt/naming when provided)
             module_type: Hardware module type ('alu', 'counter', 'register', 'cpu-risc-v')
+            register_count: Number of registers for register file module (4, 8, 16, 32)
+            pipeline_stages: Number of pipeline stages for CPU module (3, 5, 7)
 
         Returns:
             Dict with generation results
@@ -514,6 +518,10 @@ class MVLGenerator:
         print(f"   Bitwidth: {bitwidth}-trit")
         print(f"   Language: {language.upper()}")
         print(f"   Operations: {', '.join(operations)}")
+        if register_count is not None:
+            print(f"   Register count: {register_count}")
+        if pipeline_stages is not None:
+            print(f"   Pipeline stages: {pipeline_stages}")
         print(f"   LLM Provider: {self.llm_provider_name} ({actual_class})")
         print(f"   LLM Model: {actual_model}")
         print(f"{'=' * 60}")
@@ -521,18 +529,13 @@ class MVLGenerator:
         # Calculate MOD value
         mod_value = k_value ** bitwidth
 
-        # Create prompt: use natural_input when provided, otherwise use structured prompt
-        if natural_input:
-            prompt = self._create_natural_prompt(natural_input, k_value, bitwidth, mod_value, operations, language, logic_info)
-        elif language.lower() == 'c':
-            prompt = self._create_c_prompt(k_value, bitwidth, mod_value, operations, logic_info)
-        elif language.lower() == 'python':
-            prompt = self._create_python_prompt(k_value, bitwidth, mod_value, operations, logic_info)
-        elif language.lower() == 'verilog':
-            prompt = self._create_verilog_prompt(k_value, bitwidth, mod_value, operations, logic_info)
-        elif language.lower() == 'vhdl':
-            prompt = self._create_vhdl_prompt(k_value, bitwidth, mod_value, operations, logic_info)
-        else:
+        # Create prompt based on module type
+        prompt = self._create_prompt_for_module(
+            module_type, k_value, bitwidth, mod_value, operations,
+            language, logic_info, natural_input,
+            register_count=register_count, pipeline_stages=pipeline_stages
+        )
+        if prompt is None:
             return {'success': False, 'error': f'Unsupported language: {language}'}
 
         # Call LLM
@@ -604,7 +607,9 @@ class MVLGenerator:
             language: str = 'c',
             operations: List[str] = None,
             natural_input: str = '',
-            module_type: str = 'alu'
+            module_type: str = 'alu',
+            register_count: int = None,
+            pipeline_stages: int = None
     ):
         """
         Generate MVL code with streaming output.
@@ -630,18 +635,13 @@ class MVLGenerator:
         resolved_logic = logic_info['display']
         mod_value = k_value ** bitwidth
 
-        # Create prompt: use natural_input when provided
-        if natural_input:
-            prompt = self._create_natural_prompt(natural_input, k_value, bitwidth, mod_value, operations, language, logic_info)
-        elif language.lower() == 'c':
-            prompt = self._create_c_prompt(k_value, bitwidth, mod_value, operations, logic_info)
-        elif language.lower() == 'python':
-            prompt = self._create_python_prompt(k_value, bitwidth, mod_value, operations, logic_info)
-        elif language.lower() == 'verilog':
-            prompt = self._create_verilog_prompt(k_value, bitwidth, mod_value, operations, logic_info)
-        elif language.lower() == 'vhdl':
-            prompt = self._create_vhdl_prompt(k_value, bitwidth, mod_value, operations, logic_info)
-        else:
+        # Create prompt based on module type
+        prompt = self._create_prompt_for_module(
+            module_type, k_value, bitwidth, mod_value, operations,
+            language, logic_info, natural_input,
+            register_count=register_count, pipeline_stages=pipeline_stages
+        )
+        if prompt is None:
             yield ("error", f'Unsupported language: {language}')
             return
 
@@ -655,7 +655,9 @@ class MVLGenerator:
             # Fallback to non-streaming
             result = self.generate(k_value=k_value, bitwidth=bitwidth, language=language,
                                    operations=operations, natural_input=natural_input,
-                                   module_type=module_type)
+                                   module_type=module_type,
+                                   register_count=register_count,
+                                   pipeline_stages=pipeline_stages)
             if result.get('success') and result.get('code'):
                 yield ("chunk", result['code'])
             yield ("done", result)
@@ -710,6 +712,269 @@ class MVLGenerator:
             import traceback
             traceback.print_exc()
             yield ("error", str(e))
+
+    def _create_prompt_for_module(self, module_type: str, k: int, bits: int, mod: int,
+                                    operations: List[str], language: str, logic_info: Dict,
+                                    natural_input: str = '',
+                                    register_count: int = None,
+                                    pipeline_stages: int = None) -> Optional[str]:
+        """Dispatch prompt creation based on module type.
+
+        Returns the prompt string, or None if the language is unsupported.
+        """
+        # Natural input always takes priority regardless of module type
+        if natural_input:
+            return self._create_natural_prompt(natural_input, k, bits, mod, operations, language, logic_info)
+
+        # Module-specific prompt dispatch
+        if module_type == 'register':
+            return self._create_register_prompt(k, bits, mod, operations, language, logic_info,
+                                                register_count=register_count or 8)
+        elif module_type == 'cpu-risc-v':
+            return self._create_cpu_prompt(k, bits, mod, operations, language, logic_info,
+                                           pipeline_stages=pipeline_stages or 5)
+        elif module_type == 'counter':
+            return self._create_counter_prompt(k, bits, mod, operations, language, logic_info)
+        else:
+            # Default: ALU prompts (existing behavior)
+            lang = language.lower()
+            if lang == 'c':
+                return self._create_c_prompt(k, bits, mod, operations, logic_info)
+            elif lang == 'python':
+                return self._create_python_prompt(k, bits, mod, operations, logic_info)
+            elif lang == 'verilog':
+                return self._create_verilog_prompt(k, bits, mod, operations, logic_info)
+            elif lang == 'vhdl':
+                return self._create_vhdl_prompt(k, bits, mod, operations, logic_info)
+            else:
+                return None
+
+    def _create_counter_prompt(self, k: int, bits: int, mod: int,
+                                operations: List[str], language: str,
+                                logic_info: Dict = None) -> str:
+        """Create prompt for MVL Counter module generation."""
+        import math
+        data_width = math.ceil(math.log2(mod)) if mod > 1 else 1
+        if logic_info is None:
+            logic_info = self._resolve_logic_type(k)
+        algebra_section = self._build_algebra_section(k, bits, mod, logic_info, language)
+
+        lang = language.lower()
+        if lang == 'c':
+            lang_upper = 'C'
+            compile_note = 'Must be complete and compilable with gcc.'
+        elif lang == 'python':
+            lang_upper = 'Python'
+            compile_note = 'Must be complete and runnable with python3.'
+        elif lang == 'verilog':
+            lang_upper = 'Verilog'
+            compile_note = 'Must be synthesizable and simulatable with iverilog.'
+        elif lang == 'vhdl':
+            lang_upper = 'VHDL'
+            compile_note = 'Must be synthesizable and simulatable with GHDL.'
+        else:
+            lang_upper = language.upper()
+            compile_note = ''
+
+        prompt = f"""Generate a complete {lang_upper} implementation of a {bits}-trit MVL counter operating in base-{k}.
+{compile_note}
+
+CRITICAL RULES:
+1. Output ONLY {lang_upper} code, no markdown, no explanations
+2. Must include AT LEAST 20 test vectors
+
+SPECIFICATIONS:
+- K-value: {k} (base-{k} system, each digit has {k} possible values: 0 to {k-1})
+- Trit width: {bits} (number of base-{k} digits per counter value)
+- MOD value: {mod} ({k}^{bits}) — counter wraps around at this value
+- Binary bit width needed: {data_width} bits (ceil(log2({mod})))
+- Counter range: 0 to {mod - 1}
+
+{algebra_section}
+
+COUNTER OPERATIONS:
+- COUNT_UP: increment counter by 1, wrap at {mod} (i.e., (count + 1) % {mod})
+- COUNT_DOWN: decrement counter by 1, wrap at 0 (i.e., (count - 1 + {mod}) % {mod})
+- RESET: set counter to 0
+- LOAD: load an external value into counter
+- Overflow flag: set when COUNT_UP wraps (count was {mod - 1})
+- Underflow flag: set when COUNT_DOWN wraps (count was 0)
+- Zero flag: set when counter value is 0
+
+REQUIRED STRUCTURE:
+- Counter state register holding value 0 to {mod - 1}
+- Step function that takes operation and optional load_value
+- Test section: exercise all operations including edge cases at 0 and {mod - 1}
+  - Test COUNT_UP from 0, from {mod - 2}, from {mod - 1} (overflow)
+  - Test COUNT_DOWN from {mod - 1}, from 1, from 0 (underflow)
+  - Test RESET and LOAD with various values
+  - At least 20 test vectors total
+
+Generate the complete {lang_upper} code now:
+"""
+        return prompt
+
+    def _create_register_prompt(self, k: int, bits: int, mod: int,
+                                 operations: List[str], language: str,
+                                 logic_info: Dict = None,
+                                 register_count: int = 8) -> str:
+        """Create prompt for MVL Register File module generation."""
+        import math
+        data_width = math.ceil(math.log2(mod)) if mod > 1 else 1
+        addr_width = math.ceil(math.log2(register_count)) if register_count > 1 else 1
+        if logic_info is None:
+            logic_info = self._resolve_logic_type(k)
+        algebra_section = self._build_algebra_section(k, bits, mod, logic_info, language)
+
+        lang = language.lower()
+        if lang == 'c':
+            lang_upper = 'C'
+            compile_note = 'Must be complete and compilable with gcc.'
+        elif lang == 'python':
+            lang_upper = 'Python'
+            compile_note = 'Must be complete and runnable with python3.'
+        elif lang == 'verilog':
+            lang_upper = 'Verilog'
+            compile_note = 'Must be synthesizable and simulatable with iverilog.'
+        elif lang == 'vhdl':
+            lang_upper = 'VHDL'
+            compile_note = 'Must be synthesizable and simulatable with GHDL.'
+        else:
+            lang_upper = language.upper()
+            compile_note = ''
+
+        prompt = f"""Generate a complete {lang_upper} implementation of a {bits}-trit MVL register file with {register_count} registers, operating in base-{k}.
+{compile_note}
+
+CRITICAL RULES:
+1. Output ONLY {lang_upper} code, no markdown, no explanations
+2. Must include AT LEAST 20 test vectors
+
+SPECIFICATIONS:
+- K-value: {k} (base-{k} system)
+- Trit width: {bits} (number of base-{k} digits per register)
+- MOD value: {mod} ({k}^{bits}) — each register holds values 0 to {mod - 1}
+- Binary data width: {data_width} bits (ceil(log2({mod})))
+- Register count: {register_count}
+- Address width: {addr_width} bits (ceil(log2({register_count})))
+
+{algebra_section}
+
+REGISTER FILE INTERFACE:
+- {register_count} registers, each {data_width} bits wide (values 0 to {mod - 1})
+- 2 read ports (read_addr1, read_addr2 → read_data1, read_data2): combinational read
+- 1 write port (write_enable, write_addr, write_data): synchronous write
+- Register 0 is hardwired to 0 (writes to register 0 are ignored)
+- Reset: all registers set to 0
+
+REQUIRED STRUCTURE:
+- Register array of {register_count} entries
+- read(addr) → returns register value at addr (combinational)
+- write(addr, data, enable) → writes data to register at addr on clock edge (when enable=1)
+- Register 0 always reads as 0 and cannot be written
+- Test section with at least 20 test vectors:
+  - Write values to several registers, read them back
+  - Test write-then-read for multiple registers
+  - Test that register 0 always returns 0 even after write
+  - Test both read ports simultaneously (read two different registers)
+  - Test edge values: 0, 1, {mod - 1}
+  - Test write enable = 0 (data should NOT be written)
+
+Generate the complete {lang_upper} code now:
+"""
+        return prompt
+
+    def _create_cpu_prompt(self, k: int, bits: int, mod: int,
+                            operations: List[str], language: str,
+                            logic_info: Dict = None,
+                            pipeline_stages: int = 5) -> str:
+        """Create prompt for MVL CPU (RISC-V style) module generation."""
+        import math
+        data_width = math.ceil(math.log2(mod)) if mod > 1 else 1
+        if logic_info is None:
+            logic_info = self._resolve_logic_type(k)
+        algebra_section = self._build_algebra_section(k, bits, mod, logic_info, language)
+
+        lang = language.lower()
+        if lang == 'c':
+            lang_upper = 'C'
+            compile_note = 'Must be complete and compilable with gcc.'
+        elif lang == 'python':
+            lang_upper = 'Python'
+            compile_note = 'Must be complete and runnable with python3.'
+        elif lang == 'verilog':
+            lang_upper = 'Verilog'
+            compile_note = 'Must be synthesizable and simulatable with iverilog.'
+        elif lang == 'vhdl':
+            lang_upper = 'VHDL'
+            compile_note = 'Must be synthesizable and simulatable with GHDL.'
+        else:
+            lang_upper = language.upper()
+            compile_note = ''
+
+        # Pipeline stage descriptions
+        if pipeline_stages == 3:
+            pipeline_desc = "3-stage pipeline: IF (Instruction Fetch), EX (Execute), WB (Write Back)"
+            stage_names = "IF, EX, WB"
+        elif pipeline_stages == 7:
+            pipeline_desc = "7-stage pipeline: IF (Instruction Fetch), ID (Instruction Decode), IS (Issue), EX (Execute), MEM (Memory Access), WB (Write Back), CM (Commit)"
+            stage_names = "IF, ID, IS, EX, MEM, WB, CM"
+        else:
+            pipeline_desc = "5-stage pipeline: IF (Instruction Fetch), ID (Instruction Decode), EX (Execute), MEM (Memory Access), WB (Write Back)"
+            stage_names = "IF, ID, EX, MEM, WB"
+
+        prompt = f"""Generate a complete {lang_upper} implementation of a simplified {bits}-trit MVL RISC-V-style CPU with a {pipeline_stages}-stage pipeline, operating in base-{k}.
+{compile_note}
+
+CRITICAL RULES:
+1. Output ONLY {lang_upper} code, no markdown, no explanations
+2. Must include AT LEAST 20 test instructions executed in the test/main section
+
+SPECIFICATIONS:
+- K-value: {k} (base-{k} system)
+- Trit width: {bits} (number of base-{k} digits per data word)
+- MOD value: {mod} ({k}^{bits}) — all arithmetic wraps at this value
+- Binary data width: {data_width} bits (ceil(log2({mod})))
+- Data range: 0 to {mod - 1}
+- Pipeline: {pipeline_desc}
+
+{algebra_section}
+
+CPU ARCHITECTURE:
+- {pipeline_stages}-stage pipeline ({stage_names})
+- 8 general-purpose registers (R0-R7), each {data_width} bits wide
+  - R0 is hardwired to 0
+- Program counter (PC): starts at 0
+- Instruction memory: array of instructions (at least 32 slots)
+- Data memory: array of {data_width}-bit words (at least 16 slots)
+
+INSTRUCTION SET (simplified RISC-V style, all arithmetic mod {mod}):
+- ADD  rd, rs1, rs2  : R[rd] = (R[rs1] + R[rs2]) % {mod}
+- SUB  rd, rs1, rs2  : R[rd] = (R[rs1] - R[rs2] + {mod}) % {mod}
+- MUL  rd, rs1, rs2  : R[rd] = (R[rs1] * R[rs2]) % {mod}
+- ADDI rd, rs1, imm  : R[rd] = (R[rs1] + imm) % {mod}
+- LOAD rd, imm(rs1)  : R[rd] = DataMem[(R[rs1] + imm) % {mod}]
+- STORE rs2, imm(rs1): DataMem[(R[rs1] + imm) % {mod}] = R[rs2]
+- BEQ  rs1, rs2, off : if R[rs1] == R[rs2] then PC += off
+- NOP                : no operation
+
+REQUIRED STRUCTURE:
+- Instruction encoding struct/record (opcode, rd, rs1, rs2, imm)
+- Register file (8 registers, R0 hardwired to 0)
+- Pipeline registers between each stage
+- CPU step function that advances all pipeline stages per clock cycle
+- Simple hazard handling: insert NOP/stall when data dependency detected
+- Test program loaded into instruction memory:
+  - ADDI to load immediate values into registers
+  - ADD, SUB, MUL between registers
+  - STORE values to data memory, LOAD them back
+  - BEQ branch test (taken and not-taken)
+  - At least 20 instructions total
+- Print register file and key memory contents after execution
+
+Generate the complete {lang_upper} code now:
+"""
+        return prompt
 
     def _create_natural_prompt(self, natural_input: str, k: int, bits: int, mod: int,
                                  operations: List[str], language: str, logic_info: Dict = None) -> str:
