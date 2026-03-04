@@ -975,7 +975,8 @@ Generate the complete {lang_upper} code now:
 
 CRITICAL RULES:
 1. Output ONLY {lang_upper} code, no markdown, no explanations
-2. Must include AT LEAST 20 test instructions executed in the test/main section
+2. Must include AT LEAST 20 test instructions in the test program
+3. The code must compile and simulate WITHOUT errors
 
 SPECIFICATIONS:
 - K-value: {k} (base-{k} system)
@@ -987,37 +988,80 @@ SPECIFICATIONS:
 
 {algebra_section}
 
+MODULE NAMING:
+- CPU module: mvl_cpu_{k}_{bits}bit
+- Testbench module: mvl_cpu_{k}_{bits}bit_tb
+
+⚠️ DUT AND TESTBENCH MUST BE SEPARATE MODULES:
+- The CPU module has ONLY clk and rst as inputs. It fetches instructions from internal instruction memory.
+- The testbench module instantiates the CPU, generates clock, drives reset, and monitors outputs.
+- NEVER put test stimulus (initial blocks that drive signals) inside the CPU module.
+- For Verilog: use "integer i;" declared before always blocks. Do NOT use "for (int i = ...)" — that is SystemVerilog, not Verilog.
+
 CPU ARCHITECTURE:
 - {pipeline_stages}-stage pipeline ({stage_names})
 - 8 general-purpose registers (R0-R7), each {data_width} bits wide
-  - R0 is hardwired to 0
-- Program counter (PC): starts at 0
-- Instruction memory: array of instructions (at least 32 slots)
+  - ⚠️ R0 is HARDWIRED to 0: every write to R0 must be IGNORED, reads from R0 always return 0
+- Program counter (PC): {data_width} bits, starts at 0, increments by 1 each cycle
+- Instruction memory: array of instruction records (at least 32 slots), pre-loaded with test program
 - Data memory: array of {data_width}-bit words (at least 16 slots)
 
-INSTRUCTION SET (simplified RISC-V style, all arithmetic mod {mod}):
-- ADD  rd, rs1, rs2  : R[rd] = (R[rs1] + R[rs2]) % {mod}
-- SUB  rd, rs1, rs2  : R[rd] = (R[rs1] - R[rs2] + {mod}) % {mod}
-- MUL  rd, rs1, rs2  : R[rd] = (R[rs1] * R[rs2]) % {mod}
-- ADDI rd, rs1, imm  : R[rd] = (R[rs1] + imm) % {mod}
-- LOAD rd, imm(rs1)  : R[rd] = DataMem[(R[rs1] + imm) % {mod}]
-- STORE rs2, imm(rs1): DataMem[(R[rs1] + imm) % {mod}] = R[rs2]
-- BEQ  rs1, rs2, off : if R[rs1] == R[rs2] then PC += off
-- NOP                : no operation
+INSTRUCTION SET (all arithmetic mod {mod}):
+- Opcode 0 = ADD   rd, rs1, rs2  : R[rd] = (R[rs1] + R[rs2]) % {mod}
+- Opcode 1 = SUB   rd, rs1, rs2  : R[rd] = (R[rs1] - R[rs2] + {mod}) % {mod}
+- Opcode 2 = MUL   rd, rs1, rs2  : R[rd] = (R[rs1] * R[rs2]) % {mod}
+- Opcode 3 = ADDI  rd, rs1, imm  : R[rd] = (R[rs1] + imm) % {mod}
+- Opcode 4 = LOAD  rd, imm(rs1)  : R[rd] = DataMem[(R[rs1] + imm) % 16]
+- Opcode 5 = STORE rs2, imm(rs1) : DataMem[(R[rs1] + imm) % 16] = R[rs2]  (does NOT write register file)
+- Opcode 6 = BEQ   rs1, rs2, off : if R[rs1] == R[rs2] then PC = PC + off, else PC = PC + 1
+- Opcode 7 = NOP                 : no operation (pipeline bubble)
 
-REQUIRED STRUCTURE:
-- Instruction encoding struct/record (opcode, rd, rs1, rs2, imm)
-- Register file (8 registers, R0 hardwired to 0)
-- Pipeline registers between each stage
-- CPU step function that advances all pipeline stages per clock cycle
-- Simple hazard handling: insert NOP/stall when data dependency detected
-- Test program loaded into instruction memory:
-  - ADDI to load immediate values into registers
-  - ADD, SUB, MUL between registers
-  - STORE values to data memory, LOAD them back
-  - BEQ branch test (taken and not-taken)
-  - At least 20 instructions total
-- Print register file and key memory contents after execution
+INSTRUCTION ENCODING:
+- Each instruction is a record/struct with fields: opcode (3 bits), rd (3 bits), rs1 (3 bits), rs2 (3 bits), imm ({data_width} bits)
+- Instructions are stored in an instruction memory array, indexed by PC
+
+⚠️ PIPELINE CRITICAL RULES:
+1. INSTRUCTION FETCH (IF): Read instruction from instruction_mem[PC]. Latch into IF/ID pipeline register.
+2. Each pipeline stage passes its results to the NEXT stage via pipeline registers.
+   Pipeline registers store: opcode, rd, rs1_value, rs2_value, imm, alu_result, etc.
+3. WB stage writes ONLY the result computed in EX stage (stored in pipeline register).
+   ⚠️ WB must write "result_wb" (the value stored in the pipeline register), NOT re-read reg_file[rs1_ex].
+   Re-reading the register file in WB is WRONG because the register may have been overwritten by a later instruction.
+4. R0 protection: if rd == 0, do NOT write to register file (skip the write).
+5. STORE does NOT write to the register file — it only writes to data memory.
+6. BEQ does NOT write to the register file — it only affects PC.
+7. NOP does nothing — no register write, no memory write.
+8. ALL combinational always blocks must assign outputs for ALL opcode cases (use default/else to prevent latches).
+9. Insert NOP between dependent instructions to avoid data hazards (simplest approach).
+
+TEST PROGRAM:
+Pre-load instruction memory with at least 20 instructions. Include NOP between dependent instructions.
+Example sequence:
+  ADDI R1, R0, 10    // R1 = 10
+  NOP                // avoid hazard
+  ADDI R2, R0, 20    // R2 = 20
+  NOP
+  ADD  R3, R1, R2    // R3 = (10+20)%{mod} = 30
+  NOP
+  SUB  R4, R2, R1    // R4 = (20-10+{mod})%{mod} = 10
+  NOP
+  MUL  R5, R1, R2    // R5 = (10*20)%{mod} = 200
+  NOP
+  STORE R1, 0(R0)    // DataMem[0] = R1 = 10
+  NOP
+  LOAD R6, 0(R0)     // R6 = DataMem[0] = 10
+  NOP
+  BEQ R1, R6, +2     // R1==R6, should branch (skip next)
+  ADDI R7, R0, 999   // skipped by branch
+  NOP
+  ... (continue to reach 20+ instructions)
+
+TESTBENCH:
+- Generate clock: initial clk = 0; forever #5 clk = ~clk;
+- Apply reset: rst=1 for 2 cycles, then rst=0
+- Run for enough cycles to execute all instructions (e.g., #500)
+- After execution, use $display to print ALL registers R0-R7 and DataMem[0..15]
+- Use $display to show expected vs actual values for key registers
 
 Generate the complete {lang_upper} code now:
 """
