@@ -935,7 +935,7 @@
                 <div class="form-group">
                     <label>Module Type</label>
                     <div class="select-wrapper">
-                        <select id="module-type">
+                        <select id="module-type" onchange="onModuleTypeChange()">
                             <option value="alu" selected>ALU</option>
                             <option value="counter">Counter</option>
                             <option value="register">Register</option>
@@ -994,7 +994,40 @@
                 </div>
             </div>
 
-            <!-- Row 2: LLM Provider and Model -->
+            <!-- Row 2b: Register Count (visible when module_type = register) -->
+            <div class="form-row" id="register-count-row" style="display:none;">
+                <div class="form-group">
+                    <label>Register Count</label>
+                    <div class="select-wrapper">
+                        <select id="register-count">
+                            <option value="4">4 registers</option>
+                            <option value="8" selected>8 registers</option>
+                            <option value="16">16 registers</option>
+                            <option value="32">32 registers</option>
+                        </select>
+                    </div>
+                    <div class="hint">Number of registers in the register file</div>
+                </div>
+                <div class="form-group"></div>
+            </div>
+
+            <!-- Row 2c: Pipeline Stages (visible when module_type = cpu-risc-v) -->
+            <div class="form-row" id="pipeline-stages-row" style="display:none;">
+                <div class="form-group">
+                    <label>Pipeline Stages</label>
+                    <div class="select-wrapper">
+                        <select id="pipeline-stages">
+                            <option value="3">3-stage (IF/EX/WB)</option>
+                            <option value="5" selected>5-stage (IF/ID/EX/MEM/WB)</option>
+                            <option value="7">7-stage (deep pipeline)</option>
+                        </select>
+                    </div>
+                    <div class="hint">Number of pipeline stages in the CPU</div>
+                </div>
+                <div class="form-group"></div>
+            </div>
+
+            <!-- Row 3: LLM Provider and Model -->
             <div class="form-row">
                 <div class="form-group">
                     <label>LLM Provider</label>
@@ -1142,6 +1175,10 @@
                 <div class="stat-card">
                     <div class="stat-value" id="stat-lang">C</div>
                     <div class="stat-label">Language</div>
+                </div>
+                <div class="stat-card" id="stat-module-extra" style="display:none;">
+                    <div class="stat-value" id="stat-module-extra-value">—</div>
+                    <div class="stat-label" id="stat-module-extra-label">—</div>
                 </div>
             </div>
 
@@ -1447,6 +1484,7 @@
             checkTools();
             setupCheckboxes();
             onLlmProviderChange();
+            onModuleTypeChange();
             updateKValueHint();
         });
 
@@ -1470,6 +1508,23 @@
                     item.classList.toggle('selected', checkbox.checked);
                 });
             });
+        }
+
+        function onModuleTypeChange() {
+            const moduleType = document.getElementById('module-type').value;
+            const registerRow = document.getElementById('register-count-row');
+            const pipelineRow = document.getElementById('pipeline-stages-row');
+
+            // Hide all module-specific rows first
+            registerRow.style.display = 'none';
+            pipelineRow.style.display = 'none';
+
+            // Show the relevant row based on module type
+            if (moduleType === 'register') {
+                registerRow.style.display = 'flex';
+            } else if (moduleType === 'cpu-risc-v') {
+                pipelineRow.style.display = 'flex';
+            }
         }
 
         function onLlmProviderChange() {
@@ -1842,6 +1897,10 @@
             langStatus = {};
             languages.forEach(l => langStatus[l] = 'pending');
 
+            // Collect module-type-specific parameters
+            const registerCount = moduleType === 'register' ? parseInt(document.getElementById('register-count').value) : null;
+            const pipelineStages = moduleType === 'cpu-risc-v' ? parseInt(document.getElementById('pipeline-stages').value) : null;
+
             const baseRequest = {
                 llm: provider,
                 model: model,
@@ -1852,6 +1911,9 @@
                 natural_input: naturalInput,
                 stream: streamOutput
             };
+
+            if (registerCount !== null) baseRequest.register_count = registerCount;
+            if (pipelineStages !== null) baseRequest.pipeline_stages = pipelineStages;
 
             // Show result panel with generating state
             document.getElementById('generation-result').classList.add('visible');
@@ -1865,6 +1927,20 @@
             document.getElementById('stat-bits').textContent = effectiveBits;
             document.getElementById('stat-mod').textContent = (effectiveK ** effectiveBits).toLocaleString();
             document.getElementById('stat-lang').textContent = languages.map(l => l.toUpperCase()).join(', ');
+
+            // Show module-specific stat
+            const extraCard = document.getElementById('stat-module-extra');
+            if (moduleType === 'register' && registerCount !== null) {
+                document.getElementById('stat-module-extra-value').textContent = registerCount;
+                document.getElementById('stat-module-extra-label').textContent = 'Registers';
+                extraCard.style.display = '';
+            } else if (moduleType === 'cpu-risc-v' && pipelineStages !== null) {
+                document.getElementById('stat-module-extra-value').textContent = pipelineStages + '-stage';
+                document.getElementById('stat-module-extra-label').textContent = 'Pipeline';
+                extraCard.style.display = '';
+            } else {
+                extraCard.style.display = 'none';
+            }
 
             // Show tabs immediately (with pending status) for multi-language
             activeResultLang = languages[0];

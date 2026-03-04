@@ -95,6 +95,14 @@ def api_generate():
         language = data.get('language', 'c')
         operations = data.get('operations', ['ADD', 'SUB', 'MUL', 'NEG', 'INC', 'DEC'])
         natural_input = data.get('natural_input', '').strip()
+        register_count = data.get('register_count', None)
+        pipeline_stages = data.get('pipeline_stages', None)
+
+        # Coerce module-specific parameters
+        if register_count is not None:
+            register_count = int(register_count)
+        if pipeline_stages is not None:
+            pipeline_stages = int(pipeline_stages)
 
         # Validate parameters
         if k_value < 2 or k_value > 16:
@@ -110,12 +118,22 @@ def api_generate():
         if module_type not in valid_module_types:
             return jsonify({'success': False, 'error': f'Module type must be one of: {", ".join(valid_module_types)}'}), 400
 
+        if module_type == 'register' and register_count is not None and register_count not in [4, 8, 16, 32]:
+            return jsonify({'success': False, 'error': 'Register count must be 4, 8, 16, or 32'}), 400
+
+        if module_type == 'cpu-risc-v' and pipeline_stages is not None and pipeline_stages not in [3, 5, 7]:
+            return jsonify({'success': False, 'error': 'Pipeline stages must be 3, 5, or 7'}), 400
+
         # Create generator and generate
         print(f"\n📋 [API] Generate request:")
         print(f"   Requested provider: {llm_provider}")
         print(f"   Requested model: {model or '(default)'}")
         print(f"   Module type: {module_type}")
         print(f"   Parameters: k={k_value}, bitwidth={bitwidth}, lang={language}")
+        if register_count is not None:
+            print(f"   Register count: {register_count}")
+        if pipeline_stages is not None:
+            print(f"   Pipeline stages: {pipeline_stages}")
         if natural_input:
             print(f"   Natural input: {natural_input}")
 
@@ -137,7 +155,9 @@ def api_generate():
             language=language,
             operations=operations,
             natural_input=natural_input,
-            module_type=module_type
+            module_type=module_type,
+            register_count=register_count,
+            pipeline_stages=pipeline_stages
         )
 
         return jsonify(result)
@@ -164,6 +184,13 @@ def api_generate_stream():
         language = data.get('language', 'c')
         operations = data.get('operations', ['ADD', 'SUB', 'MUL', 'NEG', 'INC', 'DEC'])
         natural_input = data.get('natural_input', '').strip()
+        register_count = data.get('register_count', None)
+        pipeline_stages = data.get('pipeline_stages', None)
+
+        if register_count is not None:
+            register_count = int(register_count)
+        if pipeline_stages is not None:
+            pipeline_stages = int(pipeline_stages)
 
         # Validate parameters
         if k_value < 2 or k_value > 16:
@@ -177,6 +204,10 @@ def api_generate_stream():
         print(f"   Requested provider: {llm_provider}")
         print(f"   Module type: {module_type}")
         print(f"   Parameters: k={k_value}, bitwidth={bitwidth}, lang={language}")
+        if register_count is not None:
+            print(f"   Register count: {register_count}")
+        if pipeline_stages is not None:
+            print(f"   Pipeline stages: {pipeline_stages}")
         if natural_input:
             print(f"   Natural input: {natural_input}")
 
@@ -194,7 +225,9 @@ def api_generate_stream():
                     language=language,
                     operations=operations,
                     natural_input=natural_input,
-                    module_type=module_type
+                    module_type=module_type,
+                    register_count=register_count,
+                    pipeline_stages=pipeline_stages
                 ):
                     if event_type == "chunk":
                         yield f"data: {json.dumps({'type': 'chunk', 'content': event_data})}\n\n"
