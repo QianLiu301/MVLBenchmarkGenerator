@@ -871,6 +871,7 @@ Generate the complete {lang_upper} code now:
 CRITICAL RULES:
 1. Output ONLY {lang_upper} code, no markdown, no explanations
 2. Must include AT LEAST 20 test vectors
+3. The code must compile and simulate WITHOUT errors
 
 SPECIFICATIONS:
 - K-value: {k} (base-{k} system)
@@ -882,25 +883,49 @@ SPECIFICATIONS:
 
 {algebra_section}
 
-REGISTER FILE INTERFACE:
+MODULE NAMING:
+- DUT module name MUST be: mvl_regfile_{k}_{bits}bit
+- Testbench module name MUST be: mvl_regfile_{k}_{bits}bit_tb
+
+⚠️ ARCHITECTURE — DUT AND TESTBENCH MUST BE SEPARATE MODULES:
+The DUT (design under test) and the testbench MUST be two separate modules.
+- The DUT module contains ONLY the register file logic (no initial blocks, no $display).
+- The testbench module instantiates the DUT, generates the clock, drives all inputs, and reads outputs.
+- NEVER put test logic (initial blocks, $display) inside the DUT module.
+- NEVER drive input ports from inside the module that declares them — this is ILLEGAL in Verilog/VHDL.
+
+REGISTER FILE DUT INTERFACE:
+- clk: clock input
+- rst: asynchronous reset input (use "always @(posedge clk or posedge rst)")
+- read_addr1 [{addr_width - 1}:0]: read port 1 address
+- read_addr2 [{addr_width - 1}:0]: read port 2 address
+- read_data1 [{data_width - 1}:0]: read port 1 data output (combinational)
+- read_data2 [{data_width - 1}:0]: read port 2 data output (combinational)
+- write_enable: write enable (active high)
+- write_addr [{addr_width - 1}:0]: write port address
+- write_data [{data_width - 1}:0]: write port data input
 - {register_count} registers, each {data_width} bits wide (values 0 to {mod - 1})
-- 2 read ports (read_addr1, read_addr2 → read_data1, read_data2): combinational read
-- 1 write port (write_enable, write_addr, write_data): synchronous write
 - Register 0 is hardwired to 0 (writes to register 0 are ignored)
+- Reads are combinational (assign), writes are synchronous (posedge clk)
 - Reset: all registers set to 0
 
-REQUIRED STRUCTURE:
-- Register array of {register_count} entries
-- read(addr) → returns register value at addr (combinational)
-- write(addr, data, enable) → writes data to register at addr on clock edge (when enable=1)
-- Register 0 always reads as 0 and cannot be written
-- Test section with at least 20 test vectors:
-  - Write values to several registers, read them back
-  - Test write-then-read for multiple registers
-  - Test that register 0 always returns 0 even after write
-  - Test both read ports simultaneously (read two different registers)
-  - Test edge values: 0, 1, {mod - 1}
-  - Test write enable = 0 (data should NOT be written)
+TESTBENCH REQUIREMENTS:
+- Generate clock: initial clk = 0; forever #5 clk = ~clk;
+- Apply reset at start: rst=1, wait 2 clock cycles, rst=0
+- For EVERY test: set read_addr1/read_addr2 BEFORE reading read_data1/read_data2
+  ⚠️ You MUST explicitly assign read_addr1 or read_addr2 to the register you want to read!
+  The read address does NOT auto-follow the write address — they are independent ports.
+- Wait for posedge clk after setting write signals (use @(posedge clk) or sufficient #delay)
+- Use $display for EVERY test showing: test number, operation, address, written value, read value
+- At least 20 test vectors covering:
+  1. Write to R1, set read_addr1=1, verify read_data1 (basic write-read)
+  2. Write to R2, set read_addr2=2, verify read_data2 (second read port)
+  3. Write to R0, set read_addr1=0, verify read_data1=0 (R0 always 0)
+  4. Read R1 and R2 simultaneously (both read ports at once)
+  5. Write with write_enable=0, verify data NOT written
+  6. Write edge values: 0, 1, {mod - 1}
+  7. Reset test: write values, assert rst, verify all registers = 0
+  8. Write to multiple registers, read them all back
 
 Generate the complete {lang_upper} code now:
 """
