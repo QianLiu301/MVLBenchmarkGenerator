@@ -262,6 +262,103 @@ class MVLGenerator:
         return resolve_logic_type(k_value)
 
     @staticmethod
+    def _compute_gf_test_values(k: int, bits: int, logic_info: Dict) -> Dict:
+        """Compute expected ALU test results using GF(p^n) digit-wise operations.
+
+        Returns a dict with pre-computed expected values for edge-case and
+        small-value tests, suitable for embedding in LLM prompts and testbenches.
+        """
+        tables = logic_info['tables']
+        add_tbl = tables['add_table']
+        mul_tbl = tables['mul_table']
+        mod = k ** bits
+        max_val = mod - 1
+
+        def to_digits(value):
+            digits = []
+            for _ in range(bits):
+                digits.append(value % k)
+                value //= k
+            return digits
+
+        def from_digits(digits):
+            value = 0
+            for i, d in enumerate(digits):
+                value += d * (k ** i)
+            return value
+
+        def gf_add(a, b):
+            ad, bd = to_digits(a), to_digits(b)
+            return from_digits([add_tbl[ad[i]][bd[i]] for i in range(bits)])
+
+        def gf_sub(a, b):
+            ad, bd = to_digits(a), to_digits(b)
+            result = []
+            for i in range(bits):
+                for x in range(k):
+                    if add_tbl[x][bd[i]] == ad[i]:
+                        result.append(x)
+                        break
+            return from_digits(result)
+
+        def gf_mul(a, b):
+            ad, bd = to_digits(a), to_digits(b)
+            result = [0] * bits
+            for i in range(bits):
+                for j in range(bits):
+                    if i + j < bits:
+                        result[i + j] = add_tbl[result[i + j]][mul_tbl[ad[i]][bd[j]]]
+            return from_digits(result)
+
+        def gf_neg(a):
+            ad = to_digits(a)
+            result = []
+            for d in ad:
+                for x in range(k):
+                    if add_tbl[x][d] == 0:
+                        result.append(x)
+                        break
+            return from_digits(result)
+
+        def gf_inc(a):
+            ad = to_digits(a)
+            ad[0] = add_tbl[ad[0]][1]
+            return from_digits(ad)
+
+        def gf_dec(a):
+            ad = to_digits(a)
+            inv1 = 0
+            for x in range(k):
+                if add_tbl[x][1] == 0:
+                    inv1 = x
+                    break
+            ad[0] = add_tbl[ad[0]][inv1]
+            return from_digits(ad)
+
+        return {
+            'add_0_0': gf_add(0, 0),
+            'sub_0_0': gf_sub(0, 0),
+            'mul_0_0': gf_mul(0, 0),
+            'neg_0': gf_neg(0),
+            'inc_0': gf_inc(0),
+            'dec_0': gf_dec(0),
+            'add_max': gf_add(max_val, max_val),
+            'sub_max': gf_sub(max_val, max_val),
+            'mul_max': gf_mul(max_val, max_val),
+            'neg_max': gf_neg(max_val),
+            'inc_max': gf_inc(max_val),
+            'dec_max': gf_dec(max_val),
+            'add_10_20': gf_add(10, 20),
+            'sub_20_10': gf_sub(20, 10),
+            'sub_10_20': gf_sub(10, 20),
+            'mul_10_20': gf_mul(10, 20),
+            'neg_10': gf_neg(10),
+            'neg_1': gf_neg(1),
+            'inc_10': gf_inc(10),
+            'dec_10': gf_dec(10),
+        }
+
+    @staticmethod
     def _vhdl_unsigned_literal(value: int, width: int) -> str:
         """Generate a VHDL unsigned literal that avoids integer overflow.
 
@@ -395,8 +492,9 @@ class MVLGenerator:
          For simplicity, implement as schoolbook polynomial multiplication:
          for i in range({bits}): for j in range({bits}):
            if i+j < {bits}: result[i+j] = GF_ADD[result[i+j]][GF_MUL[a[i]][b[j]]]
-  - NEG: for each digit position i: result_digit[i] = ({p} - a_digit[i]) % {p}
-         (additive inverse in GF({p}), since digit addition is mod {p})
+  - NEG: for each digit position i: find x such that GF_ADD[x][a_digit[i]] == 0
+         (additive inverse in GF({k}), using the addition table)
+         In GF({p}^{n}), characteristic is {p}. {"Since char=2, every element is its own additive inverse, so NEG(a) = a (identity)." if p == 2 else f"For each digit d, negate each polynomial coefficient mod {p}."}
   - INC: add 1 to the least significant digit using GF_ADD: result_digit[0] = GF_ADD[a_digit[0]][1], rest unchanged
   - DEC: subtract 1 from the least significant digit: find additive inverse of 1, then GF_ADD
 
@@ -1243,6 +1341,26 @@ Generate the complete {language.upper()} code now:
             c_mul_type = "__uint128_t"
 
         algebra_section = self._build_algebra_section(k, bits, mod, logic_info, 'c')
+        is_extension = (logic_info['category'] == 'extension_field' and logic_info.get('tables'))
+
+        if is_extension:
+            # Extension field: digit-wise operations, no standard mod arithmetic
+            arith_instructions = f"""3. GF({k}) addition and multiplication lookup tables (copy from ALGEBRAIC STRUCTURE section)
+4. Result struct containing BOTH uint64_t result AND Flags (z, n, c)
+   ⚠️ alu_exec() MUST return a struct with both the result value AND the flags!
+   Do NOT return only flags while discarding the result as a local variable.
+5. Helper functions: to_digits(), from_digits(), gf_add_digits(), gf_mul_digits()
+6. ⚠️ ALL operations MUST use digit-wise GF({k}) table lookups as described in ALGEBRAIC STRUCTURE.
+   Do NOT use standard modular arithmetic ((a+b)%MOD, (MOD-a)%MOD, etc.) — these give WRONG results!"""
+        else:
+            # Prime field / integer ring: standard mod arithmetic
+            arith_instructions = f"""3. #define MOD {mod}ULL
+4. Result struct containing BOTH uint64_t result AND Flags (z, n, c)
+   ⚠️ alu_exec() MUST return a struct with both the result value AND the flags!
+   Do NOT return only flags while discarding the result as a local variable.
+5. For MUL: use {c_mul_type} for intermediate product ({mod-1} * {mod-1} = {mul_product_max})
+6. ⚠️ NEG: MUST use (MOD - a) % MOD, NOT just (MOD - a). When a=0, (MOD-0)=MOD which is NOT in range!
+   NEG(0) must equal 0. The % MOD is mandatory."""
 
         prompt = f"""Generate a complete, compilable C program for a {bits}-trit ALU operating in base-{k}.
 
@@ -1263,13 +1381,7 @@ SPECIFICATIONS:
 REQUIRED STRUCTURE:
 1. #include statements (stdio.h, stdlib.h, stdint.h, stdbool.h, time.h)
 2. Operation enum (OP_ADD=0, OP_SUB=1, OP_MUL=2, OP_NEG=3, OP_INC=4, OP_DEC=5)
-3. #define MOD {mod}ULL
-4. Result struct containing BOTH uint64_t result AND Flags (z, n, c)
-   ⚠️ alu_exec() MUST return a struct with both the result value AND the flags!
-   Do NOT return only flags while discarding the result as a local variable.
-5. For MUL: use {c_mul_type} for intermediate product ({mod-1} * {mod-1} = {mul_product_max})
-6. ⚠️ NEG: MUST use (MOD - a) % MOD, NOT just (MOD - a). When a=0, (MOD-0)=MOD which is NOT in range!
-   NEG(0) must equal 0. The % MOD is mandatory.
+{arith_instructions}
 7. alu_exec(a, b, op) function with switch-case
 8. op_name() function to get operation name string
 9. main() with srand() and AT LEAST 20 printf test lines — use the result FROM alu_exec()
@@ -1295,6 +1407,31 @@ Generate the complete C code now:
             logic_info = self._resolve_logic_type(k)
 
         algebra_section = self._build_algebra_section(k, bits, mod, logic_info, 'python')
+        is_extension = (logic_info['category'] == 'extension_field' and logic_info.get('tables'))
+
+        if is_extension:
+            structure_section = f"""REQUIRED STRUCTURE:
+1. imports (random, dataclasses or namedtuple)
+2. GF({k}) addition and multiplication lookup tables (copy from ALGEBRAIC STRUCTURE section)
+3. Operation constants (OP_ADD=0, OP_SUB=1, etc.)
+4. Flags dataclass or namedtuple (z, n, c)
+5. Helper functions: to_digits(), from_digits(), gf_add_digits(), gf_mul_digits()
+6. alu_exec(a, b, op) function returning (result, flags)
+   ⚠️ ALL operations MUST use digit-wise GF({k}) table lookups as described in ALGEBRAIC STRUCTURE.
+   Do NOT use standard modular arithmetic ((a+b)%MOD, (MOD-a)%MOD, etc.) — these give WRONG results!
+   ⚠️ SUB: In GF({k}), subtraction a-b means finding x where GF_ADD[x][b_digit] == a_digit for each digit.
+   Do NOT compute SUB as a + (b+b) — in characteristic {logic_info['p']}, b+b=0, so that returns a, not a-b!
+7. op_name(op) function
+8. if __name__ == "__main__": block with AT LEAST 20 print test lines"""
+        else:
+            structure_section = f"""REQUIRED STRUCTURE:
+1. imports (random, dataclasses or namedtuple)
+2. MOD = {mod}
+3. Operation constants (OP_ADD=0, OP_SUB=1, etc.)
+4. Flags dataclass or namedtuple (z, n, c)
+5. alu_exec(a, b, op) function returning (result, flags)
+6. op_name(op) function
+7. if __name__ == "__main__": block with AT LEAST 20 print test lines"""
 
         prompt = f"""Generate a complete Python program for a {bits}-trit ALU operating in base-{k}.
 
@@ -1312,14 +1449,7 @@ SPECIFICATIONS:
 
 {algebra_section}
 
-REQUIRED STRUCTURE:
-1. imports (random, dataclasses or namedtuple)
-2. MOD = {mod}
-3. Operation constants (OP_ADD=0, OP_SUB=1, etc.)
-4. Flags dataclass or namedtuple (z, n, c)
-5. alu_exec(a, b, op) function returning (result, flags)
-6. op_name(op) function
-7. if __name__ == "__main__": block with AT LEAST 20 print test lines
+{structure_section}
 
 ⚠️ MANDATORY TEST REQUIREMENT:
 The main block MUST include AT LEAST 20 test vectors using print(). Code with fewer than 20 tests will be REJECTED.
@@ -1341,8 +1471,58 @@ Generate the complete Python code now:
         # Calculate bit width needed to represent mod value
         import math
         data_width = math.ceil(math.log2(mod)) if mod > 1 else 1
+        bits_per_digit = math.ceil(math.log2(k)) if k > 1 else 1
 
         algebra_section = self._build_algebra_section(k, bits, mod, logic_info, 'verilog')
+        is_extension = (logic_info['category'] == 'extension_field' and logic_info.get('tables'))
+
+        if is_extension:
+            arch_section = f"""ARCHITECTURE REQUIREMENTS:
+⚠️ This is GF({k}) digit-wise arithmetic — NOT standard modular arithmetic!
+  Do NOT use (a + b) % {mod} or (a * b) % {mod}. These give WRONG results for extension fields.
+
+- Use ONLY ONE always block — do NOT split outputs into combinational + sequential blocks!
+- ALL reg declarations MUST be at module level. Do NOT declare reg inside always blocks or case statements!
+- Each {data_width}-bit operand encodes {bits} digits of {bits_per_digit} bits each.
+  Extract digits using indexed part-select: a_digits[i] = a[i*{bits_per_digit} +: {bits_per_digit}]
+  ⚠️ Do NOT use a[(i*{bits_per_digit})+{bits_per_digit-1}: i*{bits_per_digit}] — variable part-select is ILLEGAL in Verilog!
+  ⚠️ Use a[i*{bits_per_digit} +: {bits_per_digit}] (indexed part-select) instead.
+- Implement GF_ADD and GF_MUL as Verilog functions with [{bits_per_digit-1}:0] inputs (NOT [3:0]!)
+  Use case({{a, b}}) with {bits_per_digit*2}-bit patterns matching the tables from ALGEBRAIC STRUCTURE.
+- ⚠️ Do NOT use `integer` declarations inside always blocks (SystemVerilog only).
+  Declare `integer i, j;` at module level.
+- ⚠️ Do NOT use `break` in for loops (not standard Verilog). Use `disable` block or restructure logic.
+- Compute results into temp regs using BLOCKING assignment (=), then assign outputs with NON-BLOCKING (<=).
+- Carry and negative flags are always 0 for GF field arithmetic.
+- Zero flag: check if temp_result == 0."""
+        else:
+            arch_section = f"""ARCHITECTURE REQUIREMENTS:
+⚠️ Use ONLY ONE always block — do NOT split outputs into combinational + sequential blocks!
+  Having result/zero/negative/carry driven by two always blocks creates a MULTI-DRIVER conflict.
+  Use a single always @(posedge clk) block that handles reset and computation.
+- ALL reg declarations MUST be at module level. Do NOT declare reg inside always blocks or case statements!
+  Example: declare "reg [{data_width * 2 - 1}:0] temp;" at module level, NOT inside a case branch.
+- For MUL: declare temp as reg [{data_width * 2 - 1}:0] at module level to hold the full product.
+- ⚠️ NON-BLOCKING ASSIGNMENT TIMING: Inside a clocked always block, non-blocking assignments (<=)
+  update at the END of the time step. Reading a signal on the RHS after assigning it with <= gives
+  the OLD value. To fix this, compute the result into a temporary reg using BLOCKING assignment (=),
+  then assign ALL outputs from those temporaries:
+    reg [{data_width - 1}:0] temp_result;
+    reg temp_carry;
+    always @(posedge clk) begin
+      temp_result = (a + b) % {mod};  // BLOCKING: immediate update
+      temp_carry = (a + b) >= {mod};  // BLOCKING: immediate update
+      result <= temp_result;           // NON-BLOCKING: output port
+      zero <= (temp_result == 0);      // reads NEW value correctly
+      negative <= (temp_result >= {mod // 2});
+      carry <= temp_carry;             // NON-BLOCKING: output port
+    end
+  ⚠️ ALL output ports (result, zero, negative, carry) MUST use non-blocking (<=).
+  Use blocking (=) ONLY for temp_result/temp_carry intermediate calculations.
+  Do NOT mix: carry = ... (blocking) alongside result <= ... (non-blocking).
+- ⚠️ MUL CARRY: MUL does NOT generate carry. Set carry = 0 for MUL opcode.
+  NEG also does NOT generate carry. Set carry = 0 for NEG opcode.
+- Use 'output reg' for result/flags since they are assigned in always block"""
 
         prompt = f"""Generate a complete Verilog module for a {bits}-trit ALU operating in base-{k}.
 
@@ -1371,33 +1551,7 @@ module mvl_alu_{k}_{bits}bit (
     output reg carry
 );
 
-ARCHITECTURE REQUIREMENTS:
-⚠️ Use ONLY ONE always block — do NOT split outputs into combinational + sequential blocks!
-  Having result/zero/negative/carry driven by two always blocks creates a MULTI-DRIVER conflict.
-  Use a single always @(posedge clk) block that handles reset and computation.
-- ALL reg declarations MUST be at module level. Do NOT declare reg inside always blocks or case statements!
-  Example: declare "reg [{data_width * 2 - 1}:0] temp;" at module level, NOT inside a case branch.
-- For MUL: declare temp as reg [{data_width * 2 - 1}:0] at module level to hold the full product.
-- ⚠️ NON-BLOCKING ASSIGNMENT TIMING: Inside a clocked always block, non-blocking assignments (<=)
-  update at the END of the time step. Reading a signal on the RHS after assigning it with <= gives
-  the OLD value. To fix this, compute the result into a temporary reg using BLOCKING assignment (=),
-  then assign ALL outputs from those temporaries:
-    reg [{data_width - 1}:0] temp_result;
-    reg temp_carry;
-    always @(posedge clk) begin
-      temp_result = (a + b) % {mod};  // BLOCKING: immediate update
-      temp_carry = (a + b) >= {mod};  // BLOCKING: immediate update
-      result <= temp_result;           // NON-BLOCKING: output port
-      zero <= (temp_result == 0);      // reads NEW value correctly
-      negative <= (temp_result >= {mod // 2});
-      carry <= temp_carry;             // NON-BLOCKING: output port
-    end
-  ⚠️ ALL output ports (result, zero, negative, carry) MUST use non-blocking (<=).
-  Use blocking (=) ONLY for temp_result/temp_carry intermediate calculations.
-  Do NOT mix: carry = ... (blocking) alongside result <= ... (non-blocking).
-- ⚠️ MUL CARRY: MUL does NOT generate carry. Set carry = 0 for MUL opcode.
-  NEG also does NOT generate carry. Set carry = 0 for NEG opcode.
-- Use 'output reg' for result/flags since they are assigned in always block
+{arch_section}
 
 ⚠️ MANDATORY TESTBENCH REQUIREMENT:
 You MUST include a testbench module mvl_alu_{k}_{bits}bit_tb with AT LEAST 20 $display test vectors. Code with fewer than 20 tests will be REJECTED.
@@ -1411,6 +1565,95 @@ Generate the complete Verilog module with testbench now:
 """
         return prompt
 
+    @staticmethod
+    def _build_vhdl_arch_section(k, bits, mod, data_width, is_extension, logic_info, mod_val_lit, neg_half_lit, max_val):
+        """Build the VHDL architecture requirements section, conditional on algebraic structure."""
+        import math
+        bits_per_digit = math.ceil(math.log2(k)) if k > 1 else 1
+
+        common_rules = f"""⚠️ VHDL COMMENT SYNTAX: Comments MUST use "--", NOT "!" or "//" or "#".
+   WRONG: !this is a comment    WRONG: //this is a comment
+   CORRECT: -- this is a comment
+
+⚠️ VHDL VARIABLE DECLARATION RULES (CRITICAL — violations cause compilation failure):
+1. ALL variable declarations MUST be in the process DECLARATIVE REGION (between "process" and "begin").
+   Do NOT declare variables inside case/when branches or if/else blocks — this is ILLEGAL in VHDL!
+2. Do NOT use "when...else" syntax for variable assignment inside a process — ANYWHERE!
+   It is only valid in VHDL-2008 and GHDL defaults to VHDL-93.
+   WRONG:  v_carry := '1' when condition else '0';
+   CORRECT: if condition then v_carry := '1'; else v_carry := '0'; end if;
+- Use variables (NOT signals) inside process for intermediate results"""
+
+        if is_extension:
+            p = logic_info['p']
+            return f"""VHDL ARCHITECTURE REQUIREMENTS:
+⚠️ This is GF({k}) = GF({p}^{logic_info['n']}) digit-wise arithmetic — NOT standard modular arithmetic!
+  Do NOT use (a + b) mod MOD_VAL or unsigned(a) * unsigned(b). These give WRONG results!
+  Each {data_width}-bit operand encodes {bits} digits of {bits_per_digit} bits each.
+
+{common_rules}
+
+IMPLEMENTATION APPROACH:
+- Declare digit arrays as variables: variable a_digits, b_digits, r_digits : array of unsigned
+  Or use individual variables: a_d0, a_d1, ..., a_d{bits-1} of unsigned({bits_per_digit-1} downto 0)
+- Extract digits: a_d_i := unsigned(a(i*{bits_per_digit}+{bits_per_digit-1} downto i*{bits_per_digit}))
+- Implement GF_ADD and GF_MUL as VHDL functions using case statements
+- ALL operations MUST use digit-wise GF({k}) table lookups as described in ALGEBRAIC STRUCTURE.
+- Carry and negative flags are always '0' for GF field arithmetic.
+- Zero flag: check if result = all zeros."""
+        else:
+            return f"""VHDL ARCHITECTURE REQUIREMENTS:
+⚠️ MOD constant MUST equal exactly {mod}. Do NOT use (others => '1') or any other value!
+   constant MOD_VAL : unsigned({data_width} downto 0) := {mod_val_lit};
+{"⚠️ CRITICAL: " + str(mod) + " EXCEEDS the VHDL integer range (max 2^31-1 = 2147483647)!" + chr(10) + "   Do NOT use to_unsigned(" + str(mod) + ", ...) — the integer argument overflows!" + chr(10) + "   The hex literal above is the ONLY correct way to declare this constant." if mod > 2147483647 else ""}
+
+{common_rules}
+
+3. NEVER compare unsigned with < 0. Unsigned types are ALWAYS >= 0 in VHDL.
+   For SUB underflow detection, compare the ORIGINAL operands BEFORE subtraction:
+     if unsigned(a) < unsigned(b) then
+       sub_tmp := resize(unsigned(a), {data_width + 1}) + MOD_VAL - resize(unsigned(b), {data_width + 1});
+     else
+       sub_tmp := resize(unsigned(a), {data_width + 1}) - resize(unsigned(b), {data_width + 1});
+     end if;
+
+- Use unsigned type for ALL arithmetic, convert with unsigned() and std_logic_vector()
+
+ADDITION/SUBTRACTION WIDTH:
+- Two {data_width}-bit operands added can produce a ({data_width}+1)-bit result
+- You MUST resize operands to {data_width + 1} bits BEFORE adding:
+    sum_tmp := resize(unsigned(a), {data_width + 1}) + resize(unsigned(b), {data_width + 1});
+    v_result := resize(sum_tmp mod MOD_VAL, {data_width});
+- Carry flag: use if/else to check sum_tmp >= MOD_VAL (check BEFORE mod)
+
+SUBTRACTION:
+- Compare operands FIRST, then compute. v_carry := '1' if a < b, else '0'.
+
+MULTIPLICATION:
+- unsigned(a) * unsigned(b) returns {data_width * 2}-bit result automatically.
+- Do NOT resize before multiplying! Use:
+    variable mul_tmp : unsigned({data_width * 2 - 1} downto 0);
+    mul_tmp := unsigned(a) * unsigned(b);
+    v_result := resize(mul_tmp mod MOD_VAL, {data_width});
+- MUL carry is always '0'
+
+NEG SPECIAL CASE:
+- NEG(0) = 0. Use: v_result := resize((MOD_VAL - resize(unsigned(a), {data_width + 1})) mod MOD_VAL, {data_width});
+- NEG carry is always '0'
+
+INC SPECIAL CASE:
+- INC(max_val) = 0 with carry.
+{"- Do NOT use to_unsigned(" + str(max_val) + ", " + str(data_width) + ") — integer overflow! Use resize(MOD_VAL - 1, " + str(data_width) + ")." if max_val > 2147483647 else ""}
+    if unsigned(a) = resize(MOD_VAL - 1, {data_width}) then
+      v_result := to_unsigned(0, {data_width}); v_carry := '1';
+    else v_result := unsigned(a) + 1; v_carry := '0'; end if;
+
+DEC SPECIAL CASE:
+- DEC(0) = {mod - 1}. Do NOT assign MOD_VAL directly to v_result (width mismatch). Use resize().
+    if unsigned(a) = 0 then
+      v_result := resize(MOD_VAL - 1, {data_width}); v_carry := '1';
+    else v_result := resize(resize(unsigned(a), {data_width + 1}) - 1, {data_width}); v_carry := '0'; end if;"""
+
     def _create_vhdl_prompt(self, k: int, bits: int, mod: int, operations: List[str], logic_info: Dict = None) -> str:
         """Create prompt for VHDL code generation"""
         ops_str = ', '.join(operations)
@@ -1419,29 +1662,52 @@ Generate the complete Verilog module with testbench now:
 
         import math
         data_width = math.ceil(math.log2(mod)) if mod > 1 else 1
+        is_extension = (logic_info['category'] == 'extension_field' and logic_info.get('tables'))
 
         algebra_section = self._build_algebra_section(k, bits, mod, logic_info, 'vhdl')
 
-        # Pre-compute some expected test results for testbench hints
+        # Pre-compute expected test results — use GF operations for extension fields
         max_val = mod - 1
-        add_max = (2 * max_val) % mod
-        mul_max = (max_val * max_val) % mod
-        neg_max = (mod - max_val) % mod
-        inc_max = (max_val + 1) % mod
-        dec_max = (max_val - 1 + mod) % mod
         neg_half = mod // 2
-        # Pre-compute small-value NEG results (LLMs often miscalculate these)
-        neg_10 = (mod - 10) % mod
-        neg_1 = (mod - 1) % mod
-        sub_10_20 = (10 - 20 + mod) % mod
-        mul_10_20 = (10 * 20) % mod
+
+        if is_extension:
+            gf_vals = self._compute_gf_test_values(k, bits, logic_info)
+            add_max = gf_vals['add_max']
+            mul_max = gf_vals['mul_max']
+            neg_max = gf_vals['neg_max']
+            inc_max = gf_vals['inc_max']
+            dec_max = gf_vals['dec_max']
+            dec_0 = gf_vals['dec_0']
+            neg_10 = gf_vals['neg_10']
+            neg_1 = gf_vals['neg_1']
+            sub_10_20 = gf_vals['sub_10_20']
+            mul_10_20 = gf_vals['mul_10_20']
+            add_10_20 = gf_vals['add_10_20']
+            sub_20_10 = gf_vals['sub_20_10']
+            inc_10 = gf_vals['inc_10']
+            dec_10 = gf_vals['dec_10']
+        else:
+            add_max = (2 * max_val) % mod
+            mul_max = (max_val * max_val) % mod
+            neg_max = (mod - max_val) % mod
+            inc_max = (max_val + 1) % mod
+            dec_max = (max_val - 1 + mod) % mod
+            dec_0 = (0 - 1 + mod) % mod
+            neg_10 = (mod - 10) % mod
+            neg_1 = (mod - 1) % mod
+            sub_10_20 = (10 - 20 + mod) % mod
+            mul_10_20 = (10 * 20) % mod
+            add_10_20 = 30
+            sub_20_10 = 10
+            inc_10 = 11
+            dec_10 = 9
 
         # Pre-compute VHDL-safe literals (hex for values > 2^31-1)
         mod_val_lit = self._vhdl_unsigned_literal(mod, data_width + 1)
         max_val_slv = self._vhdl_slv_literal(max_val, data_width)
         neg_half_lit = self._vhdl_unsigned_literal(neg_half, data_width)
         # Testbench assertion literals
-        dec0_slv = self._vhdl_slv_literal((0 - 1 + mod) % mod, data_width)
+        dec0_slv = self._vhdl_slv_literal(dec_0, data_width)
         add_max_slv = self._vhdl_slv_literal(add_max, data_width)
         mul_max_slv = self._vhdl_slv_literal(mul_max, data_width)
         neg_max_slv = self._vhdl_slv_literal(neg_max, data_width)
@@ -1484,116 +1750,7 @@ entity mvl_alu_{k}_{bits}bit is
     );
 end entity mvl_alu_{k}_{bits}bit;
 
-VHDL ARCHITECTURE REQUIREMENTS:
-⚠️ MOD constant MUST equal exactly {mod}. Do NOT use (others => '1') or any other value!
-   constant MOD_VAL : unsigned({data_width} downto 0) := {mod_val_lit};
-{"⚠️ CRITICAL: " + str(mod) + " EXCEEDS the VHDL integer range (max 2^31-1 = 2147483647)!" + chr(10) + "   Do NOT use to_unsigned(" + str(mod) + ", ...) — the integer argument overflows!" + chr(10) + "   Do NOT use integer type for MOD_VAL!" + chr(10) + "   The hex literal above is the ONLY correct way to declare this constant." if mod > 2147483647 else ""}
-
-⚠️ VHDL COMMENT SYNTAX: Comments MUST use "--", NOT "!" or "//" or "#".
-   WRONG: !this is a comment    WRONG: //this is a comment
-   CORRECT: -- this is a comment
-
-⚠️ VHDL VARIABLE DECLARATION RULES (CRITICAL — violations cause compilation failure):
-1. ALL variable declarations MUST be in the process DECLARATIVE REGION (between "process" and "begin").
-   Do NOT declare variables inside case/when branches or if/else blocks — this is ILLEGAL in VHDL!
-   CORRECT:
-     process(clk, rst)
-       variable v_result : unsigned({data_width - 1} downto 0);
-       variable sum_tmp  : unsigned({data_width} downto 0);
-       variable mul_tmp  : unsigned({data_width * 2 - 1} downto 0);
-       variable v_carry  : std_logic;
-     begin
-       -- use variables here in case/when branches
-   WRONG (will NOT compile):
-     when "0000" =>
-       variable sum_tmp : unsigned({data_width} downto 0);  -- ❌ ILLEGAL
-
-2. Do NOT use "when...else" syntax for variable assignment inside a process — ANYWHERE!
-   It is only valid in VHDL-2008 and GHDL defaults to VHDL-93.
-   This applies to ALL variable assignments including carry, zero, and negative flags.
-   WRONG:  v_carry := '1' when condition else '0';          -- ❌ VHDL-93 error
-   WRONG:  v_zero := '1' when v_result = 0 else '0';       -- ❌ VHDL-93 error
-   WRONG:  v_negative := '1' when v_result >= X else '0';   -- ❌ VHDL-93 error
-   CORRECT (use if/else for EVERY conditional variable assignment):
-     if sum_tmp >= MOD_VAL then v_carry := '1'; else v_carry := '0'; end if;
-     if v_result = to_unsigned(0, {data_width}) then v_zero := '1'; else v_zero := '0'; end if;
-     if v_result >= {neg_half_lit} then v_negative := '1'; else v_negative := '0'; end if;
-
-3. NEVER compare unsigned with < 0. Unsigned types are ALWAYS >= 0 in VHDL.
-   The comparison "unsigned_var < 0" is ALWAYS false and is a logic bug!
-   For SUB underflow detection, compare the ORIGINAL operands BEFORE subtraction:
-   WRONG:  sub_tmp := unsigned(a) - unsigned(b); if sub_tmp < 0 then ...  -- ❌ always false
-   CORRECT:
-     if unsigned(a) < unsigned(b) then
-       sub_tmp := resize(unsigned(a), {data_width + 1}) + MOD_VAL - resize(unsigned(b), {data_width + 1});
-     else
-       sub_tmp := resize(unsigned(a), {data_width + 1}) - resize(unsigned(b), {data_width + 1});
-     end if;
-
-- Use variables (NOT signals) inside process for intermediate results — signals update one delta later
-- Use unsigned type for ALL arithmetic, convert with unsigned() and std_logic_vector()
-
-ADDITION/SUBTRACTION WIDTH:
-- Two {data_width}-bit operands added can produce a ({data_width}+1)-bit result
-- You MUST resize operands to {data_width + 1} bits BEFORE adding:
-    sum_tmp := resize(unsigned(a), {data_width + 1}) + resize(unsigned(b), {data_width + 1});
-    v_result := resize(sum_tmp mod MOD_VAL, {data_width});  -- truncate back to {data_width} bits
-- Carry flag: use if/else to check sum_tmp >= MOD_VAL (check BEFORE mod)
-
-SUBTRACTION:
-- Do NOT subtract then check < 0 — unsigned can never be < 0!
-- Compare operands FIRST, then compute:
-    if unsigned(a) < unsigned(b) then
-      sub_tmp := resize(unsigned(a), {data_width + 1}) + MOD_VAL - resize(unsigned(b), {data_width + 1});
-      v_carry := '1';
-    else
-      sub_tmp := resize(unsigned(a), {data_width + 1}) - resize(unsigned(b), {data_width + 1});
-      v_carry := '0';
-    end if;
-    v_result := resize(sub_tmp mod MOD_VAL, {data_width});
-
-MULTIPLICATION:
-- In VHDL numeric_std, the "*" operator returns length = left'length + right'length.
-  So unsigned(a) * unsigned(b) with {data_width}-bit operands returns {data_width * 2}-bit result automatically.
-- ⚠️ Do NOT resize operands before multiplying! resize(a,{data_width*2}) * resize(b,{data_width*2}) returns {data_width*4} bits,
-  which causes a length mismatch when assigned to a {data_width*2}-bit variable!
-- CORRECT multiplication:
-    variable mul_tmp : unsigned({data_width * 2 - 1} downto 0);  -- {data_width * 2} bits
-    mul_tmp := unsigned(a) * unsigned(b);  -- {data_width}*2 = {data_width * 2} bits, matches mul_tmp
-    v_result := resize(mul_tmp mod MOD_VAL, {data_width});
-- WRONG (will cause bound check failure):
-    mul_tmp := resize(unsigned(a), {data_width * 2}) * resize(unsigned(b), {data_width * 2});  -- ❌ returns {data_width * 4} bits!
-- MUL carry is always '0'
-
-NEG SPECIAL CASE:
-- NEG(0) = 0, NOT {mod}. Because ({mod} - 0) mod {mod} = 0.
-- Use: v_result := resize((MOD_VAL - resize(unsigned(a), {data_width + 1})) mod MOD_VAL, {data_width});
-- NEG carry is always '0'
-
-INC SPECIAL CASE:
-- INC(max_val) = 0 with carry. max_val = {max_val} which exceeds VHDL integer range!
-- ⚠️ Do NOT use to_unsigned({max_val}, {data_width}) — integer overflow! Use resize(MOD_VAL - 1, {data_width}).
-- Copy this EXACT code (do NOT modify it):
-    if unsigned(a) = resize(MOD_VAL - 1, {data_width}) then
-      v_result := to_unsigned(0, {data_width});
-      v_carry := '1';
-    else
-      v_result := unsigned(a) + 1;
-      v_carry := '0';
-    end if;
-
-DEC SPECIAL CASE:
-- DEC(0) = {mod - 1}. Do NOT use unsigned subtraction then check < 0!
-- ⚠️ Do NOT use (others => '0') in comparisons — VHDL cannot infer its length! Use "= 0" instead.
-- ⚠️ Do NOT assign MOD_VAL directly to v_result — MOD_VAL is {data_width + 1} bits but v_result is {data_width} bits! Always wrap with resize().
-- Copy this EXACT code (do NOT modify it):
-    if unsigned(a) = 0 then
-      v_result := resize(MOD_VAL - 1, {data_width});
-      v_carry := '1';
-    else
-      v_result := resize(resize(unsigned(a), {data_width + 1}) - 1, {data_width});
-      v_carry := '0';
-    end if;
+{self._build_vhdl_arch_section(k, bits, mod, data_width, is_extension, logic_info, mod_val_lit, neg_half_lit, max_val)}
 
 TESTBENCH EXPECTED VALUES (pre-computed, mathematically verified — use these EXACT values):
   ADD(0, 0) = 0
@@ -1601,22 +1758,21 @@ TESTBENCH EXPECTED VALUES (pre-computed, mathematically verified — use these E
   MUL(0, 0) = 0
   NEG(0) = 0
   INC(0) = 1
-  DEC(0) = {(0 - 1 + mod) % mod}
+  DEC(0) = {dec_0}
   ADD({max_val}, {max_val}) = {add_max}
   SUB({max_val}, {max_val}) = 0
   MUL({max_val}, {max_val}) = {mul_max}
   NEG({max_val}) = {neg_max}
   INC({max_val}) = {inc_max}
   DEC({max_val}) = {dec_max}
-  ⚠️ Small-value tests (DO NOT compute these yourself — use these pre-verified values):
-  ADD(10, 20) = 30
-  SUB(20, 10) = 10
+  ADD(10, 20) = {add_10_20}
+  SUB(20, 10) = {sub_20_10}
   SUB(10, 20) = {sub_10_20}
   MUL(10, 20) = {mul_10_20}
-  NEG(10) = {neg_10}  ← this is {mod} - 10, NOT {mod} - 5 or any other value!
+  NEG(10) = {neg_10}
   NEG(1) = {neg_1}
-  INC(10) = 11
-  DEC(10) = 9
+  INC(10) = {inc_10}
+  DEC(10) = {dec_10}
 
 ⚠️ MANDATORY TESTBENCH REQUIREMENT:
 The testbench MUST begin with library/use declarations:
@@ -1629,11 +1785,9 @@ Include:
 - 6 max-value tests using the pre-computed expected values above
 - 8+ additional tests with various values
 ⚠️ EACH test MUST explicitly assign BOTH a_sig AND b_sig before setting the opcode — even if the values
-are the same as the previous test! Do NOT rely on previous test values. Changing only the opcode will
-use stale a/b values and cause wrong results (e.g., SUB(10,20) gives a different result than SUB(20,10)).
+are the same as the previous test! Do NOT rely on previous test values.
 ⚠️ CRITICAL: Use the pre-computed expected values above — do NOT compute NEG/SUB/DEC results yourself!
-  LLMs frequently miscalculate large subtractions. For example, NEG(10) = {neg_10}, NOT {neg_10 + 5} or {neg_10 - 5}.
-{"CORRECT testbench pattern — for SMALL values (≤ 2147483647), use to_unsigned:" + chr(10) + "  a_sig <= std_logic_vector(to_unsigned(VALUE_A, " + str(data_width) + "));" + chr(10) + "  assert result_sig = std_logic_vector(to_unsigned(EXPECTED, " + str(data_width) + ")) report ...;" + chr(10) + "CORRECT testbench pattern — for LARGE values (> 2147483647), use hex literal DIRECTLY — NO std_logic_vector() wrapper:" + chr(10) + "  a_sig <= " + max_val_slv + ";  -- max_val = " + str(max_val) + chr(10) + "  b_sig <= " + max_val_slv + ";" + chr(10) + "  opcode_sig <= " + '"' + "0000" + '"' + ";" + chr(10) + "  wait for 20 ns;" + chr(10) + "  assert result_sig = (" + add_max_slv + ") report " + '"' + "Test: ADD max max" + '"' + " severity error;  -- NO std_logic_vector() here!" + chr(10) + "⚠️ Do NOT wrap hex literals in std_logic_vector() — ANYWHERE! Not in assignments, not in asserts!" + chr(10) + "   VHDL-93 type conversion does not provide type context → GHDL type ambiguity error." + chr(10) + "   WRONG:  a_sig <= std_logic_vector(" + '"' + "1" + '"' + " & x" + '"' + "6BCC41E8" + '"' + ");  -- ❌ type ambiguity" + chr(10) + "   WRONG:  assert result_sig = std_logic_vector(" + '"' + "1" + '"' + " & x" + '"' + "6BCC41E8" + '"' + ");  -- ❌ SAME ERROR in assert!" + chr(10) + "   CORRECT: a_sig <= " + '"' + "1" + '"' + " & x" + '"' + "6BCC41E8" + '"' + ";  -- ✓ signal target provides type" + chr(10) + "   CORRECT: assert result_sig = (" + '"' + "1" + '"' + " & x" + '"' + "6BCC41E8" + '"' + ") report ...;  -- ✓ = operator provides type" + chr(10) + "⚠️ CRITICAL: to_unsigned(N, " + str(data_width) + ") WILL FAIL for ANY N > 2147483647!" + chr(10) + "   This includes: max_val, NEG(small), SUB(small,larger), DEC(0), ADD(max,max), MUL(max,max)." + chr(10) + "   You MUST use hex for ALL of these — there is NO exception!" + chr(10) + "   Pre-computed hex literals (copy-paste these EXACTLY, without std_logic_vector wrapper):" + chr(10) + "   max_val " + str(max_val) + ": " + max_val_slv + chr(10) + "   DEC(0) = " + str((0-1+mod)%mod) + ": " + dec0_slv + chr(10) + "   ADD(max,max) = " + str(add_max) + ": " + add_max_slv + chr(10) + "   MUL(max,max) = " + str(mul_max) + ": " + mul_max_slv + chr(10) + "   DEC(max) = " + str(dec_max) + ": " + dec_max_slv + chr(10) + "   NEG(max) = " + str(neg_max) + ": " + neg_max_slv + chr(10) + "   NEG(10) = " + str(neg_10) + ": " + neg_10_slv + chr(10) + "   NEG(1) = " + str(neg_1) + ": " + neg_1_slv + chr(10) + "   SUB(10,20) = " + str(sub_10_20) + ": " + sub_10_20_slv if mod > 2147483647 else "CORRECT pattern for EVERY test:" + chr(10) + "  a_sig <= std_logic_vector(to_unsigned(VALUE_A, " + str(data_width) + "));" + chr(10) + "  b_sig <= std_logic_vector(to_unsigned(VALUE_B, " + str(data_width) + "));" + chr(10) + "  opcode_sig <= " + '"' + "XXXX" + '"' + ";" + chr(10) + "  wait for 10 ns;" + chr(10) + "  assert result_sig = std_logic_vector(to_unsigned(EXPECTED, " + str(data_width) + ")) report " + '"' + "Test N: ..." + '"' + " severity error;"}
+{"CORRECT testbench pattern — for SMALL values (≤ 2147483647), use to_unsigned:" + chr(10) + "  a_sig <= std_logic_vector(to_unsigned(VALUE_A, " + str(data_width) + "));" + chr(10) + "  assert result_sig = std_logic_vector(to_unsigned(EXPECTED, " + str(data_width) + ")) report ...;" + chr(10) + "CORRECT testbench pattern — for LARGE values (> 2147483647), use hex literal DIRECTLY — NO std_logic_vector() wrapper:" + chr(10) + "  a_sig <= " + max_val_slv + ";  -- max_val = " + str(max_val) + chr(10) + "  b_sig <= " + max_val_slv + ";" + chr(10) + "  opcode_sig <= " + '"' + "0000" + '"' + ";" + chr(10) + "  wait for 20 ns;" + chr(10) + "  assert result_sig = (" + add_max_slv + ") report " + '"' + "Test: ADD max max" + '"' + " severity error;" + chr(10) + "⚠️ CRITICAL: to_unsigned(N, " + str(data_width) + ") WILL FAIL for ANY N > 2147483647!" + chr(10) + "   Pre-computed hex literals (copy-paste these EXACTLY):" + chr(10) + "   max_val " + str(max_val) + ": " + max_val_slv + chr(10) + "   DEC(0) = " + str(dec_0) + ": " + dec0_slv + chr(10) + "   ADD(max,max) = " + str(add_max) + ": " + add_max_slv + chr(10) + "   MUL(max,max) = " + str(mul_max) + ": " + mul_max_slv + chr(10) + "   DEC(max) = " + str(dec_max) + ": " + dec_max_slv + chr(10) + "   NEG(max) = " + str(neg_max) + ": " + neg_max_slv + chr(10) + "   NEG(10) = " + str(neg_10) + ": " + neg_10_slv + chr(10) + "   NEG(1) = " + str(neg_1) + ": " + neg_1_slv + chr(10) + "   SUB(10,20) = " + str(sub_10_20) + ": " + sub_10_20_slv if mod > 2147483647 else "CORRECT pattern for EVERY test:" + chr(10) + "  a_sig <= std_logic_vector(to_unsigned(VALUE_A, " + str(data_width) + "));" + chr(10) + "  b_sig <= std_logic_vector(to_unsigned(VALUE_B, " + str(data_width) + "));" + chr(10) + "  opcode_sig <= " + '"' + "XXXX" + '"' + ";" + chr(10) + "  wait for 10 ns;" + chr(10) + "  assert result_sig = std_logic_vector(to_unsigned(EXPECTED, " + str(data_width) + ")) report " + '"' + "Test N: ..." + '"' + " severity error;"}
 Format: report "Test N: OP A=X B=Y -> R=Z"
 
 Generate the complete VHDL code (entity + architecture + testbench) now:
