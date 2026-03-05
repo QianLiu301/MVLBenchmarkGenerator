@@ -20,6 +20,7 @@ try:
     )
     from src.mvl_simulation_runner import MVLSimulationRunner
     from src.test_vector_injector import generate_harness
+    from src.error_classifier import ErrorPatternClassifier
 except ImportError:
     from golden_model import (
         GoldenModel, ALUResult, OP_NAMES, NAME_TO_OP,
@@ -27,6 +28,7 @@ except ImportError:
     )
     from mvl_simulation_runner import MVLSimulationRunner
     from test_vector_injector import generate_harness
+    from error_classifier import ErrorPatternClassifier
 
 
 @dataclass
@@ -122,8 +124,8 @@ class ValidationReport:
             return 'LOGIC_ERROR'
         return 'PASS'
 
-    def summary(self) -> Dict:
-        return {
+    def summary(self, classify: bool = True) -> Dict:
+        data = {
             'file': self.file_path,
             'language': self.language,
             'k': self.k,
@@ -153,6 +155,13 @@ class ValidationReport:
                 for c in self.comparisons if not c.passed
             ],
         }
+
+        # Attach classified counterexamples when there are comparisons
+        if classify and self.comparisons:
+            classifier = ErrorPatternClassifier(self.k, self.bits)
+            data['counterexamples'] = classifier.classify_failures(self.comparisons)
+
+        return data
 
 
 class BenchmarkValidator:
@@ -323,6 +332,110 @@ class BenchmarkValidator:
             pass
 
         return report
+
+    # ------------------------------------------------------------------
+    # Strategy A+B: one-click run both strategies
+    # ------------------------------------------------------------------
+
+    def validate_both(
+        self,
+        file_path: str,
+        llm_code: str,
+        k: int,
+        bits: int,
+        language: str = None,
+        random_count: int = 50,
+        seed: int = 42,
+    ) -> Dict:
+        """Run both Strategy A and B, classify errors, and return combined report.
+
+        Returns a dict ready for the frontend with keys:
+          strategy_a, strategy_b, strategy_comparison, report_file, csv_file
+        """
+        fp = Path(file_path)
+        if language is None:
+            language = {'.c': 'c', '.py': 'python', '.v': 'verilog', '.vhd': 'vhdl'
+                        }.get(fp.suffix.lower(), 'unknown')
+
+        # Run both strategies
+        report_a = self.validate(file_path, k, bits, language)
+        report_b = self.validate_with_injection(
+            llm_code, k, bits, language, random_count=random_count, seed=seed,
+        )
+
+        summary_a = report_a.summary(classify=True)
+        summary_b = report_b.summary(classify=True)
+
+        # Cross-compare A vs B
+        classifier = ErrorPatternClassifier(k, bits)
+        comparison = classifier.compare_strategies(report_a, report_b)
+
+        combined = {
+            'k': k,
+            'bits': bits,
+            'language': language,
+            'strategy_a': summary_a,
+            'strategy_b': summary_b,
+            'strategy_comparison': comparison,
+        }
+
+        # Export files
+        report_path, csv_path = self._export_report(combined, k, bits, language)
+        combined['report_file'] = report_path
+        combined['csv_file'] = csv_path
+
+        return combined
+
+    # ------------------------------------------------------------------
+    # Report export (JSON + CSV)
+    # ------------------------------------------------------------------
+
+    def _export_report(self, combined: Dict, k: int, bits: int, language: str) -> tuple:
+        """Write JSON and CSV reports. Returns (json_path, csv_path)."""
+        import json
+        import csv
+        from datetime import datetime
+
+        reports_dir = Path(self.runner.project_root) / 'output' / 'reports'
+        reports_dir.mkdir(parents=True, exist_ok=True)
+
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        base = f"validation_k{k}_b{bits}_{language}_{timestamp}"
+
+        # JSON
+        json_path = reports_dir / f"{base}.json"
+        with open(json_path, 'w', encoding='utf-8') as f:
+            json.dump(combined, f, indent=2, ensure_ascii=False, default=str)
+
+        # CSV — one row per counterexample across both strategies
+        csv_path = reports_dir / f"{base}.csv"
+        with open(csv_path, 'w', newline='', encoding='utf-8') as f:
+            writer = csv.writer(f)
+            writer.writerow([
+                'strategy', 'pattern', 'op', 'a', 'b',
+                'got', 'expected', 'naive_mod', 'confused_with',
+            ])
+            for strat_key, strat_label in [('strategy_a', 'A'), ('strategy_b', 'B')]:
+                strat = combined.get(strat_key, {})
+                cex = strat.get('counterexamples', {})
+                for group in cex.get('by_pattern', []):
+                    pattern = group['pattern']
+                    for ex in group['examples']:
+                        writer.writerow([
+                            strat_label,
+                            pattern,
+                            ex.get('op', ''),
+                            ex.get('a', ''),
+                            ex.get('b', ''),
+                            ex.get('got', ''),
+                            ex.get('expected', ''),
+                            ex.get('naive_mod', ''),
+                            ex.get('confused_with', ''),
+                        ])
+
+        json_rel = str(json_path.relative_to(self.runner.project_root)).replace('\\', '/')
+        csv_rel = str(csv_path.relative_to(self.runner.project_root)).replace('\\', '/')
+        return json_rel, csv_rel
 
     # ------------------------------------------------------------------
     # Output parsing
