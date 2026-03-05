@@ -14,11 +14,19 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 try:
-    from src.golden_model import GoldenModel, ALUResult, OP_NAMES, NAME_TO_OP
+    from src.golden_model import (
+        GoldenModel, ALUResult, OP_NAMES, NAME_TO_OP,
+        serialize_vectors, TestVector,
+    )
     from src.mvl_simulation_runner import MVLSimulationRunner
+    from src.test_vector_injector import generate_harness
 except ImportError:
-    from golden_model import GoldenModel, ALUResult, OP_NAMES, NAME_TO_OP
+    from golden_model import (
+        GoldenModel, ALUResult, OP_NAMES, NAME_TO_OP,
+        serialize_vectors, TestVector,
+    )
     from mvl_simulation_runner import MVLSimulationRunner
+    from test_vector_injector import generate_harness
 
 
 @dataclass
@@ -210,6 +218,109 @@ class BenchmarkValidator:
         if report.parsed_tests:
             golden = GoldenModel(k, bits)
             report.comparisons = self._compare(report.parsed_tests, golden)
+
+        return report
+
+    # ------------------------------------------------------------------
+    # Strategy B: External test-vector injection
+    # ------------------------------------------------------------------
+
+    def validate_with_injection(
+        self,
+        llm_code: str,
+        k: int,
+        bits: int,
+        language: str,
+        random_count: int = 50,
+        seed: int = 42,
+    ) -> ValidationReport:
+        """Strategy B validation pipeline.
+
+        1. Generate golden test vectors
+        2. Build a harness that replaces the LLM main/testbench
+        3. Feed vectors via stdin (C/Python/Verilog) or file (VHDL)
+        4. Parse standardized output and compare with golden expected values
+        """
+        import tempfile
+        import os
+
+        report = ValidationReport(
+            file_path='<strategy-b>',
+            language=language,
+            k=k,
+            bits=bits,
+        )
+
+        # Step 1: Golden test vectors
+        golden = GoldenModel(k, bits)
+        vectors = golden.generate_test_vectors(random_count=random_count, seed=seed)
+        stdin_text = serialize_vectors(vectors)
+
+        # Step 2: Generate harness (LLM code + our stdin-driven main)
+        try:
+            harness_code = generate_harness(language, k, bits, llm_code)
+        except Exception as e:
+            report.compile_errors = f'Harness generation failed: {e}'
+            return report
+
+        # Step 3: Write harness to a temp file and run
+        lang = language.lower()
+        ext = {'c': '.c', 'python': '.py', 'verilog': '.v', 'vhdl': '.vhd'}[lang]
+
+        tmp_dir = tempfile.mkdtemp(prefix='mvl_stratb_')
+        harness_path = os.path.join(tmp_dir, f'harness{ext}')
+        with open(harness_path, 'w', encoding='utf-8') as f:
+            f.write(harness_code)
+        report.file_path = harness_path
+
+        # For VHDL: write vectors to a file instead of stdin
+        vector_file = None
+        if lang == 'vhdl':
+            vector_file = os.path.join(tmp_dir, 'test_vectors.txt')
+            with open(vector_file, 'w', encoding='utf-8') as f:
+                f.write(stdin_text)
+
+        sim_kwargs = {'stdin_data': stdin_text} if lang != 'vhdl' else {'vector_file': vector_file}
+        sim_result = self.runner.run_simulation(harness_path, language, **sim_kwargs)
+
+        report.compile_time = sim_result.get('compile_time', 0.0)
+        report.run_time = sim_result.get('run_time', 0.0)
+
+        errors = sim_result.get('errors', [])
+        if errors:
+            first_error = errors[0]
+            if 'Compilation failed' in first_error or 'Compilation error' in first_error:
+                report.compile_success = False
+                report.compile_errors = '\n'.join(errors)
+                return report
+            else:
+                report.compile_success = True
+                report.run_success = False
+                report.run_errors = '\n'.join(errors)
+        else:
+            report.compile_success = True
+
+        report.run_success = sim_result.get('success', False)
+        output = sim_result.get('output', '')
+        report.run_output = output
+
+        if not output.strip():
+            if report.run_success:
+                report.parse_warnings.append('Program ran successfully but produced no output')
+            return report
+
+        # Step 4: Parse output and compare with golden vectors
+        report.parsed_tests = self._parse_output(output, language, report)
+
+        if report.parsed_tests:
+            report.comparisons = self._compare(report.parsed_tests, golden)
+
+        # Cleanup temp dir
+        try:
+            import shutil
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+        except Exception:
+            pass
 
         return report
 
