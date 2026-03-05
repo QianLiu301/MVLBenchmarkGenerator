@@ -1239,6 +1239,60 @@
                 <button class="btn btn-secondary btn-sm" onclick="resetAll()">🔄 New Generation</button>
             </div>
         </div>
+
+        <!-- ============================================================ -->
+        <!-- Validation Panel (Strategy A / B / Both) -->
+        <!-- ============================================================ -->
+        <div class="card result-card" id="validation-panel" style="display: none;">
+            <div style="padding: 20px 24px 0;">
+                <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 6px;">
+                    <span style="font-size: 1.3rem;">🔬</span>
+                    <h3 style="font-weight: 700; font-size: 1rem; color: var(--text-primary);">Golden-Model Validation</h3>
+                </div>
+                <p style="font-size: 0.78rem; color: var(--text-secondary); margin-bottom: 16px;">
+                    Compare LLM output against the mathematically correct golden model. Choose a strategy or run both at once.
+                </p>
+
+                <!-- Three entry-point buttons -->
+                <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 20px;">
+                    <button class="btn btn-secondary btn-sm" id="val-btn-a" onclick="runValidateA()" style="flex: 1; min-width: 140px;">
+                        <span id="val-btn-a-text">🅰️ Strategy A<br><span style="font-size:0.68rem;opacity:0.7">LLM Self-Test</span></span>
+                        <div class="spinner" id="val-spinner-a" style="display:none;"></div>
+                    </button>
+                    <button class="btn btn-secondary btn-sm" id="val-btn-b" onclick="runValidateB()" style="flex: 1; min-width: 140px;">
+                        <span id="val-btn-b-text">🅱️ Strategy B<br><span style="font-size:0.68rem;opacity:0.7">Golden Injection</span></span>
+                        <div class="spinner" id="val-spinner-b" style="display:none;"></div>
+                    </button>
+                    <button class="btn btn-primary btn-sm" id="val-btn-both" onclick="runValidateBoth()" style="flex: 1.2; min-width: 160px; font-weight: 600;">
+                        <span id="val-btn-both-text">⚡ Run Both (A+B)</span>
+                        <div class="spinner" id="val-spinner-both" style="display:none;"></div>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Validation results container -->
+            <div id="val-results" style="display: none; padding: 0 24px 20px;">
+
+                <!-- Summary bar -->
+                <div id="val-summary-bar" style="display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px;"></div>
+
+                <!-- Strategy comparison (only for "Both") -->
+                <div id="val-comparison" style="display: none; background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 8px; padding: 14px 16px; margin-bottom: 16px;">
+                    <div style="font-size: 0.82rem; font-weight: 600; color: #0369a1; margin-bottom: 8px;">📊 Strategy Comparison (A vs B)</div>
+                    <div id="val-comparison-body" style="font-size: 0.78rem; color: #0c4a6e; line-height: 1.8;"></div>
+                </div>
+
+                <!-- Error pattern groups -->
+                <div id="val-patterns" style="margin-bottom: 16px;"></div>
+
+                <!-- Download buttons -->
+                <div class="action-buttons" id="val-download-btns" style="display: none;">
+                    <button class="btn btn-secondary btn-sm" onclick="downloadValReport('json')">📥 Download JSON Report</button>
+                    <button class="btn btn-secondary btn-sm" onclick="downloadValReport('csv')">📥 Download CSV Report</button>
+                </div>
+            </div>
+        </div>
+
     </div>
 
 <!--    &lt;!&ndash; Footer &ndash;&gt;-->
@@ -2291,6 +2345,10 @@
             document.getElementById('sim-output').textContent = data.output || 'No output';
 
             document.getElementById('simulation-result').classList.add('visible');
+
+            // Show validation panel after simulation
+            document.getElementById('validation-panel').style.display = '';
+            document.getElementById('validation-panel').classList.add('visible');
         }
 
         // ============================================================
@@ -2420,8 +2478,10 @@
             simResult = null;
             document.getElementById('generation-result').classList.remove('visible');
             document.getElementById('simulation-result').classList.remove('visible');
+            document.getElementById('validation-panel').style.display = 'none';
             document.getElementById('result-lang-tabs').style.display = 'none';
             document.getElementById('download-all-btn').style.display = 'none';
+            valReportFiles = { json: null, csv: null };
         }
 
         // ============================================================
@@ -2476,6 +2536,240 @@
                 closeCodeModal();
             }
         });
+
+        // ============================================================
+        // Golden-Model Validation (Strategy A / B / Both)
+        // ============================================================
+
+        let valReportFiles = { json: null, csv: null };
+
+        function _getValPayload() {
+            const result = currentResults[activeResultLang] || currentResult;
+            if (!result) return null;
+            return {
+                file_path: result.file_path,
+                code: result.code,
+                k: result.k_value,
+                bits: result.bitwidth,
+                language: result.language,
+            };
+        }
+
+        function _setValBtnLoading(id, loading) {
+            const btn = document.getElementById(id);
+            const text = document.getElementById(id + '-text');
+            const spinner = document.getElementById(id.replace('btn', 'spinner'));
+            btn.disabled = loading;
+            if (text) text.style.display = loading ? 'none' : '';
+            if (spinner) spinner.style.display = loading ? 'inline-block' : 'none';
+        }
+
+        async function runValidateA() {
+            const payload = _getValPayload();
+            if (!payload) return showError('No generated code to validate');
+            _setValBtnLoading('val-btn-a', true);
+            try {
+                const resp = await fetch('/api/validate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                });
+                const data = await resp.json();
+                renderValResults({ strategy_a: data }, 'A');
+            } catch (e) { showError('Validation A failed: ' + e.message); }
+            finally { _setValBtnLoading('val-btn-a', false); }
+        }
+
+        async function runValidateB() {
+            const payload = _getValPayload();
+            if (!payload) return showError('No generated code to validate');
+            _setValBtnLoading('val-btn-b', true);
+            try {
+                const resp = await fetch('/api/validate-b', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                });
+                const data = await resp.json();
+                renderValResults({ strategy_b: data }, 'B');
+            } catch (e) { showError('Validation B failed: ' + e.message); }
+            finally { _setValBtnLoading('val-btn-b', false); }
+        }
+
+        async function runValidateBoth() {
+            const payload = _getValPayload();
+            if (!payload) return showError('No generated code to validate');
+            _setValBtnLoading('val-btn-both', true);
+            try {
+                const resp = await fetch('/api/validate-both', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                });
+                const data = await resp.json();
+                if (!data.success) throw new Error(data.error || 'Validation failed');
+                valReportFiles.json = data.report_file || null;
+                valReportFiles.csv = data.csv_file || null;
+                renderValResults(data, 'Both');
+            } catch (e) { showError('Validation failed: ' + e.message); }
+            finally { _setValBtnLoading('val-btn-both', false); }
+        }
+
+        function renderValResults(data, mode) {
+            const container = document.getElementById('val-results');
+            container.style.display = '';
+
+            // --- Summary bar ---
+            const bar = document.getElementById('val-summary-bar');
+            bar.innerHTML = '';
+            const strategies = [];
+            if (data.strategy_a) strategies.push({ label: 'Strategy A', d: data.strategy_a });
+            if (data.strategy_b) strategies.push({ label: 'Strategy B', d: data.strategy_b });
+
+            strategies.forEach(({ label, d }) => {
+                const pass = d.passed || 0, fail = d.failed || 0, total = pass + fail;
+                const pct = total > 0 ? Math.round(100 * pass / total) : 0;
+                const color = fail === 0 ? '#10b981' : (pct >= 80 ? '#f59e0b' : '#ef4444');
+                bar.innerHTML += `
+                    <div style="flex:1; min-width:200px; background:white; border:1px solid #e2e8f0; border-radius:8px; padding:14px 16px;">
+                        <div style="font-size:0.75rem; font-weight:600; color:var(--text-secondary); margin-bottom:6px;">${label}</div>
+                        <div style="display:flex; align-items:baseline; gap:8px;">
+                            <span style="font-size:1.5rem; font-weight:700; color:${color}">${pct}%</span>
+                            <span style="font-size:0.75rem; color:var(--text-muted);">${pass}/${total} passed</span>
+                        </div>
+                        <div style="margin-top:8px; height:6px; background:#f1f5f9; border-radius:3px; overflow:hidden;">
+                            <div style="height:100%; width:${pct}%; background:${color}; border-radius:3px; transition:width 0.5s;"></div>
+                        </div>
+                        <div style="font-size:0.7rem; color:var(--text-muted); margin-top:4px;">
+                            Status: <strong>${d.status || 'N/A'}</strong>
+                            ${d.compile_time ? ' &middot; Compile: ' + d.compile_time + 's' : ''}
+                            ${d.run_time ? ' &middot; Run: ' + d.run_time + 's' : ''}
+                        </div>
+                    </div>`;
+            });
+
+            // --- Strategy comparison ---
+            const compDiv = document.getElementById('val-comparison');
+            if (data.strategy_comparison && mode === 'Both') {
+                const c = data.strategy_comparison;
+                compDiv.style.display = '';
+                let html = `
+                    <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:8px; margin-bottom:10px;">
+                        <div style="text-align:center; padding:8px; background:white; border-radius:6px;">
+                            <div style="font-size:1.1rem; font-weight:700; color:#10b981;">${c.both_pass}</div>
+                            <div style="font-size:0.68rem;">Both Pass</div>
+                        </div>
+                        <div style="text-align:center; padding:8px; background:white; border-radius:6px;">
+                            <div style="font-size:1.1rem; font-weight:700; color:#ef4444;">${c.both_fail}</div>
+                            <div style="font-size:0.68rem;">Both Fail</div>
+                        </div>
+                        <div style="text-align:center; padding:8px; background:white; border-radius:6px;">
+                            <div style="font-size:1.1rem; font-weight:700; color:#f59e0b;">${c.a_only_pass}</div>
+                            <div style="font-size:0.68rem;">A pass, B fail</div>
+                        </div>
+                        <div style="text-align:center; padding:8px; background:white; border-radius:6px;">
+                            <div style="font-size:1.1rem; font-weight:700; color:#8b5cf6;">${c.b_only_pass}</div>
+                            <div style="font-size:0.68rem;">B pass, A fail</div>
+                        </div>
+                    </div>`;
+                if (c.selective_testing_examples && c.selective_testing_examples.length > 0) {
+                    html += `<div style="font-size:0.72rem; font-weight:600; margin-bottom:4px;">Selective self-testing examples:</div>`;
+                    c.selective_testing_examples.forEach(ex => {
+                        html += `<div style="font-size:0.72rem; padding:4px 8px; background:#e0f2fe; border-radius:4px; margin-bottom:3px;">
+                            ${escapeHtml(ex.op)}(${ex.a}, ${ex.b}) — ${escapeHtml(ex.note)}</div>`;
+                    });
+                }
+                document.getElementById('val-comparison-body').innerHTML = html;
+            } else {
+                compDiv.style.display = 'none';
+            }
+
+            // --- Error pattern groups ---
+            const patternsDiv = document.getElementById('val-patterns');
+            patternsDiv.innerHTML = '';
+
+            const patternColors = {
+                'standard_mod_on_gf': '#dc2626',
+                'missing_mod_wrap': '#ea580c',
+                'off_by_one': '#d97706',
+                'flag_only': '#ca8a04',
+                'op_confused': '#7c3aed',
+                'systematic': '#be185d',
+                'unknown': '#64748b',
+            };
+
+            strategies.forEach(({ label, d }) => {
+                const cex = d.counterexamples;
+                if (!cex || !cex.by_pattern || cex.by_pattern.length === 0) return;
+
+                let html = `<div style="font-size:0.82rem; font-weight:600; color:var(--text-primary); margin-bottom:8px;">${label} — Error Patterns</div>`;
+
+                cex.by_pattern.forEach(group => {
+                    const c = patternColors[group.pattern] || '#64748b';
+                    html += `
+                        <div style="border:1px solid #e2e8f0; border-left:3px solid ${c}; border-radius:6px; padding:12px 14px; margin-bottom:10px; background:white;">
+                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                                <span style="font-size:0.78rem; font-weight:600; color:${c};">${escapeHtml(group.label)}</span>
+                                <span style="font-size:0.7rem; background:${c}15; color:${c}; padding:2px 8px; border-radius:10px; font-weight:500;">${group.count} failures</span>
+                            </div>
+                            <div style="font-size:0.7rem; color:var(--text-muted); margin-bottom:8px;">Affected ops: ${group.affected_ops.join(', ')}</div>`;
+
+                    if (group.examples && group.examples.length > 0) {
+                        html += `<table style="width:100%; font-size:0.72rem; border-collapse:collapse;">
+                            <tr style="background:#f8fafc; font-weight:600; color:var(--text-secondary);">
+                                <td style="padding:4px 8px; border-bottom:1px solid #e2e8f0;">Op</td>
+                                <td style="padding:4px 8px; border-bottom:1px solid #e2e8f0;">A</td>
+                                <td style="padding:4px 8px; border-bottom:1px solid #e2e8f0;">B</td>
+                                <td style="padding:4px 8px; border-bottom:1px solid #e2e8f0;">Got</td>
+                                <td style="padding:4px 8px; border-bottom:1px solid #e2e8f0;">Expected</td>
+                                <td style="padding:4px 8px; border-bottom:1px solid #e2e8f0;">Note</td>
+                            </tr>`;
+                        group.examples.forEach(ex => {
+                            let note = '';
+                            if (ex.naive_mod !== undefined && ex.naive_mod !== '') note = 'Naive mod=' + ex.naive_mod;
+                            if (ex.confused_with) note = 'Matches ' + ex.confused_with;
+                            html += `<tr>
+                                <td style="padding:4px 8px; border-bottom:1px solid #f1f5f9; font-weight:500;">${escapeHtml(ex.op)}</td>
+                                <td style="padding:4px 8px; border-bottom:1px solid #f1f5f9;">${ex.a}</td>
+                                <td style="padding:4px 8px; border-bottom:1px solid #f1f5f9;">${ex.b}</td>
+                                <td style="padding:4px 8px; border-bottom:1px solid #f1f5f9; color:#ef4444; font-weight:500;">${ex.got}</td>
+                                <td style="padding:4px 8px; border-bottom:1px solid #f1f5f9; color:#10b981; font-weight:500;">${ex.expected}</td>
+                                <td style="padding:4px 8px; border-bottom:1px solid #f1f5f9; color:var(--text-muted);">${escapeHtml(note)}</td>
+                            </tr>`;
+                        });
+                        html += `</table>`;
+                    }
+                    html += `</div>`;
+                });
+
+                // Per-op summary
+                if (cex.by_op) {
+                    html += `<div style="font-size:0.72rem; color:var(--text-secondary); margin-bottom:12px;">`;
+                    Object.entries(cex.by_op).forEach(([op, info]) => {
+                        if (info.total > 0) {
+                            const opColor = info.failed === 0 ? '#10b981' : '#ef4444';
+                            html += `<span style="display:inline-block; margin-right:10px; margin-bottom:4px; padding:2px 8px; background:${opColor}10; color:${opColor}; border-radius:4px; font-weight:500;">${op}: ${info.total - info.failed}/${info.total}</span>`;
+                        }
+                    });
+                    html += `</div>`;
+                }
+
+                patternsDiv.innerHTML += html;
+            });
+
+            // --- Download buttons ---
+            const dlBtns = document.getElementById('val-download-btns');
+            dlBtns.style.display = (valReportFiles.json || valReportFiles.csv) ? '' : 'none';
+        }
+
+        function downloadValReport(format) {
+            const path = format === 'csv' ? valReportFiles.csv : valReportFiles.json;
+            if (path) {
+                window.location.href = `/api/download/${path}`;
+            } else {
+                showError('No report file available. Run "Run Both (A+B)" to generate downloadable reports.');
+            }
+        }
 
         // Close modal with Escape key
         document.addEventListener('keydown', (e) => {
