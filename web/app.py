@@ -282,10 +282,10 @@ def api_run_simulation():
 
 @app.route('/api/validate', methods=['POST'])
 def api_validate():
-    """Validate generated code against golden model.
+    """Strategy A: Validate generated code against golden model.
 
     Expects JSON: { file_path, k, bits, language? }
-    Returns: ValidationReport summary with pass/fail details.
+    Returns: ValidationReport summary with pass/fail details + counterexamples.
     """
     try:
         data = request.json
@@ -307,6 +307,73 @@ def api_validate():
         )
 
         return jsonify(report.summary())
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/validate-b', methods=['POST'])
+def api_validate_b():
+    """Strategy B: Inject golden test vectors and validate.
+
+    Expects JSON: { code, k, bits, language }
+    Returns: ValidationReport summary with counterexamples.
+    """
+    try:
+        data = request.json
+        code = data.get('code')
+        k = data.get('k')
+        bits = data.get('bits')
+        language = data.get('language')
+
+        if not code or k is None or bits is None:
+            return jsonify({
+                'success': False,
+                'error': 'code, k, and bits are required'
+            }), 400
+
+        report = benchmark_validator.validate_with_injection(
+            code, int(k), int(bits), language
+        )
+
+        return jsonify(report.summary())
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/validate-both', methods=['POST'])
+def api_validate_both():
+    """Run both Strategy A and B, classify errors, cross-compare.
+
+    Expects JSON: { file_path, code, k, bits, language }
+    Returns: Combined report with counterexamples, comparison, and download paths.
+    """
+    try:
+        data = request.json
+        file_path = data.get('file_path')
+        code = data.get('code')
+        k = data.get('k')
+        bits = data.get('bits')
+        language = data.get('language')
+
+        if not file_path or not code or k is None or bits is None:
+            return jsonify({
+                'success': False,
+                'error': 'file_path, code, k, and bits are required'
+            }), 400
+
+        full_path = PROJECT_ROOT / file_path
+
+        combined = benchmark_validator.validate_both(
+            str(full_path), code, int(k), int(bits), language
+        )
+
+        return jsonify({'success': True, **combined})
 
     except Exception as e:
         import traceback
