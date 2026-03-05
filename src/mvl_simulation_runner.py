@@ -31,7 +31,8 @@ class MVLSimulationRunner:
             'clang': False,
             'python': False,
             'iverilog': False,
-            'vvp': False
+            'vvp': False,
+            'ghdl': False,
         }
 
         # Check C compilers
@@ -87,6 +88,19 @@ class MVLSimulationRunner:
             except:
                 pass
 
+        # Check GHDL
+        if shutil.which('ghdl'):
+            try:
+                result = subprocess.run(
+                    ['ghdl', '--version'],
+                    capture_output=True,
+                    timeout=5
+                )
+                if result.returncode == 0:
+                    tools['ghdl'] = True
+            except:
+                pass
+
         return tools
 
     def get_tools_status(self) -> Dict:
@@ -95,6 +109,7 @@ class MVLSimulationRunner:
             'c_available': self.tools.get('gcc') or self.tools.get('clang'),
             'python_available': self.tools.get('python'),
             'verilog_available': self.tools.get('iverilog') and self.tools.get('vvp'),
+            'vhdl_available': self.tools.get('ghdl'),
             'tools': self.tools
         }
 
@@ -107,6 +122,8 @@ class MVLSimulationRunner:
             return self.tools.get('python')
         elif lang == 'verilog':
             return self.tools.get('iverilog') and self.tools.get('vvp')
+        elif lang == 'vhdl':
+            return self.tools.get('ghdl')
         return False
 
     def run_simulation(self, file_path: str, language: str = None) -> Dict:
@@ -149,6 +166,8 @@ class MVLSimulationRunner:
             return self._run_python(file_path)
         elif language == 'verilog':
             return self._run_verilog(file_path)
+        elif language == 'vhdl':
+            return self._run_vhdl(file_path)
         else:
             return {'success': False, 'error': f'Unsupported language: {language}'}
 
@@ -435,6 +454,132 @@ class MVLSimulationRunner:
         try:
             if vvp_file.exists():
                 vvp_file.unlink()
+        except:
+            pass
+
+        return result
+
+    def _run_vhdl(self, file_path: Path) -> Dict:
+        """Compile and run VHDL code using GHDL"""
+        import time
+
+        results_dir = self.project_root / 'output' / 'mvl_results'
+        results_dir.mkdir(parents=True, exist_ok=True)
+
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        work_dir = results_dir / f"ghdl_work_{timestamp}"
+        work_dir.mkdir(parents=True, exist_ok=True)
+        log_file = results_dir / f"{file_path.stem}_{timestamp}.log"
+
+        result = {
+            'success': False,
+            'language': 'vhdl',
+            'file': file_path.name,
+            'compile_time': 0,
+            'run_time': 0,
+            'output': '',
+            'errors': [],
+            'test_results': {
+                'total': 0,
+                'passed': 0,
+                'failed': 0
+            }
+        }
+
+        # Step 1: Analyze (syntax check + parse)
+        try:
+            start = time.time()
+            analyze_cmd = [
+                'ghdl', '-a',
+                '--workdir=' + str(work_dir),
+                str(file_path)
+            ]
+            analyze_result = subprocess.run(
+                analyze_cmd,
+                capture_output=True,
+                text=True,
+                timeout=30,
+                encoding='utf-8',
+                errors='replace'
+            )
+            if analyze_result.returncode != 0:
+                result['errors'].append(f'Compilation failed: {analyze_result.stderr}')
+                return result
+        except subprocess.TimeoutExpired:
+            result['errors'].append('Compilation timeout (30s)')
+            return result
+        except Exception as e:
+            result['errors'].append(f'Compilation error: {str(e)}')
+            return result
+
+        # Step 2: Elaborate
+        # Detect top-level entity (assume testbench entity name from file stem)
+        entity_name = file_path.stem.replace('-', '_')
+        try:
+            elab_cmd = [
+                'ghdl', '-e',
+                '--workdir=' + str(work_dir),
+                entity_name
+            ]
+            elab_result = subprocess.run(
+                elab_cmd,
+                capture_output=True,
+                text=True,
+                timeout=30,
+                cwd=str(work_dir),
+                encoding='utf-8',
+                errors='replace'
+            )
+            result['compile_time'] = round(time.time() - start, 2)
+
+            if elab_result.returncode != 0:
+                result['errors'].append(f'Elaboration failed: {elab_result.stderr}')
+                return result
+        except subprocess.TimeoutExpired:
+            result['errors'].append('Elaboration timeout (30s)')
+            return result
+        except Exception as e:
+            result['errors'].append(f'Elaboration error: {str(e)}')
+            return result
+
+        # Step 3: Run
+        try:
+            start = time.time()
+            run_cmd = [
+                'ghdl', '-r',
+                '--workdir=' + str(work_dir),
+                entity_name,
+                '--stop-time=10ms'
+            ]
+            run_result = subprocess.run(
+                run_cmd,
+                capture_output=True,
+                text=True,
+                timeout=60,
+                cwd=str(work_dir),
+                encoding='utf-8',
+                errors='replace'
+            )
+            result['run_time'] = round(time.time() - start, 2)
+            # GHDL outputs report messages to stderr
+            result['output'] = run_result.stdout + run_result.stderr
+            result['success'] = True
+
+            with open(log_file, 'w', encoding='utf-8') as f:
+                f.write(result['output'])
+
+            result['log_file'] = str(log_file.relative_to(self.project_root)).replace('\\', '/')
+            self._parse_test_output(result, result['output'])
+
+        except subprocess.TimeoutExpired:
+            result['errors'].append('Simulation timeout (60s)')
+        except Exception as e:
+            result['errors'].append(f'Simulation error: {str(e)}')
+
+        # Cleanup work dir
+        try:
+            import shutil as _shutil
+            _shutil.rmtree(work_dir, ignore_errors=True)
         except:
             pass
 
