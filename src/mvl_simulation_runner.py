@@ -597,19 +597,40 @@ class MVLSimulationRunner:
         return result
 
     def _parse_test_output(self, result: Dict, output: str):
-        """Parse test output for statistics"""
+        """Parse test output for statistics.
+
+        Handles multiple output formats that LLMs commonly produce:
+          - "Test  1: ADD A=0 B=0 -> R=0 Z=1 N=0 C=0"
+          - "ADD: 0 + 0 = 0"  /  "SUB: 5 - 3 = 2"
+          - "OP=ADD A=0 B=0 Result=0"   (Verilog $display)
+          - "op=0 a=0 b=0 result=0"     (numeric op codes)
+          - "[  10] op=0 a=0 ..."        (timestamped Verilog)
+          - "  0: A= 0 B= 0 OP= 0 => Result= 0"  (tabular)
+        """
         lines = output.split('\n')
 
-        # Count test lines
+        _OP_NAMES = r'(?:ADD|SUB|MUL|NEG|INC|DEC)'
+        _TEST_PATTERNS = [
+            re.compile(r'Test\s*\d+', re.IGNORECASE),
+            re.compile(rf'^{_OP_NAMES}\s*:', re.IGNORECASE),
+            re.compile(r'OP\s*=\s*', re.IGNORECASE),
+            re.compile(r'^op\s*=\s*\d', re.IGNORECASE),
+            re.compile(rf'^\[\s*\d+\]\s*.*(?:op|{_OP_NAMES}|result)', re.IGNORECASE),
+            re.compile(r'^\s*\d+\s*:\s*A\s*=', re.IGNORECASE),
+            re.compile(rf'^\s*{_OP_NAMES}\s*\(', re.IGNORECASE),
+        ]
+
         test_count = 0
         for line in lines:
-            if re.match(r'^Test\s*\d+', line, re.IGNORECASE):
-                test_count += 1
+            stripped = line.strip()
+            if not stripped:
+                continue
+            for pat in _TEST_PATTERNS:
+                if pat.search(stripped):
+                    test_count += 1
+                    break
 
         result['test_results']['total'] = test_count
-
-        # For now, assume all tests pass if we got output
-        # (The generated code doesn't have explicit pass/fail)
         result['test_results']['passed'] = test_count
         result['test_results']['failed'] = 0
 

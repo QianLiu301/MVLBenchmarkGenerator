@@ -258,7 +258,7 @@ def api_generate_stream():
 
 @app.route('/api/run-simulation', methods=['POST'])
 def api_run_simulation():
-    """Run simulation for generated code"""
+    """Run simulation for generated code (single language)"""
     try:
         data = request.json
         file_path = data.get('file_path')
@@ -273,6 +273,37 @@ def api_run_simulation():
         result = simulation_runner.run_simulation(str(full_path), language)
 
         return jsonify(result)
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/run-simulation-batch', methods=['POST'])
+def api_run_simulation_batch():
+    """Run simulations for multiple languages in sequence.
+
+    Expects JSON: { items: [{ file_path, language }, ...] }
+    Returns: { results: { lang: simResult, ... } }
+    """
+    try:
+        data = request.json
+        items = data.get('items', [])
+        if not items:
+            return jsonify({'success': False, 'error': 'items is required'}), 400
+
+        results = {}
+        for item in items:
+            file_path = item.get('file_path')
+            language = item.get('language')
+            if not file_path:
+                continue
+            full_path = PROJECT_ROOT / file_path
+            sim_result = simulation_runner.run_simulation(str(full_path), language)
+            results[language] = sim_result
+
+        return jsonify({'success': True, 'results': results})
 
     except Exception as e:
         import traceback

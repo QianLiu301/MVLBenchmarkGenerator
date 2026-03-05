@@ -1205,34 +1205,45 @@
         <!-- Simulation Result -->
         <div class="card result-card" id="simulation-result">
             <div class="result-header" id="sim-result-header">
-                <div class="result-icon">✓</div>
+                <div class="result-icon" id="sim-result-icon">✓</div>
                 <div class="result-info">
                     <h3 id="sim-result-title">Simulation Complete</h3>
                     <p id="sim-result-subtitle">20 tests executed in 0.12s</p>
                 </div>
             </div>
 
-            <div class="stats-grid">
-                <div class="stat-card">
-                    <div class="stat-value" id="sim-total">20</div>
-                    <div class="stat-label">Total Tests</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-value" style="color: #10b981;" id="sim-passed">20</div>
-                    <div class="stat-label">Passed</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-value" style="color: #ef4444;" id="sim-failed">0</div>
-                    <div class="stat-label">Failed</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-value" id="sim-time">0.12s</div>
-                    <div class="stat-label">Run Time</div>
-                </div>
-            </div>
+            <!-- Per-language tabs for simulation results -->
+            <div class="lang-tabs" id="sim-lang-tabs" style="display: none;"></div>
 
-            <div class="section-label">Simulation Output</div>
-            <div class="sim-output" id="sim-output">// Loading...</div>
+            <div id="sim-result-body">
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-value" id="sim-total">20</div>
+                        <div class="stat-label">Total Tests</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" style="color: #10b981;" id="sim-passed">20</div>
+                        <div class="stat-label">Passed</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" style="color: #ef4444;" id="sim-failed">0</div>
+                        <div class="stat-label">Failed</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="sim-time">0.12s</div>
+                        <div class="stat-label">Run Time</div>
+                    </div>
+                </div>
+
+                <!-- Error box (compile/run errors) -->
+                <div id="sim-error-box" style="display: none; background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 12px 16px; margin-bottom: 12px;">
+                    <div style="font-size: 0.8rem; font-weight: 600; color: #991b1b; margin-bottom: 4px;">Errors</div>
+                    <div id="sim-error-text" style="font-size: 0.75rem; color: #7f1d1d; white-space: pre-wrap; font-family: monospace;"></div>
+                </div>
+
+                <div class="section-label">Simulation Output</div>
+                <div class="sim-output" id="sim-output">// Loading...</div>
+            </div>
 
             <div class="action-buttons">
                 <button class="btn btn-secondary btn-sm" onclick="downloadLog()">📥 Download Log</button>
@@ -2290,39 +2301,60 @@
         }
 
         // ============================================================
-        // Simulation
+        // Simulation (supports multi-language)
         // ============================================================
+        let simResults = {};        // { lang: simResult }
+        let activeSimLang = null;   // currently displayed sim tab
+
         async function runSimulation() {
-            // Use active tab result
-            const result = currentResults[activeResultLang] || currentResult;
-            if (!result) {
+            // Collect all generated languages that have results
+            const langs = generatedLanguages.filter(l => currentResults[l]);
+            if (langs.length === 0) {
                 showError('No code to simulate');
                 return;
             }
-            currentResult = result;
 
             const btn = document.getElementById('run-sim-btn');
             btn.disabled = true;
             btn.innerHTML = '<div class="spinner"></div> Running...';
 
+            simResults = {};
+            activeSimLang = null;
+
             try {
-                const response = await fetch('/api/run-simulation', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        file_path: currentResult.file_path,
-                        language: currentResult.language
-                    })
-                });
-
-                const data = await response.json();
-
-                if (!data.success) {
-                    throw new Error(data.errors?.join(', ') || data.error || 'Simulation failed');
+                if (langs.length === 1) {
+                    // Single language — use original endpoint
+                    const r = currentResults[langs[0]];
+                    const response = await fetch('/api/run-simulation', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ file_path: r.file_path, language: r.language })
+                    });
+                    const data = await response.json();
+                    simResults[langs[0]] = data;
+                } else {
+                    // Multi-language — use batch endpoint
+                    const items = langs.map(l => ({
+                        file_path: currentResults[l].file_path,
+                        language: currentResults[l].language,
+                    }));
+                    const response = await fetch('/api/run-simulation-batch', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ items })
+                    });
+                    const data = await response.json();
+                    if (data.success && data.results) {
+                        simResults = data.results;
+                    } else {
+                        throw new Error(data.error || 'Batch simulation failed');
+                    }
                 }
 
-                simResult = data;
-                displaySimResult(data);
+                // Backward compat: keep simResult pointing to active lang
+                activeSimLang = langs[0];
+                simResult = simResults[activeSimLang] || null;
+                displaySimResults();
 
             } catch (error) {
                 showError(error.message);
@@ -2332,23 +2364,102 @@
             }
         }
 
-        function displaySimResult(data) {
-            document.getElementById('sim-result-title').textContent = 'Simulation Complete';
-            document.getElementById('sim-result-subtitle').textContent =
-                `${data.test_results.total} tests executed in ${data.run_time}s`;
+        function displaySimResults() {
+            const langs = Object.keys(simResults);
+            if (langs.length === 0) return;
 
-            document.getElementById('sim-total').textContent = data.test_results.total;
-            document.getElementById('sim-passed').textContent = data.test_results.passed;
-            document.getElementById('sim-failed').textContent = data.test_results.failed;
-            document.getElementById('sim-time').textContent = `${data.run_time}s`;
+            // Show language tabs if multiple
+            const tabsEl = document.getElementById('sim-lang-tabs');
+            if (langs.length > 1) {
+                tabsEl.style.display = '';
+                tabsEl.innerHTML = langs.map(l => {
+                    const data = simResults[l];
+                    const isActive = l === activeSimLang;
+                    const ok = data && data.success;
+                    const icon = ok ? '✓' : '✗';
+                    const color = ok ? '#10b981' : '#ef4444';
+                    return `<button class="lang-tab ${isActive ? 'active' : ''}"
+                        onclick="switchSimTab('${l}')"
+                        style="border-bottom-color: ${isActive ? color : 'transparent'};">
+                        ${l.toUpperCase()} <span style="color:${color}; margin-left:4px;">${icon}</span>
+                    </button>`;
+                }).join('');
+            } else {
+                tabsEl.style.display = 'none';
+            }
 
-            document.getElementById('sim-output').textContent = data.output || 'No output';
-
+            showSimForLang(activeSimLang);
             document.getElementById('simulation-result').classList.add('visible');
 
-            // Show validation panel after simulation
+            // Show validation panel
             document.getElementById('validation-panel').style.display = '';
             document.getElementById('validation-panel').classList.add('visible');
+        }
+
+        function switchSimTab(lang) {
+            activeSimLang = lang;
+            simResult = simResults[lang] || null;
+            displaySimResults();
+        }
+
+        function showSimForLang(lang) {
+            const data = simResults[lang];
+            if (!data) return;
+
+            const ok = data.success;
+            const tr = data.test_results || { total: 0, passed: 0, failed: 0 };
+            const hasErrors = data.errors && data.errors.length > 0;
+            const hasOutput = data.output && data.output.trim().length > 0;
+
+            // Header
+            const icon = document.getElementById('sim-result-icon');
+            const header = document.getElementById('sim-result-header');
+            if (!ok || hasErrors) {
+                icon.textContent = '✗';
+                header.className = 'result-header error';
+                document.getElementById('sim-result-title').textContent = 'Simulation Failed';
+            } else if (tr.total === 0) {
+                icon.textContent = '⚠';
+                header.className = 'result-header warning';
+                document.getElementById('sim-result-title').textContent = 'Simulation Complete (no tests parsed)';
+            } else {
+                icon.textContent = '✓';
+                header.className = 'result-header';
+                document.getElementById('sim-result-title').textContent = 'Simulation Complete';
+            }
+
+            const totalTime = (data.compile_time || 0) + (data.run_time || 0);
+            document.getElementById('sim-result-subtitle').textContent =
+                `${tr.total} tests executed in ${totalTime.toFixed(2)}s` +
+                (Object.keys(simResults).length > 1 ? ` (${lang.toUpperCase()})` : '');
+
+            // Stats
+            document.getElementById('sim-total').textContent = tr.total;
+            document.getElementById('sim-passed').textContent = tr.passed;
+            document.getElementById('sim-failed').textContent = tr.failed;
+            document.getElementById('sim-time').textContent = `${totalTime.toFixed(2)}s`;
+
+            // Errors
+            const errorBox = document.getElementById('sim-error-box');
+            if (hasErrors) {
+                errorBox.style.display = '';
+                document.getElementById('sim-error-text').textContent = data.errors.join('\n');
+            } else {
+                errorBox.style.display = 'none';
+            }
+
+            // Output
+            document.getElementById('sim-output').textContent =
+                hasOutput ? data.output : (hasErrors ? '(no output — see errors above)' : 'No output');
+        }
+
+        // Legacy compat
+        function displaySimResult(data) {
+            simResults = {};
+            simResults[data.language || activeResultLang || 'unknown'] = data;
+            activeSimLang = Object.keys(simResults)[0];
+            simResult = data;
+            displaySimResults();
         }
 
         // ============================================================
@@ -2476,10 +2587,13 @@
             generatedLanguages = [];
             langStatus = {};
             simResult = null;
+            simResults = {};
+            activeSimLang = null;
             document.getElementById('generation-result').classList.remove('visible');
             document.getElementById('simulation-result').classList.remove('visible');
             document.getElementById('validation-panel').style.display = 'none';
             document.getElementById('result-lang-tabs').style.display = 'none';
+            document.getElementById('sim-lang-tabs').style.display = 'none';
             document.getElementById('download-all-btn').style.display = 'none';
             valReportFiles = { json: null, csv: null };
         }
