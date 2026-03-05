@@ -260,6 +260,42 @@ class GoldenModel:
 
 
 # ------------------------------------------------------------------
+# Test vector serialization for Strategy B (stdin injection)
+# ------------------------------------------------------------------
+
+def serialize_vectors(vectors: List[TestVector]) -> str:
+    """Serialize test vectors to a line-based text format for stdin injection.
+
+    Format (one line per vector):
+        OP A B EXPECTED_RESULT EXPECTED_ZERO EXPECTED_NEG EXPECTED_CARRY
+    First line: count of vectors.
+    """
+    lines = [str(len(vectors))]
+    for v in vectors:
+        z = 1 if v.expected.zero else 0
+        n = 1 if v.expected.negative else 0
+        c = 1 if v.expected.carry else 0
+        lines.append(f"{v.op} {v.a} {v.b} {v.expected.result} {z} {n} {c}")
+    return '\n'.join(lines) + '\n'
+
+
+def deserialize_vectors(text: str) -> List[TestVector]:
+    """Deserialize test vectors from the text format produced by serialize_vectors."""
+    lines = [l.strip() for l in text.strip().split('\n') if l.strip()]
+    count = int(lines[0])
+    vectors = []
+    for line in lines[1:count + 1]:
+        parts = line.split()
+        op, a, b = int(parts[0]), int(parts[1]), int(parts[2])
+        result, z, n, c = int(parts[3]), bool(int(parts[4])), bool(int(parts[5])), bool(int(parts[6]))
+        vectors.append(TestVector(
+            op=op, a=a, b=b,
+            expected=ALUResult(result=result, zero=z, negative=n, carry=c),
+        ))
+    return vectors
+
+
+# ------------------------------------------------------------------
 # Convenience function
 # ------------------------------------------------------------------
 

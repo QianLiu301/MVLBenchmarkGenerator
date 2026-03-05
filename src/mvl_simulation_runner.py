@@ -126,13 +126,16 @@ class MVLSimulationRunner:
             return self.tools.get('ghdl')
         return False
 
-    def run_simulation(self, file_path: str, language: str = None) -> Dict:
+    def run_simulation(self, file_path: str, language: str = None,
+                        stdin_data: str = None, vector_file: str = None) -> Dict:
         """
         Run simulation for MVL code.
 
         Args:
             file_path: Path to the code file
             language: Code language (auto-detect if not provided)
+            stdin_data: Optional text to feed via stdin (Strategy B for C/Python/Verilog)
+            vector_file: Optional path to a test-vector file (Strategy B for VHDL)
 
         Returns:
             Dict with simulation results
@@ -161,17 +164,17 @@ class MVLSimulationRunner:
 
         # Run based on language
         if language == 'c':
-            return self._run_c(file_path)
+            return self._run_c(file_path, stdin_data=stdin_data)
         elif language == 'python':
-            return self._run_python(file_path)
+            return self._run_python(file_path, stdin_data=stdin_data)
         elif language == 'verilog':
-            return self._run_verilog(file_path)
+            return self._run_verilog(file_path, stdin_data=stdin_data)
         elif language == 'vhdl':
-            return self._run_vhdl(file_path)
+            return self._run_vhdl(file_path, vector_file=vector_file)
         else:
             return {'success': False, 'error': f'Unsupported language: {language}'}
 
-    def _run_c(self, file_path: Path) -> Dict:
+    def _run_c(self, file_path: Path, stdin_data: str = None) -> Dict:
         """Compile and run C code"""
         import time
 
@@ -254,6 +257,7 @@ class MVLSimulationRunner:
                 text=True,
                 timeout=60,
                 cwd=str(results_dir),
+                input=stdin_data,
                 encoding='utf-8',
                 errors='replace'
             )
@@ -290,7 +294,7 @@ class MVLSimulationRunner:
 
         return result
 
-    def _run_python(self, file_path: Path) -> Dict:
+    def _run_python(self, file_path: Path, stdin_data: str = None) -> Dict:
         """Run Python code"""
         import time
 
@@ -326,6 +330,7 @@ class MVLSimulationRunner:
                 capture_output=True,
                 text=True,
                 timeout=60,
+                input=stdin_data,
                 encoding='utf-8',
                 errors='replace'
             )
@@ -358,7 +363,7 @@ class MVLSimulationRunner:
 
         return result
 
-    def _run_verilog(self, file_path: Path) -> Dict:
+    def _run_verilog(self, file_path: Path, stdin_data: str = None) -> Dict:
         """Compile and run Verilog code"""
         import time
 
@@ -428,6 +433,7 @@ class MVLSimulationRunner:
                 text=True,
                 timeout=60,
                 cwd=str(results_dir),
+                input=stdin_data,
                 encoding='utf-8',
                 errors='replace'
             )
@@ -459,7 +465,7 @@ class MVLSimulationRunner:
 
         return result
 
-    def _run_vhdl(self, file_path: Path) -> Dict:
+    def _run_vhdl(self, file_path: Path, vector_file: str = None) -> Dict:
         """Compile and run VHDL code using GHDL"""
         import time
 
@@ -543,6 +549,11 @@ class MVLSimulationRunner:
             return result
 
         # Step 3: Run
+        # If a vector file is provided (Strategy B), copy it into the work dir
+        if vector_file:
+            import shutil as _shutil2
+            _shutil2.copy2(vector_file, str(work_dir / 'test_vectors.txt'))
+
         try:
             start = time.time()
             run_cmd = [
