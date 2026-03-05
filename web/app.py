@@ -50,12 +50,14 @@ sys.path.insert(0, str(PROJECT_ROOT / 'src'))
 
 from mvl_generator import MVLGenerator
 from mvl_simulation_runner import MVLSimulationRunner
+from benchmark_validator import BenchmarkValidator
 
 app = Flask(__name__, static_folder='static', template_folder='templates')
 CORS(app)
 
 # Global instances
 simulation_runner = MVLSimulationRunner(project_root=str(PROJECT_ROOT))
+benchmark_validator = BenchmarkValidator(project_root=str(PROJECT_ROOT))
 
 
 # ============================================================
@@ -271,6 +273,40 @@ def api_run_simulation():
         result = simulation_runner.run_simulation(str(full_path), language)
 
         return jsonify(result)
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/validate', methods=['POST'])
+def api_validate():
+    """Validate generated code against golden model.
+
+    Expects JSON: { file_path, k, bits, language? }
+    Returns: ValidationReport summary with pass/fail details.
+    """
+    try:
+        data = request.json
+        file_path = data.get('file_path')
+        k = data.get('k')
+        bits = data.get('bits')
+        language = data.get('language')
+
+        if not file_path or k is None or bits is None:
+            return jsonify({
+                'success': False,
+                'error': 'file_path, k, and bits are required'
+            }), 400
+
+        full_path = PROJECT_ROOT / file_path
+
+        report = benchmark_validator.validate(
+            str(full_path), int(k), int(bits), language
+        )
+
+        return jsonify(report.summary())
 
     except Exception as e:
         import traceback
