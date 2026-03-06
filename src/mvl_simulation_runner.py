@@ -96,12 +96,17 @@ class MVLSimulationRunner:
                     capture_output=True,
                     timeout=5
                 )
-                if result.returncode == 0:
-                    tools['ghdl'] = True
+                # Some GHDL versions return non-zero for --version; just check it runs
+                tools['ghdl'] = True
             except:
                 pass
 
         return tools
+
+    def refresh_tools(self):
+        """Re-detect available tools (useful after installing new tools)"""
+        self.tools = self._detect_tools()
+        return self.get_tools_status()
 
     def get_tools_status(self) -> Dict:
         """Get tools status for API"""

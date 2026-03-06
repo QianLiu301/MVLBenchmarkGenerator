@@ -83,6 +83,20 @@ def api_status():
     })
 
 
+@app.route('/api/tools', methods=['GET', 'POST'])
+def api_tools():
+    """Get or refresh tool detection status.
+
+    GET: Return current tools status
+    POST: Re-detect tools and return updated status (useful after installing new tools)
+    """
+    if request.method == 'POST':
+        status = simulation_runner.refresh_tools()
+    else:
+        status = simulation_runner.get_tools_status()
+    return jsonify(status)
+
+
 @app.route('/api/generate', methods=['POST'])
 def api_generate():
     """Generate MVL ALU code"""
