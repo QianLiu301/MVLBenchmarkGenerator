@@ -342,22 +342,48 @@ class MVLSimulationRunner:
                 '-Wall'  # Warnings
             ]
 
+            print(f"   C compile cmd: {' '.join(compile_cmd)}")
+
+            # On Windows with MSYS2, gcc may need its bin dir in PATH for DLLs
+            env = os.environ.copy()
+            compiler_dir = os.path.dirname(compiler)
+            if compiler_dir and compiler_dir not in env.get('PATH', ''):
+                env['PATH'] = compiler_dir + os.pathsep + env.get('PATH', '')
+
             compile_result = subprocess.run(
                 compile_cmd,
                 capture_output=True,
-                text=True,
                 timeout=30,
-                encoding='utf-8',
-                errors='replace'
+                env=env
             )
 
             result['compile_time'] = round(time.time() - start, 2)
 
             if compile_result.returncode != 0:
-                result['errors'].append(f'Compilation failed: {compile_result.stderr}')
+                # Try multiple encodings for error messages
+                stderr_text = ''
+                for enc in ['utf-8', 'gbk', 'cp936', 'latin-1']:
+                    try:
+                        stderr_text = compile_result.stderr.decode(enc)
+                        break
+                    except (UnicodeDecodeError, AttributeError):
+                        continue
+                if not stderr_text:
+                    stderr_text = str(compile_result.stderr)
+                # Also capture stdout (some compilers output errors there)
+                stdout_text = ''
+                for enc in ['utf-8', 'gbk', 'cp936', 'latin-1']:
+                    try:
+                        stdout_text = compile_result.stdout.decode(enc)
+                        break
+                    except (UnicodeDecodeError, AttributeError):
+                        continue
+                error_msg = stderr_text or stdout_text or f'returncode={compile_result.returncode}'
+                print(f"   C compile failed: {error_msg}")
+                result['errors'].append(f'Compilation failed: {error_msg}')
                 return result
 
-            print(f"✅ Compiled in {result['compile_time']}s")
+            print(f"   C compiled OK in {result['compile_time']}s")
 
         except subprocess.TimeoutExpired:
             result['errors'].append('Compilation timeout (30s)')
@@ -370,6 +396,12 @@ class MVLSimulationRunner:
         try:
             start = time.time()
 
+            # Ensure MSYS2 DLLs are findable by the compiled executable
+            run_env = os.environ.copy()
+            compiler_dir = os.path.dirname(compiler)
+            if compiler_dir and compiler_dir not in run_env.get('PATH', ''):
+                run_env['PATH'] = compiler_dir + os.pathsep + run_env.get('PATH', '')
+
             run_result = subprocess.run(
                 [str(exe_file)],
                 capture_output=True,
@@ -377,6 +409,7 @@ class MVLSimulationRunner:
                 timeout=60,
                 cwd=str(results_dir),
                 input=stdin_data,
+                env=run_env,
                 encoding='utf-8',
                 errors='replace'
             )
