@@ -35,8 +35,8 @@ class MVLSimulationRunner:
             'ghdl': False,
         }
 
-        # Check C compilers
-        for compiler in ['gcc', 'clang']:
+        # Check C compilers (include Windows MSYS2/MinGW variants)
+        for compiler in ['gcc', 'cc', 'mingw32-gcc', 'x86_64-w64-mingw32-gcc', 'clang']:
             if shutil.which(compiler):
                 try:
                     result = subprocess.run(
@@ -44,8 +44,10 @@ class MVLSimulationRunner:
                         capture_output=True,
                         timeout=5
                     )
-                    if result.returncode == 0:
-                        tools[compiler] = True
+                    # Some compilers return non-zero for --version; just check it runs
+                    tools['gcc'] = True
+                    tools['gcc_cmd'] = compiler
+                    break
                 except:
                     pass
 
@@ -235,8 +237,8 @@ class MVLSimulationRunner:
             }
         }
 
-        # Select compiler
-        compiler = 'gcc' if self.tools.get('gcc') else 'clang'
+        # Select compiler (use detected command name for MSYS2/MinGW compatibility)
+        compiler = self.tools.get('gcc_cmd', 'gcc')
 
         # Step 1: Compile
         try:
