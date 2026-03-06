@@ -156,9 +156,22 @@ class MVLSimulationRunner:
             }.get(ext, 'unknown')
 
         if not self.can_run(language):
+            tool_hints = {
+                'c': 'Install gcc or clang',
+                'python': 'Install python3',
+                'verilog': 'Install iverilog and vvp (Icarus Verilog)',
+                'vhdl': 'Install ghdl (GHDL VHDL simulator)'
+            }
+            hint = tool_hints.get(language, f'Install tools for {language}')
             return {
                 'success': False,
-                'error': f'No tools available for {language}',
+                'language': language,
+                'file': file_path.name,
+                'compile_time': 0,
+                'run_time': 0,
+                'output': '',
+                'errors': [f'No tools available for {language}. {hint}.'],
+                'test_results': {'total': 0, 'passed': 0, 'failed': 0},
                 'tools': self.get_tools_status()
             }
 
@@ -172,7 +185,16 @@ class MVLSimulationRunner:
         elif language == 'vhdl':
             return self._run_vhdl(file_path, vector_file=vector_file)
         else:
-            return {'success': False, 'error': f'Unsupported language: {language}'}
+            return {
+                'success': False,
+                'language': language,
+                'file': file_path.name,
+                'compile_time': 0,
+                'run_time': 0,
+                'output': '',
+                'errors': [f'Unsupported language: {language}'],
+                'test_results': {'total': 0, 'passed': 0, 'failed': 0}
+            }
 
     def _run_c(self, file_path: Path, stdin_data: str = None) -> Dict:
         """Compile and run C code"""

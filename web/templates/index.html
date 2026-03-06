@@ -2370,7 +2370,7 @@
             // All done — update header
             const allTotal = Object.values(simResults).reduce((s, d) => s + (d.test_results?.total || 0), 0);
             const allPassed = Object.values(simResults).reduce((s, d) => s + (d.test_results?.passed || 0), 0);
-            const anyFailed = Object.values(simResults).some(d => !d.success || (d.errors && d.errors.length > 0));
+            const anyFailed = Object.values(simResults).some(d => !d.success || (d.errors && d.errors.length > 0) || d.error);
 
             document.getElementById('sim-result-icon').innerHTML = '';
             if (anyFailed) {
@@ -2443,7 +2443,8 @@
 
             const ok = data.success;
             const tr = data.test_results || { total: 0, passed: 0, failed: 0 };
-            const hasErrors = data.errors && data.errors.length > 0;
+            const errorList = data.errors || (data.error ? [data.error] : []);
+            const hasErrors = errorList.length > 0;
             const hasOutput = data.output && data.output.trim().length > 0;
 
             // Stats
@@ -2457,7 +2458,7 @@
             const errorBox = document.getElementById('sim-error-box');
             if (hasErrors) {
                 errorBox.style.display = '';
-                document.getElementById('sim-error-text').textContent = data.errors.join('\n');
+                document.getElementById('sim-error-text').textContent = errorList.join('\n');
             } else {
                 errorBox.style.display = 'none';
             }
