@@ -74,30 +74,60 @@ class MVLSimulationRunner:
                     pass
 
         # Fallback: search common Windows MSYS2/MinGW installation directories
+        # Scan all available drive letters, not just C:
         if not gcc_found and os.name == 'nt':
-            common_gcc_paths = [
-                r'C:\msys64\ucrt64\bin\gcc.exe',
-                r'C:\msys64\mingw64\bin\gcc.exe',
-                r'C:\msys64\mingw32\bin\gcc.exe',
-                r'C:\msys64\usr\bin\gcc.exe',
-                r'C:\MinGW\bin\gcc.exe',
-                r'C:\mingw64\bin\gcc.exe',
-                r'C:\Program Files\mingw-w64\bin\gcc.exe',
+            import string
+            drives = []
+            for letter in string.ascii_uppercase:
+                drive = f'{letter}:\\'
+                if os.path.exists(drive):
+                    drives.append(letter)
+
+            # Relative paths under each drive to check for gcc
+            gcc_relative_paths = [
+                r'msys64\ucrt64\bin\gcc.exe',
+                r'msys64\mingw64\bin\gcc.exe',
+                r'msys64\mingw32\bin\gcc.exe',
+                r'msys64\usr\bin\gcc.exe',
+                r'msys2\ucrt64\bin\gcc.exe',
+                r'msys2\mingw64\bin\gcc.exe',
+                r'msys2\mingw32\bin\gcc.exe',
+                r'msys2\usr\bin\gcc.exe',
+                r'MinGW\bin\gcc.exe',
+                r'mingw64\bin\gcc.exe',
+                r'Program Files\mingw-w64\bin\gcc.exe',
             ]
-            for gcc_path in common_gcc_paths:
-                if os.path.isfile(gcc_path):
-                    try:
-                        result = subprocess.run(
-                            [gcc_path, '--version'],
-                            capture_output=True,
-                            timeout=5
-                        )
-                        tools['gcc'] = True
-                        tools['gcc_cmd'] = gcc_path
-                        gcc_found = True
-                        break
-                    except:
-                        pass
+            # Also search common subdirectories (like D:\dws\msys2\...)
+            search_roots = []
+            for d in drives:
+                drive_path = f'{d}:\\'
+                search_roots.append(drive_path)
+                # Also check one level of subdirectories for msys2/msys64 installs
+                try:
+                    for entry in os.scandir(drive_path):
+                        if entry.is_dir():
+                            search_roots.append(entry.path)
+                except (PermissionError, OSError):
+                    pass
+
+            for root in search_roots:
+                if gcc_found:
+                    break
+                for rel_path in gcc_relative_paths:
+                    gcc_path = os.path.join(root, rel_path)
+                    if os.path.isfile(gcc_path):
+                        try:
+                            result = subprocess.run(
+                                [gcc_path, '--version'],
+                                capture_output=True,
+                                timeout=5
+                            )
+                            tools['gcc'] = True
+                            tools['gcc_cmd'] = gcc_path
+                            gcc_found = True
+                            break
+                        except:
+                            pass
 
         # Check Python
         for python_cmd in ['python3', 'python']:
