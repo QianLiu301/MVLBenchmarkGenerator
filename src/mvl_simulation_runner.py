@@ -521,6 +521,25 @@ class MVLSimulationRunner:
         # Fallback: last entity (often the testbench wrapping earlier entities)
         return entities[-1]
 
+    @staticmethod
+    def _count_vhdl_asserts(file_path: Path) -> int:
+        """Count assert statements in a VHDL testbench file.
+
+        Used to determine test count when GHDL produces no output
+        (meaning all assertions passed).
+        """
+        try:
+            content = file_path.read_text(encoding='utf-8', errors='replace')
+        except Exception:
+            return 0
+
+        # Match "assert <condition> report ..." lines (test assertions)
+        # Exclude "assert false" which is used for stopping simulation
+        asserts = re.findall(
+            r'(?i)\bassert\s+(?!false\b)\S+.*\breport\b', content
+        )
+        return len(asserts)
+
     def _run_vhdl(self, file_path: Path, vector_file: str = None) -> Dict:
         """Compile and run VHDL code using GHDL"""
         import time
@@ -637,6 +656,18 @@ class MVLSimulationRunner:
 
             result['log_file'] = str(log_file.relative_to(self.project_root)).replace('\\', '/')
             self._parse_test_output(result, result['output'])
+
+            # VHDL special case: assert ... severity error only prints on FAILURE.
+            # If simulation succeeded with 0 tests detected and no assertion errors
+            # in the output, count assert statements in the source as passed tests.
+            if (result['test_results']['total'] == 0
+                    and result['success']
+                    and 'severity' not in result['output'].lower()):
+                assert_count = self._count_vhdl_asserts(file_path)
+                if assert_count > 0:
+                    result['test_results']['total'] = assert_count
+                    result['test_results']['passed'] = assert_count
+                    result['test_results']['failed'] = 0
 
         except subprocess.TimeoutExpired:
             result['errors'].append('Simulation timeout (60s)')
