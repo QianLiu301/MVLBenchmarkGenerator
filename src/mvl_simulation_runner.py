@@ -35,10 +35,10 @@ class MVLSimulationRunner:
             'ghdl': False,
         }
 
-        # Check C compilers (include Windows MSYS2/MinGW variants)
-        # Strategy: try shutil.which first, then try running directly (Windows PATH quirks),
-        # then search common Windows installation paths as fallback
+        # Check C compilers with multiple strategies
         gcc_found = False
+
+        # Strategy 1: shutil.which (standard, works on Linux/Mac and sometimes Windows)
         for compiler in ['gcc', 'cc', 'mingw32-gcc', 'x86_64-w64-mingw32-gcc', 'clang']:
             if shutil.which(compiler):
                 try:
@@ -50,65 +50,73 @@ class MVLSimulationRunner:
                     tools['gcc'] = True
                     tools['gcc_cmd'] = compiler
                     gcc_found = True
+                    print(f"   GCC found via shutil.which: {compiler}")
                     break
                 except:
                     pass
 
-        # Fallback: on Windows, shutil.which may not find gcc even when it's in PATH
-        # Try running gcc directly via subprocess (shell=True uses CMD's PATH resolution)
+        # Strategy 2 (Windows): use 'where gcc' to find the exact path
         if not gcc_found and os.name == 'nt':
-            for compiler in ['gcc', 'cc', 'clang']:
-                try:
-                    result = subprocess.run(
-                        f'{compiler} --version',
-                        capture_output=True,
-                        timeout=5,
-                        shell=True
-                    )
-                    if result.returncode == 0 and result.stdout:
+            try:
+                where_result = subprocess.run(
+                    ['where', 'gcc'],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                    shell=True
+                )
+                if where_result.returncode == 0 and where_result.stdout.strip():
+                    gcc_path = where_result.stdout.strip().splitlines()[0].strip()
+                    if os.path.isfile(gcc_path):
                         tools['gcc'] = True
-                        tools['gcc_cmd'] = compiler
+                        tools['gcc_cmd'] = gcc_path
                         gcc_found = True
-                        break
-                except:
-                    pass
+                        print(f"   GCC found via 'where': {gcc_path}")
+            except:
+                pass
 
-        # Fallback: search common Windows MSYS2/MinGW installation directories
-        # Scan all available drive letters, not just C:
+        # Strategy 3 (Windows): try running gcc directly with shell=True
+        if not gcc_found and os.name == 'nt':
+            try:
+                result = subprocess.run(
+                    'gcc --version',
+                    capture_output=True,
+                    timeout=5,
+                    shell=True
+                )
+                if result.returncode == 0 and result.stdout:
+                    tools['gcc'] = True
+                    tools['gcc_cmd'] = 'gcc'
+                    gcc_found = True
+                    print("   GCC found via shell=True subprocess")
+            except:
+                pass
+
+        # Strategy 4 (Windows): scan all drives for common MSYS2/MinGW paths
         if not gcc_found and os.name == 'nt':
             import string
-            drives = []
-            for letter in string.ascii_uppercase:
-                drive = f'{letter}:\\'
-                if os.path.exists(drive):
-                    drives.append(letter)
-
-            # Relative paths under each drive to check for gcc
             gcc_relative_paths = [
-                r'msys64\ucrt64\bin\gcc.exe',
-                r'msys64\mingw64\bin\gcc.exe',
-                r'msys64\mingw32\bin\gcc.exe',
-                r'msys64\usr\bin\gcc.exe',
-                r'msys2\ucrt64\bin\gcc.exe',
-                r'msys2\mingw64\bin\gcc.exe',
-                r'msys2\mingw32\bin\gcc.exe',
-                r'msys2\usr\bin\gcc.exe',
-                r'MinGW\bin\gcc.exe',
-                r'mingw64\bin\gcc.exe',
-                r'Program Files\mingw-w64\bin\gcc.exe',
+                os.path.join('msys64', 'ucrt64', 'bin', 'gcc.exe'),
+                os.path.join('msys64', 'mingw64', 'bin', 'gcc.exe'),
+                os.path.join('msys64', 'mingw32', 'bin', 'gcc.exe'),
+                os.path.join('msys2', 'ucrt64', 'bin', 'gcc.exe'),
+                os.path.join('msys2', 'mingw64', 'bin', 'gcc.exe'),
+                os.path.join('msys2', 'mingw32', 'bin', 'gcc.exe'),
+                os.path.join('MinGW', 'bin', 'gcc.exe'),
+                os.path.join('mingw64', 'bin', 'gcc.exe'),
             ]
-            # Also search common subdirectories (like D:\dws\msys2\...)
+            # Collect search roots: drive roots + one level of subdirectories
             search_roots = []
-            for d in drives:
-                drive_path = f'{d}:\\'
-                search_roots.append(drive_path)
-                # Also check one level of subdirectories for msys2/msys64 installs
-                try:
-                    for entry in os.scandir(drive_path):
-                        if entry.is_dir():
-                            search_roots.append(entry.path)
-                except (PermissionError, OSError):
-                    pass
+            for letter in string.ascii_uppercase:
+                drive_path = f'{letter}:\\'
+                if os.path.exists(drive_path):
+                    search_roots.append(drive_path)
+                    try:
+                        for entry in os.scandir(drive_path):
+                            if entry.is_dir():
+                                search_roots.append(entry.path)
+                    except (PermissionError, OSError):
+                        pass
 
             for root in search_roots:
                 if gcc_found:
@@ -125,9 +133,13 @@ class MVLSimulationRunner:
                             tools['gcc'] = True
                             tools['gcc_cmd'] = gcc_path
                             gcc_found = True
+                            print(f"   GCC found via path scan: {gcc_path}")
                             break
                         except:
                             pass
+
+        if not gcc_found:
+            print("   GCC: not found (tried shutil.which, where, shell, path scan)")
 
         # Check Python
         for python_cmd in ['python3', 'python']:
@@ -652,6 +664,7 @@ class MVLSimulationRunner:
             start = time.time()
             analyze_cmd = [
                 'ghdl', '-a',
+                '--std=08',
                 '--workdir=' + str(work_dir),
                 str(file_path)
             ]
@@ -679,6 +692,7 @@ class MVLSimulationRunner:
         try:
             elab_cmd = [
                 'ghdl', '-e',
+                '--std=08',
                 '--workdir=' + str(work_dir),
                 entity_name
             ]
@@ -713,6 +727,7 @@ class MVLSimulationRunner:
             start = time.time()
             run_cmd = [
                 'ghdl', '-r',
+                '--std=08',
                 '--workdir=' + str(work_dir),
                 entity_name,
                 '--stop-time=10ms'
