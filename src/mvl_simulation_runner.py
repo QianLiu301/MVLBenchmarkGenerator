@@ -600,31 +600,63 @@ class MVLSimulationRunner:
     def _parse_test_output(self, result: Dict, output: str):
         """Parse test output for statistics.
 
-        Handles multiple output formats that LLMs commonly produce:
+        Handles many output formats that LLMs commonly produce in $display/printf/print:
           - "Test  1: ADD A=0 B=0 -> R=0 Z=1 N=0 C=0"
           - "ADD: 0 + 0 = 0"  /  "SUB: 5 - 3 = 2"
           - "OP=ADD A=0 B=0 Result=0"   (Verilog $display)
           - "op=0 a=0 b=0 result=0"     (numeric op codes)
           - "[  10] op=0 a=0 ..."        (timestamped Verilog)
           - "  0: A= 0 B= 0 OP= 0 => Result= 0"  (tabular)
+          - "a=5, b=3, result=8"          (simple key=value)
+          - "Time 10: a=5 b=3 opcode=0 result=8"
+          - "PASS: ADD 5+3=8" / "FAIL: SUB 5-3!=1"
+          - "Test ADD: a=0, b=0, expected=0, got=0"
         """
         lines = output.split('\n')
 
-        _OP_NAMES = r'(?:ADD|SUB|MUL|NEG|INC|DEC)'
+        _OP_NAMES = r'(?:ADD|SUB|MUL|NEG|INC|DEC|AND|OR|XOR|NOT|SHL|SHR|MOD|DIV)'
         _TEST_PATTERNS = [
-            re.compile(r'Test\s*\d+', re.IGNORECASE),
-            re.compile(rf'^{_OP_NAMES}\s*:', re.IGNORECASE),
-            re.compile(r'OP\s*=\s*', re.IGNORECASE),
+            # Explicit test numbering: "Test 1:", "Test #1", "test_1", "Test case 1"
+            re.compile(r'Test\s*(?:case\s*)?[#_]?\s*\d+', re.IGNORECASE),
+            # Operation name at start: "ADD: ...", "SUB(...)", "ADD :"
+            re.compile(rf'^{_OP_NAMES}\s*[:(]', re.IGNORECASE),
+            # OP= or opcode=: "OP=ADD", "OP=0", "opcode=3"
+            re.compile(r'(?:OP|opcode)\s*=\s*', re.IGNORECASE),
+            # Timestamped Verilog: "[  10] ..." with test-like content
+            re.compile(rf'^\[\s*\d+\]\s*.*(?:op|{_OP_NAMES}|result|a\s*=|b\s*=)', re.IGNORECASE),
+            # Tabular: "  0: A= 0 B= 0"
+            re.compile(r'^\s*\d+\s*:\s*[A-Za-z]\s*=', re.IGNORECASE),
+            # Key=value with result: "a=5, b=3, result=8" or "a = 5 b = 3 result = 8"
+            re.compile(r'(?:^|[\s,])a\s*=\s*\d+.*(?:result|out)', re.IGNORECASE),
+            # "result=" or "Result:" with a number
+            re.compile(r'result\s*[=:]\s*\d+', re.IGNORECASE),
+            # PASS/FAIL markers (also counted separately below)
+            re.compile(r'^\s*(?:PASS|FAIL)\s*[:\-]', re.IGNORECASE),
+            # "Expected X, Got Y" pattern
+            re.compile(r'expected\s*[=:]\s*\d+.*got\s*[=:]\s*\d+', re.IGNORECASE),
+            # Time-prefixed: "Time 10ns: ..." or "@ 10:" with test content
+            re.compile(rf'(?:Time|@)\s*\d+\s*(?:ns|ps|us)?\s*:?\s*.*(?:{_OP_NAMES}|result|a\s*=)', re.IGNORECASE),
+            # Numeric op at start of line: "op=0 a=0 b=0"
             re.compile(r'^op\s*=\s*\d', re.IGNORECASE),
-            re.compile(rf'^\[\s*\d+\]\s*.*(?:op|{_OP_NAMES}|result)', re.IGNORECASE),
-            re.compile(r'^\s*\d+\s*:\s*A\s*=', re.IGNORECASE),
-            re.compile(rf'^\s*{_OP_NAMES}\s*\(', re.IGNORECASE),
+            # Operation name followed by operands: "ADD 5 + 3 = 8", "MUL(5, 3) = 15"
+            re.compile(rf'{_OP_NAMES}\s*[\(:]?\s*\d+', re.IGNORECASE),
+        ]
+
+        # Lines to exclude (not real test output)
+        _EXCLUDE_PATTERNS = [
+            re.compile(r'^\s*(?:module|endmodule|wire|reg|input|output|assign|always|initial)\b'),
+            re.compile(r'^\s*(?://|/\*|\*)', re.IGNORECASE),
+            re.compile(r'^\s*(?:VCD|WARNING|ERROR|Loading|Compiling)', re.IGNORECASE),
+            re.compile(r'TIMEOUT.*auto-terminated', re.IGNORECASE),
         ]
 
         test_count = 0
         for line in lines:
             stripped = line.strip()
             if not stripped:
+                continue
+            # Skip non-test lines
+            if any(ep.search(stripped) for ep in _EXCLUDE_PATTERNS):
                 continue
             for pat in _TEST_PATTERNS:
                 if pat.search(stripped):
