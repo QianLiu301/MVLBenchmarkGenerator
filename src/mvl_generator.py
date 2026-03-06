@@ -1560,6 +1560,9 @@ Include:
 - 6 max-value tests (one per opcode with a={mod-1}, b={mod-1})
 - 8+ additional tests with various values
 Each test: assign a, b, opcode → #10 → $display result
+Use this EXACT $display format for every test:
+  $display("Test %0d: OP=%0d a=%0d b=%0d result=%0d", test_num, opcode, a, b, result);
+End the testbench with $finish.
 
 Generate the complete Verilog module with testbench now:
 """
