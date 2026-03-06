@@ -1296,6 +1296,9 @@
                 <!-- Error pattern groups -->
                 <div id="val-patterns" style="margin-bottom: 16px;"></div>
 
+                <!-- Cross-language comparison (only when multiple languages validated) -->
+                <div id="val-cross-lang" style="display: none; background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 8px; padding: 14px 16px; margin-bottom: 16px;"></div>
+
                 <!-- Download buttons -->
                 <div class="action-buttons" id="val-download-btns" style="display: none;">
                     <button class="btn btn-secondary btn-sm" onclick="downloadValReport('json')">📥 Download JSON Report</button>
@@ -2301,13 +2304,12 @@
         }
 
         // ============================================================
-        // Simulation (supports multi-language)
+        // Simulation (sequential per-language with live progress)
         // ============================================================
         let simResults = {};        // { lang: simResult }
         let activeSimLang = null;   // currently displayed sim tab
 
         async function runSimulation() {
-            // Collect all generated languages that have results
             const langs = generatedLanguages.filter(l => currentResults[l]);
             if (langs.length === 0) {
                 showError('No code to simulate');
@@ -2316,90 +2318,123 @@
 
             const btn = document.getElementById('run-sim-btn');
             btn.disabled = true;
-            btn.innerHTML = '<div class="spinner"></div> Running...';
-
             simResults = {};
-            activeSimLang = null;
+            activeSimLang = langs[0];
 
-            try {
-                if (langs.length === 1) {
-                    // Single language — use original endpoint
-                    const r = currentResults[langs[0]];
+            // Show simulation card immediately with "running" state
+            document.getElementById('simulation-result').classList.add('visible');
+            document.getElementById('sim-result-icon').innerHTML = '<div class="spinner"></div>';
+            document.getElementById('sim-result-title').textContent = 'Running Simulations...';
+            document.getElementById('sim-result-subtitle').textContent = `0/${langs.length} completed`;
+            document.getElementById('sim-error-box').style.display = 'none';
+            document.getElementById('sim-output').textContent = '';
+
+            // Build initial tabs (all pending)
+            renderSimTabs(langs);
+
+            // Run each language sequentially
+            for (let i = 0; i < langs.length; i++) {
+                const lang = langs[i];
+
+                btn.innerHTML = `<div class="spinner"></div> ${lang.toUpperCase()} (${i + 1}/${langs.length})...`;
+                document.getElementById('sim-result-subtitle').textContent =
+                    `Running ${lang.toUpperCase()}... (${i}/${langs.length} done)`;
+
+                try {
+                    const r = currentResults[lang];
                     const response = await fetch('/api/run-simulation', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ file_path: r.file_path, language: r.language })
                     });
                     const data = await response.json();
-                    simResults[langs[0]] = data;
-                } else {
-                    // Multi-language — use batch endpoint
-                    const items = langs.map(l => ({
-                        file_path: currentResults[l].file_path,
-                        language: currentResults[l].language,
-                    }));
-                    const response = await fetch('/api/run-simulation-batch', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ items })
-                    });
-                    const data = await response.json();
-                    if (data.success && data.results) {
-                        simResults = data.results;
-                    } else {
-                        throw new Error(data.error || 'Batch simulation failed');
-                    }
+                    simResults[lang] = data;
+                } catch (e) {
+                    simResults[lang] = {
+                        success: false,
+                        language: lang,
+                        errors: [e.message],
+                        output: '',
+                        compile_time: 0,
+                        run_time: 0,
+                        test_results: { total: 0, passed: 0, failed: 0 }
+                    };
                 }
 
-                // Backward compat: keep simResult pointing to active lang
-                activeSimLang = langs[0];
-                simResult = simResults[activeSimLang] || null;
-                displaySimResults();
-
-            } catch (error) {
-                showError(error.message);
-            } finally {
-                btn.disabled = false;
-                btn.innerHTML = '▶️ Run Simulation';
+                // Live update: refresh tabs + show this lang's result immediately
+                activeSimLang = lang;
+                renderSimTabs(langs);
+                showSimForLang(lang);
             }
-        }
 
-        function displaySimResults() {
-            const langs = Object.keys(simResults);
-            if (langs.length === 0) return;
+            // All done — update header
+            const allTotal = Object.values(simResults).reduce((s, d) => s + (d.test_results?.total || 0), 0);
+            const allPassed = Object.values(simResults).reduce((s, d) => s + (d.test_results?.passed || 0), 0);
+            const anyFailed = Object.values(simResults).some(d => !d.success || (d.errors && d.errors.length > 0));
 
-            // Show language tabs if multiple
-            const tabsEl = document.getElementById('sim-lang-tabs');
-            if (langs.length > 1) {
-                tabsEl.style.display = '';
-                tabsEl.innerHTML = langs.map(l => {
-                    const data = simResults[l];
-                    const isActive = l === activeSimLang;
-                    const ok = data && data.success;
-                    const icon = ok ? '✓' : '✗';
-                    const color = ok ? '#10b981' : '#ef4444';
-                    return `<button class="lang-tab ${isActive ? 'active' : ''}"
-                        onclick="switchSimTab('${l}')"
-                        style="border-bottom-color: ${isActive ? color : 'transparent'};">
-                        ${l.toUpperCase()} <span style="color:${color}; margin-left:4px;">${icon}</span>
-                    </button>`;
-                }).join('');
+            document.getElementById('sim-result-icon').innerHTML = '';
+            if (anyFailed) {
+                document.getElementById('sim-result-icon').textContent = '⚠';
+                document.getElementById('sim-result-header').className = 'result-header warning';
             } else {
-                tabsEl.style.display = 'none';
+                document.getElementById('sim-result-icon').textContent = '✓';
+                document.getElementById('sim-result-header').className = 'result-header';
             }
+            document.getElementById('sim-result-title').textContent = 'Simulation Complete';
+            document.getElementById('sim-result-subtitle').textContent =
+                `${allTotal} tests (${allPassed} passed) across ${langs.length} language(s)`;
 
+            // Show first successful lang, or first lang
+            const firstOk = langs.find(l => simResults[l]?.success) || langs[0];
+            activeSimLang = firstOk;
+            simResult = simResults[activeSimLang] || null;
+            renderSimTabs(langs);
             showSimForLang(activeSimLang);
-            document.getElementById('simulation-result').classList.add('visible');
 
             // Show validation panel
             document.getElementById('validation-panel').style.display = '';
             document.getElementById('validation-panel').classList.add('visible');
+            updateValPanelTitle();
+
+            btn.disabled = false;
+            btn.innerHTML = '▶️ Run Simulation';
+        }
+
+        function renderSimTabs(langs) {
+            const tabsEl = document.getElementById('sim-lang-tabs');
+            if (!langs || langs.length <= 1) {
+                tabsEl.style.display = 'none';
+                return;
+            }
+            tabsEl.style.display = '';
+            tabsEl.innerHTML = langs.map(l => {
+                const data = simResults[l];
+                const isActive = l === activeSimLang;
+                let icon, color;
+                if (!data) {
+                    icon = '⏳'; color = '#94a3b8'; // pending
+                } else if (data.success && !(data.errors && data.errors.length > 0)) {
+                    icon = '✓'; color = '#10b981';
+                } else {
+                    icon = '✗'; color = '#ef4444';
+                }
+                return `<button class="lang-tab ${isActive ? 'active' : ''}"
+                    onclick="switchSimTab('${l}')"
+                    style="border-bottom-color: ${isActive ? color : 'transparent'};">
+                    ${l.toUpperCase()} <span style="color:${color}; margin-left:4px;">${icon}</span>
+                </button>`;
+            }).join('');
         }
 
         function switchSimTab(lang) {
             activeSimLang = lang;
             simResult = simResults[lang] || null;
-            displaySimResults();
+            renderSimTabs(generatedLanguages.filter(l => currentResults[l]));
+            showSimForLang(lang);
+            // Update validation panel to follow this language
+            updateValPanelTitle();
+            // Clear previous validation results when switching language
+            document.getElementById('val-results').style.display = 'none';
         }
 
         function showSimForLang(lang) {
@@ -2411,32 +2446,11 @@
             const hasErrors = data.errors && data.errors.length > 0;
             const hasOutput = data.output && data.output.trim().length > 0;
 
-            // Header
-            const icon = document.getElementById('sim-result-icon');
-            const header = document.getElementById('sim-result-header');
-            if (!ok || hasErrors) {
-                icon.textContent = '✗';
-                header.className = 'result-header error';
-                document.getElementById('sim-result-title').textContent = 'Simulation Failed';
-            } else if (tr.total === 0) {
-                icon.textContent = '⚠';
-                header.className = 'result-header warning';
-                document.getElementById('sim-result-title').textContent = 'Simulation Complete (no tests parsed)';
-            } else {
-                icon.textContent = '✓';
-                header.className = 'result-header';
-                document.getElementById('sim-result-title').textContent = 'Simulation Complete';
-            }
-
-            const totalTime = (data.compile_time || 0) + (data.run_time || 0);
-            document.getElementById('sim-result-subtitle').textContent =
-                `${tr.total} tests executed in ${totalTime.toFixed(2)}s` +
-                (Object.keys(simResults).length > 1 ? ` (${lang.toUpperCase()})` : '');
-
             // Stats
             document.getElementById('sim-total').textContent = tr.total;
             document.getElementById('sim-passed').textContent = tr.passed;
             document.getElementById('sim-failed').textContent = tr.failed;
+            const totalTime = (data.compile_time || 0) + (data.run_time || 0);
             document.getElementById('sim-time').textContent = `${totalTime.toFixed(2)}s`;
 
             // Errors
@@ -2456,10 +2470,16 @@
         // Legacy compat
         function displaySimResult(data) {
             simResults = {};
-            simResults[data.language || activeResultLang || 'unknown'] = data;
-            activeSimLang = Object.keys(simResults)[0];
+            const lang = data.language || activeResultLang || 'unknown';
+            simResults[lang] = data;
+            activeSimLang = lang;
             simResult = data;
-            displaySimResults();
+            renderSimTabs([lang]);
+            showSimForLang(lang);
+            document.getElementById('simulation-result').classList.add('visible');
+            document.getElementById('validation-panel').style.display = '';
+            document.getElementById('validation-panel').classList.add('visible');
+            updateValPanelTitle();
         }
 
         // ============================================================
@@ -2589,9 +2609,11 @@
             simResult = null;
             simResults = {};
             activeSimLang = null;
+            valResultsPerLang = {};
             document.getElementById('generation-result').classList.remove('visible');
             document.getElementById('simulation-result').classList.remove('visible');
             document.getElementById('validation-panel').style.display = 'none';
+            document.getElementById('val-results').style.display = 'none';
             document.getElementById('result-lang-tabs').style.display = 'none';
             document.getElementById('sim-lang-tabs').style.display = 'none';
             document.getElementById('download-all-btn').style.display = 'none';
@@ -2656,9 +2678,20 @@
         // ============================================================
 
         let valReportFiles = { json: null, csv: null };
+        let valResultsPerLang = {};  // { lang: { mode, data } } — cache per-language validation
+
+        function updateValPanelTitle() {
+            const lang = activeSimLang;
+            const titleEl = document.querySelector('#validation-panel h3');
+            if (titleEl && lang) {
+                titleEl.textContent = `Golden-Model Validation (${lang.toUpperCase()})`;
+            }
+        }
 
         function _getValPayload() {
-            const result = currentResults[activeResultLang] || currentResult;
+            // Always use the language from the active simulation tab
+            const lang = activeSimLang || activeResultLang;
+            const result = currentResults[lang] || currentResult;
             if (!result) return null;
             return {
                 file_path: result.file_path,
@@ -2689,7 +2722,9 @@
                     body: JSON.stringify(payload),
                 });
                 const data = await resp.json();
-                renderValResults({ strategy_a: data }, 'A');
+                const result = { strategy_a: data };
+                valResultsPerLang[payload.language] = { mode: 'A', data: result };
+                renderValResults(result, 'A');
             } catch (e) { showError('Validation A failed: ' + e.message); }
             finally { _setValBtnLoading('val-btn-a', false); }
         }
@@ -2705,7 +2740,9 @@
                     body: JSON.stringify(payload),
                 });
                 const data = await resp.json();
-                renderValResults({ strategy_b: data }, 'B');
+                const result = { strategy_b: data };
+                valResultsPerLang[payload.language] = { mode: 'B', data: result };
+                renderValResults(result, 'B');
             } catch (e) { showError('Validation B failed: ' + e.message); }
             finally { _setValBtnLoading('val-btn-b', false); }
         }
@@ -2724,7 +2761,10 @@
                 if (!data.success) throw new Error(data.error || 'Validation failed');
                 valReportFiles.json = data.report_file || null;
                 valReportFiles.csv = data.csv_file || null;
+                valResultsPerLang[payload.language] = { mode: 'Both', data };
                 renderValResults(data, 'Both');
+                // After "Both" completes, update cross-language summary if we have multiple
+                renderCrossLangSummary();
             } catch (e) { showError('Validation failed: ' + e.message); }
             finally { _setValBtnLoading('val-btn-both', false); }
         }
@@ -2874,6 +2914,47 @@
             // --- Download buttons ---
             const dlBtns = document.getElementById('val-download-btns');
             dlBtns.style.display = (valReportFiles.json || valReportFiles.csv) ? '' : 'none';
+        }
+
+        // ============================================================
+        // Cross-Language Comparison (shown when multiple languages validated)
+        // ============================================================
+        function renderCrossLangSummary() {
+            const crossDiv = document.getElementById('val-cross-lang');
+            if (!crossDiv) return;
+
+            const langs = Object.keys(valResultsPerLang);
+            if (langs.length < 2) {
+                crossDiv.style.display = 'none';
+                return;
+            }
+
+            crossDiv.style.display = '';
+            let html = '';
+
+            langs.forEach(lang => {
+                const cached = valResultsPerLang[lang];
+                if (!cached) return;
+                const d = cached.data;
+                // Extract pass rate from strategy_a or strategy_b
+                const strat = d.strategy_a || d.strategy_b || {};
+                const pass = strat.passed || 0;
+                const fail = strat.failed || 0;
+                const total = pass + fail;
+                const pct = total > 0 ? Math.round(100 * pass / total) : 0;
+                const status = strat.status || 'N/A';
+                const color = fail === 0 ? '#10b981' : (pct >= 80 ? '#f59e0b' : '#ef4444');
+                html += `
+                    <div style="flex:1; min-width:120px; text-align:center; padding:10px 12px; background:white; border:1px solid #e2e8f0; border-radius:6px;">
+                        <div style="font-size:0.72rem; font-weight:600; color:var(--text-secondary); margin-bottom:4px;">${lang.toUpperCase()}</div>
+                        <div style="font-size:1.3rem; font-weight:700; color:${color};">${pct}%</div>
+                        <div style="font-size:0.68rem; color:var(--text-muted);">${pass}/${total} &middot; ${status}</div>
+                    </div>`;
+            });
+
+            crossDiv.innerHTML = `
+                <div style="font-size:0.82rem; font-weight:600; color:#0369a1; margin-bottom:8px;">📊 Cross-Language Comparison</div>
+                <div style="display:flex; gap:10px; flex-wrap:wrap;">${html}</div>`;
         }
 
         function downloadValReport(format) {
