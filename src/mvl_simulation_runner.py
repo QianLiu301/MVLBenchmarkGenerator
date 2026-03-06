@@ -493,6 +493,34 @@ class MVLSimulationRunner:
 
         return result
 
+    @staticmethod
+    def _find_vhdl_entity(file_path: Path) -> str:
+        """Parse the VHDL file to find the top-level entity name.
+
+        Prefers entities whose name contains 'tb' or 'test' (testbench).
+        Falls back to the last entity declared in the file.
+        Returns None if no entity is found.
+        """
+        try:
+            content = file_path.read_text(encoding='utf-8', errors='replace')
+        except Exception:
+            return None
+
+        # Match "entity <name> is" (case-insensitive)
+        entities = re.findall(
+            r'(?i)\bentity\s+(\w+)\s+is\b', content
+        )
+        if not entities:
+            return None
+
+        # Prefer testbench entity (contains 'tb' or 'test')
+        for ent in entities:
+            if 'tb' in ent.lower() or 'test' in ent.lower():
+                return ent
+
+        # Fallback: last entity (often the testbench wrapping earlier entities)
+        return entities[-1]
+
     def _run_vhdl(self, file_path: Path, vector_file: str = None) -> Dict:
         """Compile and run VHDL code using GHDL"""
         import time
@@ -547,8 +575,8 @@ class MVLSimulationRunner:
             return result
 
         # Step 2: Elaborate
-        # Detect top-level entity (assume testbench entity name from file stem)
-        entity_name = file_path.stem.replace('-', '_')
+        # Parse actual entity name from VHDL source (file stem may not match)
+        entity_name = self._find_vhdl_entity(file_path) or file_path.stem.replace('-', '_')
         try:
             elab_cmd = [
                 'ghdl', '-e',
