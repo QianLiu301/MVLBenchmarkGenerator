@@ -1935,6 +1935,12 @@ Generate the complete VHDL code (entity + architecture + testbench) now:
             # Ensure testbench has $finish to prevent infinite simulation
             code = self._fix_verilog_finish(code)
 
+            # Fix function return variable: LLMs often use 'result' instead of the function name
+            code = self._fix_verilog_function_returns(code)
+
+            # Fix invalid binary literals (e.g., 2'b02 -> 2'd2, 2'b03 -> 2'd3)
+            code = re.sub(r"(\d+)'b([0-9]+)", lambda m: self._fix_verilog_literal(m), code)
+
         elif lang == 'vhdl':
             # Ensure IEEE library is present
             if 'library ieee' not in code.lower() and 'library IEEE' not in code:
@@ -2026,6 +2032,100 @@ Generate the complete VHDL code (entity + architecture + testbench) now:
             lines = lines[:last_endmod] + safety + lines[last_endmod:]
 
         return '\n'.join(lines)
+
+    @staticmethod
+    def _fix_verilog_literal(m) -> str:
+        """Fix invalid binary literals like 2'b02 -> 2'd2.
+
+        Binary literals can only contain 0/1. If digits > 1 are found,
+        convert to decimal format.
+        """
+        width = m.group(1)
+        digits = m.group(2)
+        # Check if all digits are valid binary (0 or 1)
+        if all(c in '01' for c in digits):
+            return m.group(0)  # Valid binary, keep as-is
+        # Invalid binary — convert to decimal
+        try:
+            # Treat the digit string as a decimal number
+            val = int(digits)
+            return f"{width}'d{val}"
+        except ValueError:
+            return m.group(0)
+
+    def _fix_verilog_function_returns(self, code: str) -> str:
+        """Fix Verilog functions that use wrong return variable names.
+
+        LLMs often write:
+            function [1:0] gf_sub;
+                ...
+                result = a;  // WRONG: should be gf_sub = a;
+            endfunction
+
+        This detects function blocks and replaces assignments to undeclared
+        variables with the function name.
+        """
+        lines = code.split('\n')
+        result_lines = []
+        current_func = None  # Name of the function we're inside
+        func_locals = set()  # Declared local variables in current function
+
+        for line in lines:
+            stripped = line.strip()
+
+            # Detect function start: "function [1:0] func_name;"
+            func_match = re.match(
+                r'\s*function\s+(?:\[\s*\d+\s*:\s*\d+\s*\]\s+)?(\w+)\s*;', stripped
+            )
+            if func_match:
+                current_func = func_match.group(1)
+                func_locals = set()
+                result_lines.append(line)
+                continue
+
+            if current_func:
+                # Track local variable declarations: "input [1:0] a, b;" or "reg [1:0] temp;"
+                input_match = re.match(r'\s*(?:input|reg)\s+(?:\[.*?\]\s+)?(.+);', stripped)
+                if input_match:
+                    vars_str = input_match.group(1)
+                    for v in vars_str.split(','):
+                        func_locals.add(v.strip())
+
+                # Detect endfunction
+                if stripped == 'endfunction':
+                    current_func = None
+                    func_locals = set()
+                    result_lines.append(line)
+                    continue
+
+                # Fix assignments to undeclared variables (likely meant to be function name)
+                # Handle both plain "result = X;" and case-label "2'b00: result = X;"
+                assign_match = re.search(r'(?:^|\:\s*)(\w+)\s*=\s*(.+)', stripped)
+                if assign_match:
+                    var_name = assign_match.group(1)
+                    rhs_value = assign_match.group(2).rstrip(';').strip()
+                    # If var_name is not the function name and not a declared local
+                    if (var_name != current_func
+                            and var_name not in func_locals
+                            and var_name not in ('i', 'j', 'k')):
+                        # Replace the variable name with function name in the line
+                        line = line.replace(
+                            f'{var_name} = {assign_match.group(2)}',
+                            f'{current_func} = {assign_match.group(2)}'
+                        )
+                    # Remove self-referencing line: "gf_sub = result;" where result
+                    # was the old temp variable name we've been renaming
+                    elif (var_name == current_func
+                          and rhs_value not in func_locals
+                          and re.match(r'^\w+$', rhs_value)
+                          and rhs_value not in ('0', '1')
+                          and rhs_value != current_func):
+                        # This is "func = old_temp_var;" — skip it
+                        continue
+
+            result_lines.append(line)
+
+        return '\n'.join(result_lines)
 
     def _enhance_test_coverage(self, code: str, language: str, k: int, bits: int, mod: int) -> str:
         """If test coverage is low, do a focused LLM call to add more test vectors."""
