@@ -35,8 +35,11 @@ class MVLSimulationRunner:
             'ghdl': False,
         }
 
-        # Check C compilers
-        for compiler in ['gcc', 'clang']:
+        # Check C compilers (include Windows MSYS2/MinGW variants)
+        # Strategy: try shutil.which first, then try running directly (Windows PATH quirks),
+        # then search common Windows installation paths as fallback
+        gcc_found = False
+        for compiler in ['gcc', 'cc', 'mingw32-gcc', 'x86_64-w64-mingw32-gcc', 'clang']:
             if shutil.which(compiler):
                 try:
                     result = subprocess.run(
@@ -44,10 +47,57 @@ class MVLSimulationRunner:
                         capture_output=True,
                         timeout=5
                     )
-                    if result.returncode == 0:
-                        tools[compiler] = True
+                    tools['gcc'] = True
+                    tools['gcc_cmd'] = compiler
+                    gcc_found = True
+                    break
                 except:
                     pass
+
+        # Fallback: on Windows, shutil.which may not find gcc even when it's in PATH
+        # Try running gcc directly via subprocess (shell=True uses CMD's PATH resolution)
+        if not gcc_found and os.name == 'nt':
+            for compiler in ['gcc', 'cc', 'clang']:
+                try:
+                    result = subprocess.run(
+                        f'{compiler} --version',
+                        capture_output=True,
+                        timeout=5,
+                        shell=True
+                    )
+                    if result.returncode == 0 and result.stdout:
+                        tools['gcc'] = True
+                        tools['gcc_cmd'] = compiler
+                        gcc_found = True
+                        break
+                except:
+                    pass
+
+        # Fallback: search common Windows MSYS2/MinGW installation directories
+        if not gcc_found and os.name == 'nt':
+            common_gcc_paths = [
+                r'C:\msys64\ucrt64\bin\gcc.exe',
+                r'C:\msys64\mingw64\bin\gcc.exe',
+                r'C:\msys64\mingw32\bin\gcc.exe',
+                r'C:\msys64\usr\bin\gcc.exe',
+                r'C:\MinGW\bin\gcc.exe',
+                r'C:\mingw64\bin\gcc.exe',
+                r'C:\Program Files\mingw-w64\bin\gcc.exe',
+            ]
+            for gcc_path in common_gcc_paths:
+                if os.path.isfile(gcc_path):
+                    try:
+                        result = subprocess.run(
+                            [gcc_path, '--version'],
+                            capture_output=True,
+                            timeout=5
+                        )
+                        tools['gcc'] = True
+                        tools['gcc_cmd'] = gcc_path
+                        gcc_found = True
+                        break
+                    except:
+                        pass
 
         # Check Python
         for python_cmd in ['python3', 'python']:
@@ -235,8 +285,8 @@ class MVLSimulationRunner:
             }
         }
 
-        # Select compiler
-        compiler = 'gcc' if self.tools.get('gcc') else 'clang'
+        # Select compiler (use detected command name for MSYS2/MinGW compatibility)
+        compiler = self.tools.get('gcc_cmd', 'gcc')
 
         # Step 1: Compile
         try:
