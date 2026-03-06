@@ -405,7 +405,7 @@ class MVLSimulationRunner:
                 compile_cmd,
                 capture_output=True,
                 text=True,
-                timeout=30,
+                timeout=10,
                 encoding='utf-8',
                 errors='replace'
             )
@@ -417,7 +417,7 @@ class MVLSimulationRunner:
                 return result
 
         except subprocess.TimeoutExpired:
-            result['errors'].append('Compilation timeout (30s)')
+            result['errors'].append('Compilation timeout (10s)')
             return result
         except Exception as e:
             result['errors'].append(f'Compilation error: {str(e)}')
@@ -431,7 +431,7 @@ class MVLSimulationRunner:
                 ['vvp', str(vvp_file)],
                 capture_output=True,
                 text=True,
-                timeout=60,
+                timeout=15,
                 cwd=str(results_dir),
                 input=stdin_data,
                 encoding='utf-8',
@@ -452,7 +452,8 @@ class MVLSimulationRunner:
             self._parse_test_output(result, run_result.stdout)
 
         except subprocess.TimeoutExpired:
-            result['errors'].append('Simulation timeout (60s)')
+            result['errors'].append('Simulation timeout (15s) — testbench may be missing $finish')
+            result['success'] = False
         except Exception as e:
             result['errors'].append(f'Simulation error: {str(e)}')
 
