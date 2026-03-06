@@ -1457,6 +1457,8 @@ Include:
 - 6 edge-case tests (one per operation with a=0, b=0)
 - 6 max-value tests (one per operation with a={mod-1}, b={mod-1})
 - 8+ random tests with random.randint(0, {mod-1})
+Use this EXACT print format for every test:
+  print(f"Test {{i}}: {{op_name(op)}} a={{a}} b={{b}} result={{result}} z={{flags.z}} n={{flags.n}} c={{flags.c}}")
 
 Generate the complete Python code now:
 """
