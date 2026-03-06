@@ -1923,6 +1923,9 @@ Generate the complete VHDL code (entity + architecture + testbench) now:
                     code
                 )
 
+            # Ensure testbench has $finish to prevent infinite simulation
+            code = self._fix_verilog_finish(code)
+
         elif lang == 'vhdl':
             # Ensure IEEE library is present
             if 'library ieee' not in code.lower() and 'library IEEE' not in code:
@@ -1975,6 +1978,43 @@ Generate the complete VHDL code (entity + architecture + testbench) now:
 
         if lines_to_remove:
             lines = [l for i, l in enumerate(lines) if i not in lines_to_remove]
+
+        return '\n'.join(lines)
+
+    def _fix_verilog_finish(self, code: str) -> str:
+        """Ensure Verilog testbench has $finish to prevent infinite simulation.
+
+        Common LLM issue: testbench has `forever #5 clk = ~clk;` in one
+        initial block, but the other initial block's `$finish` is missing
+        or unreachable. This adds a safety-net `$finish` if needed.
+        """
+        has_finish = '$finish' in code
+        has_tb = '_tb' in code or 'testbench' in code.lower()
+
+        if has_finish or not has_tb:
+            return code
+
+        # No $finish found in a testbench — insert before final `endmodule`
+        lines = code.split('\n')
+        # Find the last `endmodule`
+        last_endmod = None
+        for i in range(len(lines) - 1, -1, -1):
+            if lines[i].strip() == 'endmodule':
+                last_endmod = i
+                break
+
+        if last_endmod is not None:
+            # Insert a safety initial block before the last endmodule
+            safety = [
+                '',
+                '// Safety net: auto-added $finish',
+                'initial begin',
+                '    #100000;',
+                '    $display("TIMEOUT: simulation auto-terminated");',
+                '    $finish;',
+                'end',
+            ]
+            lines = lines[:last_endmod] + safety + lines[last_endmod:]
 
         return '\n'.join(lines)
 
