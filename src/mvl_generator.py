@@ -1890,6 +1890,9 @@ Generate the complete VHDL code (entity + architecture + testbench) now:
                 code = 'import random\n' + code
 
         elif lang == 'verilog':
+            # Fix duplicate reg/wire declarations (keep the widest one)
+            code = self._fix_verilog_duplicate_decls(code)
+
             # Fix 'output' without 'reg' when assigned in always block
             # Find signals assigned in always blocks
             always_assigned = set()
@@ -1926,6 +1929,54 @@ Generate the complete VHDL code (entity + architecture + testbench) now:
                 code = 'library IEEE;\nuse IEEE.STD_LOGIC_1164.ALL;\nuse IEEE.NUMERIC_STD.ALL;\n\n' + code
 
         return code
+
+    def _fix_verilog_duplicate_decls(self, code: str) -> str:
+        """Remove duplicate reg/wire declarations in Verilog.
+
+        LLMs commonly declare the same variable twice, e.g.:
+            reg [25:0] temp;   // wide version for MUL
+            reg temp;           // duplicate 1-bit version
+
+        Strategy: for each variable name, keep the declaration with the
+        widest bit range and remove the rest.
+        """
+        lines = code.split('\n')
+        # decl_pat matches: reg [N:M] name; / reg name; / wire [N:M] name;
+        decl_pat = re.compile(
+            r'^(\s*)(reg|wire)\s+'           # indent + keyword
+            r'(?:\[(\d+):(\d+)\]\s+)?'       # optional [hi:lo]
+            r'(\w+)\s*;'                      # variable name + semicolon
+        )
+
+        # First pass: collect all declarations per variable name
+        # { var_name: [ (line_idx, width, full_match) ] }
+        decl_map = {}
+        for i, line in enumerate(lines):
+            m = decl_pat.match(line)
+            if not m:
+                continue
+            _indent, _kw, hi, lo, var_name = m.groups()
+            if hi is not None and lo is not None:
+                width = abs(int(hi) - int(lo)) + 1
+            else:
+                width = 1
+            decl_map.setdefault(var_name, []).append((i, width))
+
+        # Second pass: for vars with multiple declarations, remove all but widest
+        lines_to_remove = set()
+        for var_name, entries in decl_map.items():
+            if len(entries) <= 1:
+                continue
+            # Keep the entry with the largest width (first occurrence on tie)
+            entries.sort(key=lambda e: (-e[1], e[0]))
+            keep_idx = entries[0][0]
+            for idx, _w in entries[1:]:
+                lines_to_remove.add(idx)
+
+        if lines_to_remove:
+            lines = [l for i, l in enumerate(lines) if i not in lines_to_remove]
+
+        return '\n'.join(lines)
 
     def _enhance_test_coverage(self, code: str, language: str, k: int, bits: int, mod: int) -> str:
         """If test coverage is low, do a focused LLM call to add more test vectors."""
