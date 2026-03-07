@@ -669,7 +669,7 @@ class MVLGenerator:
             code = self._enhance_test_coverage(code, language, k_value, bitwidth, mod_value)
 
             # Validate generated code quality
-            validation_warnings = self._validate_code(code, language, k_value, bitwidth, mod_value)
+            validation_warnings = self._validate_code(code, language, k_value, bitwidth, mod_value, logic_info=logic_info)
 
             # Save file
             file_path = self._save_code(code, k_value, bitwidth, language,
@@ -1839,6 +1839,11 @@ are the same as the previous test! Do NOT rely on previous test values.
   assert result_sig = ... report "FAIL Test 1" severity error;
 Each test MUST have BOTH: a `report ... severity note` line (always prints) AND an `assert` line (prints only on failure).
 This ensures GHDL outputs visible test results regardless of pass/fail.
+⚠️ CRITICAL: The testbench process MUST end with a bare "wait;" statement (no "for" clause) AFTER the last test.
+This stops the process and prevents infinite re-execution. Without it, the simulation will loop forever and timeout!
+  report "All tests complete" severity note;
+  wait;  -- STOP simulation here (MANDATORY!)
+  end process;
 
 Generate the complete VHDL code (entity + architecture + testbench) now:
 """
@@ -2006,6 +2011,9 @@ Generate the complete VHDL code (entity + architecture + testbench) now:
 
             # Detect and fix truncated output (unterminated strings, missing end statements)
             code = self._fix_vhdl_truncation(code)
+
+            # Ensure testbench process ends with "wait;" to prevent infinite loop
+            code = self._fix_vhdl_missing_wait(code)
 
         return code
 
@@ -2251,6 +2259,38 @@ Generate the complete VHDL code (entity + architecture + testbench) now:
             i += 1
 
         return '\n'.join(new_lines)
+
+    @staticmethod
+    def _fix_vhdl_missing_wait(code: str) -> str:
+        """Ensure every VHDL testbench process ends with a bare 'wait;'.
+
+        Without a terminal wait, the process restarts from the top after reaching
+        'end process', causing an infinite simulation loop that hits the timeout.
+        """
+        lines = code.split('\n')
+        result = []
+        i = 0
+        while i < len(lines):
+            stripped = lines[i].strip().lower()
+            # Detect "end process" lines
+            if re.match(r'end\s+process\b', stripped):
+                # Check if the previous non-blank line is "wait;"
+                has_wait = False
+                for j in range(len(result) - 1, max(len(result) - 5, -1), -1):
+                    prev = result[j].strip().lower()
+                    if prev == '':
+                        continue
+                    if prev == 'wait;' or prev == 'wait ;':
+                        has_wait = True
+                    break
+                if not has_wait:
+                    # Determine indent from end process line
+                    indent = lines[i][:len(lines[i]) - len(lines[i].lstrip())]
+                    result.append(indent + '    wait;  -- auto-added: prevent infinite loop')
+                    print("   ⚠️ Added terminal 'wait;' before 'end process' to prevent simulation timeout")
+            result.append(lines[i])
+            i += 1
+        return '\n'.join(result)
 
     @staticmethod
     def _fix_vhdl_truncation(code: str) -> str:
@@ -2552,13 +2592,16 @@ Output the complete enhanced code now:"""
 
         return code
 
-    def _validate_code(self, code: str, language: str, k: int, bits: int, mod: int) -> List[str]:
+    def _validate_code(self, code: str, language: str, k: int, bits: int, mod: int,
+                       logic_info: Dict = None) -> List[str]:
         """Validate generated code quality. Returns a list of warning strings."""
         import math
         warnings = []
         lang = language.lower()
         data_width = math.ceil(math.log2(mod)) if mod > 1 else 1
         code_lower = code.lower()
+        is_extension = (logic_info and logic_info.get('category') == 'extension_field'
+                        and logic_info.get('tables'))
 
         # 1. Language mismatch check
         detected = self._detect_language(code)
@@ -2581,10 +2624,12 @@ Output the complete enhanced code now:"""
                 if not any(kw in code_lower for kw in keywords):
                     warnings.append(f"MISSING OPERATION: {op_name.upper()} not found in code")
 
-        # 3. MOD value check
-        mod_str = str(mod)
-        if mod_str not in code:
-            warnings.append(f"MOD VALUE: {mod} not found in code — arithmetic may be wrong")
+        # 3. MOD value check (skip for GF extension fields — they use digit-wise
+        #    table lookups, not modular arithmetic with the full mod value)
+        if not is_extension:
+            mod_str = str(mod)
+            if mod_str not in code:
+                warnings.append(f"MOD VALUE: {mod} not found in code — arithmetic may be wrong")
 
         # 4. Bit width check for HDL
         if lang == 'verilog':
