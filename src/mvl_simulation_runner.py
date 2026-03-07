@@ -998,18 +998,39 @@ class MVLSimulationRunner:
 
         try:
             start = time.time()
+            # Scale simulation time and timeout based on design complexity.
+            # Larger data widths (e.g. GF(4)^10 = 20-bit) need more sim time
+            # because testbenches have more test vectors and longer operations.
+            stop_time = '10ms'
+            proc_timeout = 60
+            try:
+                source_text = file_path.read_text(encoding='utf-8', errors='replace')
+                # Detect data width from port declarations like "19 downto 0"
+                import re as _re
+                dw_match = _re.search(r'(\d+)\s+downto\s+0', source_text)
+                if dw_match:
+                    data_width = int(dw_match.group(1)) + 1
+                    if data_width >= 16:
+                        stop_time = '100ms'
+                        proc_timeout = 120
+                    elif data_width >= 10:
+                        stop_time = '50ms'
+                        proc_timeout = 90
+            except Exception:
+                pass  # fall back to defaults
+
             run_cmd = [
                 ghdl_cmd, '-r',
                 '--std=08',
                 '--workdir=' + str(work_dir),
                 entity_name,
-                '--stop-time=10ms'
+                f'--stop-time={stop_time}'
             ]
             run_result = subprocess.run(
                 run_cmd,
                 capture_output=True,
                 text=True,
-                timeout=60,
+                timeout=proc_timeout,
                 cwd=str(work_dir),
                 encoding='utf-8',
                 errors='replace',
@@ -1040,7 +1061,7 @@ class MVLSimulationRunner:
                     result['test_results']['failed'] = 0
 
         except subprocess.TimeoutExpired:
-            result['errors'].append('Simulation timeout (60s)')
+            result['errors'].append(f'Simulation timeout ({proc_timeout}s, stop-time={stop_time})')
         except Exception as e:
             result['errors'].append(f'Simulation error: {str(e)}')
 
