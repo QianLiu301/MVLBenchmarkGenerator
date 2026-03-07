@@ -360,24 +360,8 @@ class MVLSimulationRunner:
             result['compile_time'] = round(time.time() - start, 2)
 
             if compile_result.returncode != 0:
-                # Try multiple encodings for error messages
-                stderr_text = ''
-                for enc in ['utf-8', 'gbk', 'cp936', 'latin-1']:
-                    try:
-                        stderr_text = compile_result.stderr.decode(enc)
-                        break
-                    except (UnicodeDecodeError, AttributeError):
-                        continue
-                if not stderr_text:
-                    stderr_text = str(compile_result.stderr)
-                # Also capture stdout (some compilers output errors there)
-                stdout_text = ''
-                for enc in ['utf-8', 'gbk', 'cp936', 'latin-1']:
-                    try:
-                        stdout_text = compile_result.stdout.decode(enc)
-                        break
-                    except (UnicodeDecodeError, AttributeError):
-                        continue
+                stderr_text = self._decode_output(compile_result.stderr)
+                stdout_text = self._decode_output(compile_result.stdout)
                 error_msg = stderr_text or stdout_text or f'returncode={compile_result.returncode}'
                 print(f"   C compile failed: {error_msg}")
                 result['errors'].append(f'Compilation failed: {error_msg}')
@@ -553,20 +537,25 @@ class MVLSimulationRunner:
                 str(file_path)
             ]
 
+            print(f"   Verilog compile cmd: {' '.join(compile_cmd)}")
+
             compile_result = subprocess.run(
                 compile_cmd,
                 capture_output=True,
-                text=True,
-                timeout=10,
-                encoding='utf-8',
-                errors='replace'
+                timeout=10
             )
 
             result['compile_time'] = round(time.time() - start, 2)
 
             if compile_result.returncode != 0:
-                result['errors'].append(f'Compilation failed: {compile_result.stderr}')
+                stderr_text = self._decode_output(compile_result.stderr)
+                stdout_text = self._decode_output(compile_result.stdout)
+                error_msg = stderr_text or stdout_text or f'returncode={compile_result.returncode}'
+                print(f"   Verilog compile failed: {error_msg}")
+                result['errors'].append(f'Compilation failed: {error_msg}')
                 return result
+
+            print(f"   Verilog compiled OK in {result['compile_time']}s")
 
         except subprocess.TimeoutExpired:
             result['errors'].append('Compilation timeout (10s)')
@@ -701,17 +690,20 @@ class MVLSimulationRunner:
                 '--workdir=' + str(work_dir),
                 str(file_path)
             ]
+            print(f"   VHDL analyze cmd: {' '.join(analyze_cmd)}")
             analyze_result = subprocess.run(
                 analyze_cmd,
                 capture_output=True,
-                text=True,
-                timeout=30,
-                encoding='utf-8',
-                errors='replace'
+                timeout=30
             )
             if analyze_result.returncode != 0:
-                result['errors'].append(f'Compilation failed: {analyze_result.stderr}')
+                stderr_text = self._decode_output(analyze_result.stderr)
+                stdout_text = self._decode_output(analyze_result.stdout)
+                error_msg = stderr_text or stdout_text or f'returncode={analyze_result.returncode}'
+                print(f"   VHDL analyze failed: {error_msg}")
+                result['errors'].append(f'Compilation failed: {error_msg}')
                 return result
+            print(f"   VHDL analyze OK")
         except subprocess.TimeoutExpired:
             result['errors'].append('Compilation timeout (30s)')
             return result
@@ -729,20 +721,23 @@ class MVLSimulationRunner:
                 '--workdir=' + str(work_dir),
                 entity_name
             ]
+            print(f"   VHDL elaborate cmd: {' '.join(elab_cmd)} (entity={entity_name})")
             elab_result = subprocess.run(
                 elab_cmd,
                 capture_output=True,
-                text=True,
                 timeout=30,
-                cwd=str(work_dir),
-                encoding='utf-8',
-                errors='replace'
+                cwd=str(work_dir)
             )
             result['compile_time'] = round(time.time() - start, 2)
 
             if elab_result.returncode != 0:
-                result['errors'].append(f'Elaboration failed: {elab_result.stderr}')
+                stderr_text = self._decode_output(elab_result.stderr)
+                stdout_text = self._decode_output(elab_result.stdout)
+                error_msg = stderr_text or stdout_text or f'returncode={elab_result.returncode}'
+                print(f"   VHDL elaborate failed: {error_msg}")
+                result['errors'].append(f'Elaboration failed: {error_msg}')
                 return result
+            print(f"   VHDL elaborate OK in {result['compile_time']}s")
         except subprocess.TimeoutExpired:
             result['errors'].append('Elaboration timeout (30s)')
             return result
@@ -810,6 +805,23 @@ class MVLSimulationRunner:
             pass
 
         return result
+
+    @staticmethod
+    def _decode_output(raw_bytes) -> str:
+        """Decode subprocess output bytes trying multiple encodings.
+
+        On Chinese Windows, compiler output may be GBK/CP936 encoded.
+        """
+        if not raw_bytes:
+            return ''
+        if isinstance(raw_bytes, str):
+            return raw_bytes
+        for enc in ('utf-8', 'gbk', 'cp936', 'latin-1'):
+            try:
+                return raw_bytes.decode(enc)
+            except (UnicodeDecodeError, AttributeError):
+                continue
+        return str(raw_bytes)
 
     def _parse_test_output(self, result: Dict, output: str):
         """Parse test output for statistics.
