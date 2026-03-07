@@ -235,39 +235,37 @@ class MVLSimulationRunner:
                 env = self._build_tool_env(cpath)
                 print(f"   Trying {tool_name}: {cpath} (via {source})")
 
-                # Attempt 1: direct execution with enriched PATH
-                try:
-                    result = subprocess.run(
-                        [cpath, version_flag],
-                        capture_output=True, timeout=5, env=env
-                    )
-                    if result.returncode == 0:
+                # For iverilog: -V only tests the front-end, but the backend (ivl.exe)
+                # may have broken DLLs. We must test actual compilation.
+                for use_shell in ([False, True] if os.name == 'nt' else [False]):
+                    try:
+                        # Quick version check first
+                        result = subprocess.run(
+                            [cpath, version_flag] if not use_shell else f'"{cpath}" {version_flag}',
+                            capture_output=True, timeout=5,
+                            env=env, shell=use_shell
+                        )
+                        if result.returncode != 0:
+                            continue
+
+                        # For iverilog: also test actual compilation (backend ivl.exe)
+                        if tool_name == 'iverilog':
+                            if not self._verify_iverilog_compile(cpath, env, use_shell):
+                                print(f"   ✗ {tool_name} -V OK but compile test FAILED (backend broken)")
+                                continue
+
                         tools[tool_key] = True
                         tools[f'{tool_key}_cmd'] = cpath
                         tools[f'{tool_key}_env'] = env
-                        print(f"   ✓ {tool_name} verified: {cpath}")
-                        break
-                except Exception:
-                    pass
-
-                # Attempt 2: shell=True with full path (cmd.exe may resolve DLLs)
-                if os.name == 'nt':
-                    try:
-                        result = subprocess.run(
-                            f'"{cpath}" {version_flag}',
-                            capture_output=True, timeout=5, shell=True
-                        )
-                        if result.returncode == 0:
-                            tools[tool_key] = True
-                            tools[f'{tool_key}_cmd'] = cpath
+                        if use_shell:
                             tools[f'{tool_key}_needs_shell'] = True
-                            tools[f'{tool_key}_env'] = env
-                            print(f"   ✓ {tool_name} verified (shell): {cpath}")
-                            break
+                        shell_note = " (shell)" if use_shell else ""
+                        print(f"   ✓ {tool_name} fully verified{shell_note}: {cpath}")
+                        break
                     except Exception:
                         pass
-
-                print(f"   ✗ {tool_name} at {cpath} failed (DLL issue)")
+                else:
+                    print(f"   ✗ {tool_name} at {cpath} failed")
 
             # Last resort: shell=True with just the tool name
             if not tools.get(tool_key) and os.name == 'nt':
@@ -287,12 +285,52 @@ class MVLSimulationRunner:
             if not tools.get(tool_key):
                 if candidates:
                     paths_str = ', '.join(c[1] for c in candidates)
-                    print(f"   ✗ {tool_name}: found at [{paths_str}] but ALL failed to run")
-                    print(f"     Tip: try running 'iverilog -V' in cmd.exe to check if it works")
+                    tools[f'{tool_key}_candidates'] = [c[1] for c in candidates]
+                    print(f"   ✗ {tool_name}: found at [{paths_str}] but ALL failed to run (DLL missing)")
+                    print(f"     Fix: open cmd.exe and run '{candidates[0][1]} {version_flag}'")
+                    print(f"     If it fails, reinstall Icarus Verilog or add its DLL directory to PATH")
                 else:
                     print(f"   ✗ {tool_name}: not found anywhere")
 
         return tools
+
+    @staticmethod
+    def _verify_iverilog_compile(iverilog_path: str, env: dict, use_shell: bool = False) -> bool:
+        """Test that iverilog can actually compile a minimal file.
+
+        iverilog -V only tests the front-end (iverilog.exe).
+        The backend compiler (ivl.exe) may have broken DLLs
+        (e.g., oss-cad-suite with mismatched C++ ABI).
+        This test catches that by doing actual compilation.
+        """
+        import tempfile
+        test_v = None
+        test_out = None
+        try:
+            # Create minimal Verilog file
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.v',
+                                              delete=False, dir=tempfile.gettempdir()) as f:
+                f.write('module test; initial $display("ok"); endmodule\n')
+                test_v = f.name
+            test_out = test_v.replace('.v', '.vvp')
+
+            cmd = [iverilog_path, '-o', test_out, test_v]
+            result = subprocess.run(
+                cmd if not use_shell else f'"{iverilog_path}" -o "{test_out}" "{test_v}"',
+                capture_output=True, timeout=10,
+                env=env, shell=use_shell
+            )
+            return result.returncode == 0
+        except Exception:
+            return False
+        finally:
+            # Cleanup temp files
+            for f in [test_v, test_out]:
+                if f:
+                    try:
+                        os.unlink(f)
+                    except Exception:
+                        pass
 
     @staticmethod
     def _build_tool_env(tool_path: str) -> dict:
@@ -366,13 +404,24 @@ class MVLSimulationRunner:
 
     def get_tools_status(self) -> Dict:
         """Get tools status for API"""
-        return {
+        status = {
             'c_available': self.tools.get('gcc') or self.tools.get('clang'),
             'python_available': self.tools.get('python'),
-            'verilog_available': self.tools.get('iverilog') and self.tools.get('vvp'),
-            'vhdl_available': self.tools.get('ghdl'),
-            'tools': self.tools
+            'verilog_available': bool(self.tools.get('iverilog') and self.tools.get('vvp')),
+            'vhdl_available': bool(self.tools.get('ghdl')),
+            'tools': {k: v for k, v in self.tools.items()
+                      if not isinstance(v, dict)}  # exclude env dicts (too large)
         }
+        # Add diagnostic info for unavailable tools
+        if not status['verilog_available']:
+            candidates = self.tools.get('iverilog_candidates', [])
+            if candidates:
+                status['verilog_diagnostic'] = (
+                    f'iverilog found at {candidates[0]} but DLL dependencies missing. '
+                    f'Try reinstalling from https://bleyer.org/icarus/ '
+                    f'(check "Add to PATH" during install).'
+                )
+        return status
 
     def can_run(self, language: str) -> bool:
         """Check if can run simulation for given language"""
@@ -417,13 +466,29 @@ class MVLSimulationRunner:
             }.get(ext, 'unknown')
 
         if not self.can_run(language):
-            tool_hints = {
-                'c': 'Install gcc or clang',
-                'python': 'Install python3',
-                'verilog': 'Install iverilog and vvp (Icarus Verilog)',
-                'vhdl': 'Install ghdl (GHDL VHDL simulator)'
-            }
-            hint = tool_hints.get(language, f'Install tools for {language}')
+            # Build diagnostic message
+            if language == 'verilog':
+                candidates = self.tools.get('iverilog_candidates', [])
+                if candidates:
+                    hint = (
+                        f'iverilog found at {candidates[0]} but cannot run (DLL error). '
+                        f'Fix: open cmd.exe and run: "{candidates[0]}" -V\n'
+                        f'If it fails, try reinstalling Icarus Verilog from '
+                        f'https://bleyer.org/icarus/ (choose "Add to PATH" during install).\n'
+                        f'Or add the iverilog bin directory to your system PATH.'
+                    )
+                else:
+                    hint = (
+                        'Install Icarus Verilog from https://bleyer.org/icarus/\n'
+                        'During installation, check "Add to PATH".'
+                    )
+            else:
+                tool_hints = {
+                    'c': 'Install gcc or clang',
+                    'python': 'Install python3',
+                    'vhdl': 'Install ghdl (GHDL VHDL simulator)'
+                }
+                hint = tool_hints.get(language, f'Install tools for {language}')
             return {
                 'success': False,
                 'language': language,
