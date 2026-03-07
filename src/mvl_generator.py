@@ -1484,16 +1484,27 @@ Generate the complete Python code now:
   Do NOT use (a + b) % {mod} or (a * b) % {mod}. These give WRONG results for extension fields.
 
 - Use ONLY ONE always block — do NOT split outputs into combinational + sequential blocks!
+
+⚠️ CRITICAL VERILOG SYNTAX RULES (violations cause compilation failure):
 - ALL reg declarations MUST be at module level. Do NOT declare reg inside always blocks or case statements!
+  WRONG:  always @(*) begin reg [1:0] temp; ...     ← ILLEGAL!
+  CORRECT: reg [1:0] temp;  // at module level, before always block
+- Do NOT declare or initialize variables inside always blocks:
+  WRONG:  reg [{data_width-1}:0] temp_result = 0;   ← ILLEGAL inside always!
+  CORRECT: reg [{data_width-1}:0] temp_result;       // at module level
+           always @(*) begin temp_result = 0; ...   // assign inside always
+- `integer i, j;` MUST be declared at module level, NOT inside always blocks.
+- Do NOT use `break` or `continue` — these are NOT valid in Verilog!
+  If you need to exit a loop early, use a flag variable or restructure the logic.
+  WRONG:  for (j=0; j<4; j=j+1) begin if (cond) break; end    ← ILLEGAL!
+  CORRECT: for (j=0; j<4; j=j+1) begin if (!found) begin ... found=1; end end
+
 - Each {data_width}-bit operand encodes {bits} digits of {bits_per_digit} bits each.
   Extract digits using indexed part-select: a_digits[i] = a[i*{bits_per_digit} +: {bits_per_digit}]
   ⚠️ Do NOT use a[(i*{bits_per_digit})+{bits_per_digit-1}: i*{bits_per_digit}] — variable part-select is ILLEGAL in Verilog!
   ⚠️ Use a[i*{bits_per_digit} +: {bits_per_digit}] (indexed part-select) instead.
 - Implement GF_ADD and GF_MUL as Verilog functions with [{bits_per_digit-1}:0] inputs (NOT [3:0]!)
   Use case({{a, b}}) with {bits_per_digit*2}-bit patterns matching the tables from ALGEBRAIC STRUCTURE.
-- ⚠️ Do NOT use `integer` declarations inside always blocks (SystemVerilog only).
-  Declare `integer i, j;` at module level.
-- ⚠️ Do NOT use `break` in for loops (not standard Verilog). Use `disable` block or restructure logic.
 - Compute results into temp regs using BLOCKING assignment (=), then assign outputs with NON-BLOCKING (<=).
 - Carry and negative flags are always 0 for GF field arithmetic.
 - Zero flag: check if temp_result == 0."""
@@ -1591,6 +1602,10 @@ Generate the complete Verilog module with testbench now:
 
         if is_extension:
             p = logic_info['p']
+            # Build example literals outside f-string to avoid syntax issues
+            example_lits = ", ".join('"' + format(i, '0' + str(bits_per_digit) + 'b') + '"' for i in range(min(k, 4)))
+            example_row = ", ".join('"' + format(i % k, '0' + str(bits_per_digit) + 'b') + '"' for i in range(min(k, 4)))
+            hex_warning = ('WRONG: x"0" (hex literal = 4 bits, does NOT match ' + str(bits_per_digit) + '-bit element!)') if bits_per_digit != 4 else ''
             return f"""VHDL ARCHITECTURE REQUIREMENTS:
 ⚠️ This is GF({k}) = GF({p}^{logic_info['n']}) digit-wise arithmetic — NOT standard modular arithmetic!
   Do NOT use (a + b) mod MOD_VAL or unsigned(a) * unsigned(b). These give WRONG results!
@@ -1598,11 +1613,24 @@ Generate the complete Verilog module with testbench now:
 
 {common_rules}
 
+⚠️ CRITICAL VHDL SYNTAX RULES FOR GF TABLES:
+- GF table elements are unsigned({bits_per_digit-1} downto 0) = {bits_per_digit} bits wide.
+  {hex_warning}
+  CORRECT: use {bits_per_digit}-bit BINARY string literals, e.g. {example_lits}
+  Example table row: ({example_row})
+- Function return types MUST be unconstrained: "return unsigned" NOT "return unsigned(N downto 0)"
+  WRONG:  function foo(x : unsigned) return unsigned({bits_per_digit-1} downto 0) is
+  CORRECT: function foo(x : unsigned({bits_per_digit-1} downto 0); y : unsigned({bits_per_digit-1} downto 0)) return unsigned is
+- Do NOT declare custom array types with constrained element types. Instead use individual variables.
+  WRONG:  type digit_array is array(0 to {bits-1}) of unsigned({bits_per_digit-1} downto 0);
+  CORRECT: use individual variables: variable a_d0 : unsigned({bits_per_digit-1} downto 0); etc.
+  OR use unconstrained arrays with proper type definitions.
+- Use to_unsigned(N, {bits_per_digit}) for digit constants, NOT hex literals.
+
 IMPLEMENTATION APPROACH:
-- Declare digit arrays as variables: variable a_digits, b_digits, r_digits : array of unsigned
-  Or use individual variables: a_d0, a_d1, ..., a_d{bits-1} of unsigned({bits_per_digit-1} downto 0)
+- Use individual digit variables: a_d0, a_d1, ..., a_d{bits-1} of unsigned({bits_per_digit-1} downto 0)
 - Extract digits: a_d_i := unsigned(a(i*{bits_per_digit}+{bits_per_digit-1} downto i*{bits_per_digit}))
-- Implement GF_ADD and GF_MUL as VHDL functions using case statements
+- Implement GF_ADD and GF_MUL as VHDL functions using case statements on to_integer(a) and to_integer(b)
 - ALL operations MUST use digit-wise GF({k}) table lookups as described in ALGEBRAIC STRUCTURE.
 - Carry and negative flags are always '0' for GF field arithmetic.
 - Zero flag: check if result = all zeros."""
