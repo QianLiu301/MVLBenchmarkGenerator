@@ -2337,14 +2337,13 @@
             // Build initial tabs (all pending)
             renderSimTabs(langs);
 
-            // Run each language sequentially
-            for (let i = 0; i < langs.length; i++) {
-                const lang = langs[i];
+            // Run all simulations in parallel for faster results
+            let completedCount = 0;
+            btn.innerHTML = `<div class="spinner"></div> Running (0/${langs.length})...`;
+            document.getElementById('sim-result-subtitle').textContent =
+                `Running ${langs.length} simulations... (0/${langs.length} done)`;
 
-                btn.innerHTML = `<div class="spinner"></div> ${lang.toUpperCase()} (${i + 1}/${langs.length})...`;
-                document.getElementById('sim-result-subtitle').textContent =
-                    `Running ${lang.toUpperCase()}... (${i}/${langs.length} done)`;
-
+            const promises = langs.map(async (lang) => {
                 try {
                     const r = currentResults[lang];
                     const response = await fetch('/api/run-simulation', {
@@ -2365,12 +2364,17 @@
                         test_results: { total: 0, passed: 0, failed: 0 }
                     };
                 }
-
-                // Live update: refresh tabs + show this lang's result immediately
+                // Live update as each simulation completes
+                completedCount++;
+                btn.innerHTML = `<div class="spinner"></div> Running (${completedCount}/${langs.length})...`;
+                document.getElementById('sim-result-subtitle').textContent =
+                    `${lang.toUpperCase()} done (${completedCount}/${langs.length})`;
                 activeSimLang = lang;
                 renderSimTabs(langs);
                 showSimForLang(lang);
-            }
+            });
+
+            await Promise.all(promises);
 
             // All done — update header
             const allTotal = Object.values(simResults).reduce((s, d) => s + (d.test_results?.total || 0), 0);
