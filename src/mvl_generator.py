@@ -1995,6 +1995,9 @@ Generate the complete VHDL code (entity + architecture + testbench) now:
             # Replace conv_integer (from std_logic_arith) with to_integer (from numeric_std)
             code = re.sub(r'\bconv_integer\b', 'to_integer', code)
 
+            # Move variable declarations from architecture body into process
+            code = self._fix_vhdl_arch_variables(code)
+
             # Fix function parameter names that shadow entity ports (GHDL -Whide error)
             code = self._fix_vhdl_port_shadows(code)
 
@@ -2005,6 +2008,94 @@ Generate the complete VHDL code (entity + architecture + testbench) now:
             code = self._fix_vhdl_truncation(code)
 
         return code
+
+    @staticmethod
+    def _fix_vhdl_arch_variables(code: str) -> str:
+        """Move variable declarations from architecture body into the process.
+
+        VHDL only allows variables inside processes or subprograms, not in
+        the architecture declarative region. LLMs sometimes place variable
+        declarations between 'begin' (of architecture) and 'process'.
+
+        Strategy: move stray variable (and associated type) declarations
+        into the first process's declarative region (between process(...) and begin).
+        """
+        lines = code.split('\n')
+
+        # Phase 1: find architecture 'begin' — skip begin inside functions/procedures
+        arch_begin = None
+        first_process = None
+        process_begin = None  # the 'begin' that belongs to the first process
+        arch_found = False
+        subprog_depth = 0
+
+        for i, line in enumerate(lines):
+            stripped = line.strip().lower()
+            if re.match(r'architecture\s+\w+\s+of\s+', stripped):
+                arch_found = True
+                subprog_depth = 0
+            elif arch_found and arch_begin is None:
+                if re.match(r'(impure\s+)?function\s+', stripped) or re.match(r'procedure\s+', stripped):
+                    subprog_depth += 1
+                elif re.match(r'end\s+(function|procedure)\b', stripped):
+                    subprog_depth = max(0, subprog_depth - 1)
+                elif stripped == 'begin' and subprog_depth == 0:
+                    arch_begin = i
+            elif arch_begin is not None and first_process is None:
+                if re.match(r'process\b', stripped) or re.match(r'\w+\s*:\s*process\b', stripped):
+                    first_process = i
+            elif first_process is not None and process_begin is None:
+                if stripped == 'begin':
+                    process_begin = i
+
+        if arch_begin is None:
+            return code
+
+        # Phase 2: find stray variable/type declarations between arch begin and first process
+        scan_end = first_process if first_process is not None else len(lines)
+        stray_indices = []  # indices of lines to move
+
+        for i in range(arch_begin + 1, scan_end):
+            stripped_lower = lines[i].strip().lower()
+            if re.match(r'variable\s+', stripped_lower):
+                stray_indices.append(i)
+            elif re.match(r'type\s+\w+\s+is\s+', stripped_lower):
+                stray_indices.append(i)
+
+        if not stray_indices:
+            return code
+
+        # Phase 3: move declarations into the process declarative region
+        # If there's a process with a 'begin', insert just before it
+        # Otherwise, move to architecture declarative region as signals
+        new_lines = list(lines)
+        moved = []
+        for idx in sorted(stray_indices):
+            orig = lines[idx].strip()
+            moved.append('        ' + orig)  # process-level indent
+            new_lines[idx] = None  # mark for removal
+            print(f"   ⚠️ Moved to process: {orig[:80]}")
+
+        if process_begin is not None:
+            # Insert just before the process 'begin'
+            result = []
+            for i, line in enumerate(new_lines):
+                if i == process_begin:
+                    result.extend(moved)
+                if line is not None:
+                    result.append(line)
+        else:
+            # No process found — convert to signals in arch declarative region
+            for j, m in enumerate(moved):
+                moved[j] = re.sub(r'(?i)\bvariable\b', 'signal', m)
+            result = []
+            for i, line in enumerate(new_lines):
+                if i == arch_begin:
+                    result.extend(moved)
+                if line is not None:
+                    result.append(line)
+
+        return '\n'.join(result)
 
     @staticmethod
     def _fix_vhdl_case_others(code: str) -> str:
