@@ -1591,6 +1591,12 @@ Generate the complete Verilog module with testbench now:
    WRONG: !this is a comment    WRONG: //this is a comment
    CORRECT: -- this is a comment
 
+⚠️ VHDL FUNCTION PARAMETER NAMING (CRITICAL — causes GHDL compilation failure):
+   Function parameters MUST NOT use the same names as entity ports!
+   Entity has ports: a, b, result, zero, negative, carry.
+   WRONG:  function gf_add(a : unsigned; b : unsigned) ...     ← "a" hides port "a"!
+   CORRECT: function gf_add(x_val : unsigned; y_val : unsigned) ...  ← unique names
+
 ⚠️ VHDL VARIABLE DECLARATION RULES (CRITICAL — violations cause compilation failure):
 1. ALL variable declarations MUST be in the process DECLARATIVE REGION (between "process" and "begin").
    Do NOT declare variables inside case/when branches or if/else blocks — this is ILLEGAL in VHDL!
@@ -1974,10 +1980,109 @@ Generate the complete VHDL code (entity + architecture + testbench) now:
             if 'library ieee' not in code.lower() and 'library IEEE' not in code:
                 code = 'library IEEE;\nuse IEEE.STD_LOGIC_1164.ALL;\nuse IEEE.NUMERIC_STD.ALL;\n\n' + code
 
+            # Fix function parameter names that shadow entity ports (GHDL -Whide error)
+            code = self._fix_vhdl_port_shadows(code)
+
             # Detect and fix truncated output (unterminated strings, missing end statements)
             code = self._fix_vhdl_truncation(code)
 
         return code
+
+    @staticmethod
+    def _fix_vhdl_port_shadows(code: str) -> str:
+        """Fix VHDL function parameters that shadow entity port names.
+
+        GHDL treats 'declaration of "a" hides port "a"' as an error with --std=08.
+        Renames function parameters a->x_val, b->y_val to avoid conflicts.
+        """
+        # Find entity port names
+        port_names = set()
+        in_port = False
+        paren_depth = 0
+        for line in code.split('\n'):
+            stripped = line.strip().lower()
+            if re.match(r'\s*port\s*\(', stripped):
+                in_port = True
+                paren_depth = 0
+            if in_port:
+                paren_depth += line.count('(') - line.count(')')
+                # Match port declarations like "a : in std_logic_vector(...)"
+                m = re.match(r'\s*(\w+)\s*:\s*(in|out|inout|buffer)\s+', line, re.IGNORECASE)
+                if m:
+                    port_names.add(m.group(1).lower())
+                # End of port section: when parens balance back to 0
+                if paren_depth <= 0 and ';' in stripped:
+                    in_port = False
+
+        if not port_names:
+            return code
+
+        # Find and rename function parameters that conflict
+        # Pattern: function name(param : type; param : type) return ...
+        renames = {
+            'a': 'x_val', 'b': 'y_val', 'result': 'r_val',
+            'carry': 'c_val', 'zero': 'z_val', 'negative': 'n_val',
+        }
+
+        lines = code.split('\n')
+        new_lines = []
+        i = 0
+        while i < len(lines):
+            line = lines[i]
+
+            # Check for function declaration
+            func_match = re.match(
+                r'(\s*function\s+\w+\s*\()(.*?)(\)\s*return\b.*)',
+                line, re.IGNORECASE
+            )
+            if func_match:
+                prefix, params_str, suffix = func_match.groups()
+                # Find parameter names that shadow ports
+                active_renames = {}
+                for pname in port_names:
+                    if re.search(r'\b' + pname + r'\s*:', params_str, re.IGNORECASE):
+                        if pname in renames:
+                            active_renames[pname] = renames[pname]
+
+                if active_renames:
+                    # Rename in function parameter list
+                    new_params = params_str
+                    for old, new in active_renames.items():
+                        new_params = re.sub(
+                            r'\b' + old + r'\b',
+                            new,
+                            new_params,
+                            flags=re.IGNORECASE
+                        )
+                    line = prefix + new_params + suffix
+
+                    # Find the end of this function and rename within its body
+                    new_lines.append(line)
+                    i += 1
+                    func_depth = 1
+                    while i < len(lines) and func_depth > 0:
+                        fline = lines[i]
+                        if re.search(r'\bfunction\b', fline, re.IGNORECASE):
+                            func_depth += 1
+                        if re.search(r'\bend\s+function\b', fline, re.IGNORECASE):
+                            func_depth -= 1
+                        # Rename parameter references in function body
+                        for old, new in active_renames.items():
+                            # Only rename standalone identifiers, not parts of other names
+                            fline = re.sub(
+                                r'\b' + old + r'\b',
+                                new,
+                                fline,
+                                flags=re.IGNORECASE
+                            )
+                        new_lines.append(fline)
+                        i += 1
+                    continue
+
+            new_lines.append(line)
+            i += 1
+
+        return '\n'.join(new_lines)
 
     @staticmethod
     def _fix_vhdl_truncation(code: str) -> str:

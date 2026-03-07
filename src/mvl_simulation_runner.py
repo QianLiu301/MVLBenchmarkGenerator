@@ -158,160 +158,206 @@ class MVLSimulationRunner:
                     pass
 
         # Check Verilog tools (iverilog, vvp) and GHDL
-        # Strategy: shutil.which first, then 'where' on Windows, then path scan, then shell=True
-        # On Windows, also search common install paths for Icarus Verilog / oss-cad-suite
         for tool_name, version_flag, tool_key in [
             ('iverilog', '-V', 'iverilog'),
             ('vvp', '-V', 'vvp'),
             ('ghdl', '--version', 'ghdl'),
         ]:
-            tool_path = shutil.which(tool_name)
+            # Collect ALL candidate paths (order: shutil.which, where, path scan)
+            candidates = []
 
-            # Windows fallback: try 'where' via cmd.exe (shell=True) to get system PATH
-            # Python process may have different PATH than cmd.exe
-            if not tool_path and os.name == 'nt':
+            # 1) shutil.which
+            which_path = shutil.which(tool_name)
+            if which_path:
+                candidates.append(('shutil.which', which_path))
+
+            # 2) Windows 'where' — returns ALL installations, try every one
+            if os.name == 'nt':
                 try:
                     where_result = subprocess.run(
                         f'where {tool_name}',
-                        capture_output=True,
-                        text=True,
-                        timeout=5,
-                        shell=True
+                        capture_output=True, text=True, timeout=5, shell=True
                     )
-                    if where_result.returncode == 0 and where_result.stdout.strip():
-                        found_path = where_result.stdout.strip().split('\n')[0].strip()
-                        if os.path.isfile(found_path):
-                            tool_path = found_path
-                            print(f"   {tool_name} found via 'where': {tool_path}")
-                except:
+                    if where_result.returncode == 0:
+                        for line in where_result.stdout.strip().splitlines():
+                            p = line.strip()
+                            if p and os.path.isfile(p) and p not in [c[1] for c in candidates]:
+                                candidates.append(('where', p))
+                except Exception:
                     pass
 
-            # Windows fallback: scan common install paths
-            if not tool_path and os.name == 'nt' and tool_name in ('iverilog', 'vvp', 'ghdl'):
+            # 3) Windows path scan (Program Files + all drives)
+            if os.name == 'nt':
                 import string
-                scan_relative_paths = [
-                    # Icarus Verilog standalone
-                    os.path.join('iverilog', 'bin', f'{tool_name}.exe'),
-                    os.path.join('Icarus Verilog', 'bin', f'{tool_name}.exe'),
-                    os.path.join('IcarusVerilog', 'bin', f'{tool_name}.exe'),
-                    # oss-cad-suite (common open-source FPGA toolchain bundle)
-                    os.path.join('oss-cad-suite', 'bin', f'{tool_name}.exe'),
-                    os.path.join('oss-cad-suite', 'lib', f'{tool_name}.exe'),
-                    # MSYS2
-                    os.path.join('msys64', 'ucrt64', 'bin', f'{tool_name}.exe'),
-                    os.path.join('msys64', 'mingw64', 'bin', f'{tool_name}.exe'),
-                    os.path.join('msys2', 'ucrt64', 'bin', f'{tool_name}.exe'),
-                    os.path.join('msys2', 'mingw64', 'bin', f'{tool_name}.exe'),
-                    # GHDL standalone
-                    os.path.join('GHDL', 'bin', f'{tool_name}.exe'),
-                    os.path.join('ghdl', 'bin', f'{tool_name}.exe'),
+                scan_patterns = [
+                    os.path.join('iverilog', 'bin'),
+                    os.path.join('Icarus Verilog', 'bin'),
+                    os.path.join('IcarusVerilog', 'bin'),
+                    os.path.join('oss-cad-suite', 'bin'),
+                    os.path.join('msys64', 'ucrt64', 'bin'),
+                    os.path.join('msys64', 'mingw64', 'bin'),
+                    os.path.join('msys2', 'ucrt64', 'bin'),
+                    os.path.join('msys2', 'mingw64', 'bin'),
+                    os.path.join('GHDL', 'bin'),
+                    os.path.join('ghdl', 'bin'),
                 ]
-                # Also check Program Files
-                for pf in [os.environ.get('ProgramFiles', ''), os.environ.get('ProgramFiles(x86)', '')]:
+                # Check Program Files first (fast)
+                for pf in [os.environ.get('ProgramFiles', ''),
+                           os.environ.get('ProgramFiles(x86)', '')]:
                     if pf:
-                        for name in ['iverilog', 'Icarus Verilog', 'IcarusVerilog',
-                                     'oss-cad-suite', 'GHDL', 'ghdl']:
-                            candidate = os.path.join(pf, name, 'bin', f'{tool_name}.exe')
-                            if os.path.isfile(candidate):
-                                tool_path = candidate
-                                print(f"   {tool_name} found in Program Files: {tool_path}")
-                                break
-                    if tool_path:
-                        break
+                        for pat in scan_patterns:
+                            candidate = os.path.join(pf, pat, f'{tool_name}.exe')
+                            if os.path.isfile(candidate) and candidate not in [c[1] for c in candidates]:
+                                candidates.append(('ProgramFiles', candidate))
 
-                if not tool_path:
-                    search_roots = []
-                    for letter in string.ascii_uppercase:
-                        drive_path = f'{letter}:\\'
-                        if os.path.exists(drive_path):
-                            search_roots.append(drive_path)
-                            try:
-                                for entry in os.scandir(drive_path):
-                                    if entry.is_dir():
-                                        search_roots.append(entry.path)
-                            except (PermissionError, OSError):
-                                pass
-                    for root in search_roots:
-                        if tool_path:
-                            break
-                        for rel_path in scan_relative_paths:
-                            candidate = os.path.join(root, rel_path)
-                            if os.path.isfile(candidate):
-                                tool_path = candidate
-                                print(f"   {tool_name} found via path scan: {tool_path}")
-                                break
+                # Scan drive roots + one level of subdirectories
+                search_roots = []
+                for letter in string.ascii_uppercase:
+                    drive = f'{letter}:\\'
+                    if os.path.exists(drive):
+                        search_roots.append(drive)
+                        try:
+                            for entry in os.scandir(drive):
+                                if entry.is_dir():
+                                    search_roots.append(entry.path)
+                        except (PermissionError, OSError):
+                            pass
+                for root in search_roots:
+                    for pat in scan_patterns:
+                        candidate = os.path.join(root, pat, f'{tool_name}.exe')
+                        if os.path.isfile(candidate) and candidate not in [c[1] for c in candidates]:
+                            candidates.append(('scan', candidate))
 
-            # Verify the tool actually works by checking returncode
-            if tool_path:
-                # Build environment with tool's bin dir in PATH (for DLL resolution)
-                verify_env = os.environ.copy()
-                tool_dir = os.path.dirname(os.path.abspath(tool_path)) if os.path.sep in tool_path or os.path.exists(tool_path) else ''
-                if tool_dir:
-                    verify_env['PATH'] = tool_dir + os.pathsep + verify_env.get('PATH', '')
-                    # For Icarus Verilog, also add lib/ivl directory
-                    lib_ivl = os.path.join(os.path.dirname(tool_dir), 'lib', 'ivl')
-                    if os.path.isdir(lib_ivl):
-                        verify_env['PATH'] = lib_ivl + os.pathsep + verify_env['PATH']
+            # Try each candidate with proper environment setup
+            for source, cpath in candidates:
+                if tools.get(tool_key):
+                    break
+                env = self._build_tool_env(cpath)
+                print(f"   Trying {tool_name}: {cpath} (via {source})")
 
-                verified = False
+                # Attempt 1: direct execution with enriched PATH
                 try:
                     result = subprocess.run(
-                        [tool_path, version_flag],
-                        capture_output=True,
-                        timeout=5,
-                        env=verify_env
+                        [cpath, version_flag],
+                        capture_output=True, timeout=5, env=env
                     )
                     if result.returncode == 0:
-                        verified = True
                         tools[tool_key] = True
-                        tools[f'{tool_key}_cmd'] = tool_path
-                        tools[f'{tool_key}_env_path'] = verify_env['PATH']
-                        print(f"   {tool_name} verified OK: {tool_path}")
-                except:
+                        tools[f'{tool_key}_cmd'] = cpath
+                        tools[f'{tool_key}_env'] = env
+                        print(f"   ✓ {tool_name} verified: {cpath}")
+                        break
+                except Exception:
                     pass
 
-                # If direct execution failed (DLL issues), try shell=True
-                if not verified and os.name == 'nt':
+                # Attempt 2: shell=True with full path (cmd.exe may resolve DLLs)
+                if os.name == 'nt':
                     try:
                         result = subprocess.run(
-                            f'{tool_path} {version_flag}',
-                            capture_output=True,
-                            timeout=5,
-                            shell=True
+                            f'"{cpath}" {version_flag}',
+                            capture_output=True, timeout=5, shell=True
                         )
                         if result.returncode == 0:
-                            verified = True
                             tools[tool_key] = True
-                            tools[f'{tool_key}_cmd'] = tool_path
+                            tools[f'{tool_key}_cmd'] = cpath
                             tools[f'{tool_key}_needs_shell'] = True
-                            print(f"   {tool_name} verified OK (shell=True): {tool_path}")
-                    except:
+                            tools[f'{tool_key}_env'] = env
+                            print(f"   ✓ {tool_name} verified (shell): {cpath}")
+                            break
+                    except Exception:
                         pass
 
-                if not verified:
-                    print(f"   {tool_name} found at {tool_path} but FAILED to run (DLL issue?)")
+                print(f"   ✗ {tool_name} at {cpath} failed (DLL issue)")
 
             # Last resort: shell=True with just the tool name
             if not tools.get(tool_key) and os.name == 'nt':
                 try:
                     result = subprocess.run(
                         f'{tool_name} {version_flag}',
-                        capture_output=True,
-                        timeout=5,
-                        shell=True
+                        capture_output=True, timeout=5, shell=True
                     )
                     if result.returncode == 0:
                         tools[tool_key] = True
                         tools[f'{tool_key}_cmd'] = tool_name
                         tools[f'{tool_key}_needs_shell'] = True
-                        print(f"   {tool_name} found via shell=True (name only)")
-                except:
+                        print(f"   ✓ {tool_name} found via shell (name only)")
+                except Exception:
                     pass
 
             if not tools.get(tool_key):
-                print(f"   {tool_name}: not found")
+                if candidates:
+                    paths_str = ', '.join(c[1] for c in candidates)
+                    print(f"   ✗ {tool_name}: found at [{paths_str}] but ALL failed to run")
+                    print(f"     Tip: try running 'iverilog -V' in cmd.exe to check if it works")
+                else:
+                    print(f"   ✗ {tool_name}: not found anywhere")
 
         return tools
+
+    @staticmethod
+    def _build_tool_env(tool_path: str) -> dict:
+        """Build environment dict with proper PATH for a tool's DLL dependencies.
+
+        For oss-cad-suite: adds both bin/ and lib/ directories.
+        For standalone Icarus Verilog: adds bin/ and lib/ivl/.
+        For MSYS2: adds the MSYS2 bin directory.
+        """
+        env = os.environ.copy()
+        if not os.path.exists(tool_path):
+            return env
+
+        tool_dir = os.path.dirname(os.path.abspath(tool_path))
+        parent_dir = os.path.dirname(tool_dir)
+        extra_paths = [tool_dir]
+
+        # Detect oss-cad-suite: parent directory is named 'oss-cad-suite'
+        # or grandparent contains oss-cad-suite
+        oss_root = None
+        for ancestor in [parent_dir, os.path.dirname(parent_dir)]:
+            if 'oss-cad-suite' in os.path.basename(ancestor).lower():
+                oss_root = ancestor
+                break
+
+        if oss_root:
+            # oss-cad-suite needs both bin and lib in PATH
+            oss_bin = os.path.join(oss_root, 'bin')
+            oss_lib = os.path.join(oss_root, 'lib')
+            if os.path.isdir(oss_bin):
+                extra_paths.append(oss_bin)
+            if os.path.isdir(oss_lib):
+                extra_paths.append(oss_lib)
+            # Also check for environment script to discover more paths
+            env_bat = os.path.join(oss_root, 'environment.bat')
+            if os.path.isfile(env_bat):
+                try:
+                    content = open(env_bat, 'r', encoding='utf-8', errors='replace').read()
+                    import re as _re
+                    for m in _re.finditer(r'set\s+PATH=([^;%\n]+)', content, _re.IGNORECASE):
+                        p = m.group(1).strip()
+                        # Resolve relative paths against oss_root
+                        if not os.path.isabs(p):
+                            p = os.path.join(oss_root, p)
+                        if os.path.isdir(p) and p not in extra_paths:
+                            extra_paths.append(p)
+                except Exception:
+                    pass
+
+        # Standalone Icarus Verilog: check for lib/ivl
+        lib_ivl = os.path.join(parent_dir, 'lib', 'ivl')
+        if os.path.isdir(lib_ivl):
+            extra_paths.append(lib_ivl)
+
+        # MSYS2: if tool is in ucrt64/bin, add that
+        if 'msys' in tool_dir.lower() or 'ucrt64' in tool_dir.lower() or 'mingw' in tool_dir.lower():
+            extra_paths.append(tool_dir)
+
+        # Prepend all extra paths to PATH
+        current_path = env.get('PATH', '')
+        new_paths = [p for p in extra_paths if p not in current_path]
+        if new_paths:
+            env['PATH'] = os.pathsep.join(new_paths) + os.pathsep + current_path
+
+        return env
 
     def refresh_tools(self):
         """Re-detect available tools (useful after installing new tools)"""
@@ -638,21 +684,9 @@ class MVLSimulationRunner:
             }
         }
 
-        # Build environment and determine if shell=True is needed
+        # Use the verified environment from detection
         use_shell = self.tools.get('iverilog_needs_shell', False)
-        run_env = os.environ.copy()
-        stored_path = self.tools.get('iverilog_env_path')
-        if stored_path:
-            run_env['PATH'] = stored_path
-        else:
-            # Fallback: add tool's directory to PATH
-            iverilog_cmd_path = self.tools.get('iverilog_cmd', 'iverilog')
-            tool_dir = os.path.dirname(os.path.abspath(iverilog_cmd_path)) if os.path.exists(iverilog_cmd_path) else ''
-            if tool_dir and tool_dir not in run_env.get('PATH', ''):
-                run_env['PATH'] = tool_dir + os.pathsep + run_env.get('PATH', '')
-                lib_ivl = os.path.join(os.path.dirname(tool_dir), 'lib', 'ivl')
-                if os.path.isdir(lib_ivl):
-                    run_env['PATH'] = lib_ivl + os.pathsep + run_env['PATH']
+        run_env = self.tools.get('iverilog_env', os.environ.copy())
 
         # Step 1: Compile with iverilog
         try:
@@ -667,7 +701,6 @@ class MVLSimulationRunner:
             ]
 
             print(f"   Verilog compile cmd: {' '.join(compile_cmd)}")
-            print(f"   shell={use_shell}, env_path={'(stored)' if stored_path else '(default)'}")
 
             compile_result = subprocess.run(
                 compile_cmd,
@@ -702,12 +735,7 @@ class MVLSimulationRunner:
 
             vvp_cmd = self.tools.get('vvp_cmd', 'vvp')
             vvp_shell = self.tools.get('vvp_needs_shell', use_shell)
-            vvp_env = os.environ.copy()
-            vvp_stored_path = self.tools.get('vvp_env_path')
-            if vvp_stored_path:
-                vvp_env['PATH'] = vvp_stored_path
-            elif stored_path:
-                vvp_env['PATH'] = stored_path  # Use iverilog's PATH
+            vvp_env = self.tools.get('vvp_env', run_env)
 
             run_result = subprocess.run(
                 [vvp_cmd, str(vvp_file)],
@@ -824,13 +852,10 @@ class MVLSimulationRunner:
             }
         }
 
-        # Build environment for GHDL
+        # Use the verified environment from detection
         ghdl_cmd = self.tools.get('ghdl_cmd', 'ghdl')
         use_shell = self.tools.get('ghdl_needs_shell', False)
-        ghdl_env = os.environ.copy()
-        ghdl_stored_path = self.tools.get('ghdl_env_path')
-        if ghdl_stored_path:
-            ghdl_env['PATH'] = ghdl_stored_path
+        ghdl_env = self.tools.get('ghdl_env', os.environ.copy())
 
         # Step 1: Analyze (syntax check + parse)
         try:
