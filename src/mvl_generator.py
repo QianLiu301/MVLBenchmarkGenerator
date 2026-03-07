@@ -1604,7 +1604,14 @@ Generate the complete Verilog module with testbench now:
    It is only valid in VHDL-2008 and GHDL defaults to VHDL-93.
    WRONG:  v_carry := '1' when condition else '0';
    CORRECT: if condition then v_carry := '1'; else v_carry := '0'; end if;
-- Use variables (NOT signals) inside process for intermediate results"""
+- Use variables (NOT signals) inside process for intermediate results
+⚠️ CASE STATEMENT RULE (CRITICAL — missing this causes GHDL compilation failure):
+   EVERY case statement MUST have "when others =>" as the LAST choice!
+   to_integer() returns 'natural' (0 to 2147483647), so case statements must
+   cover all values. Without 'when others', GHDL reports:
+     "error: no choices for N to 2147483647"
+   WRONG:  case to_integer(x) is when 0 => ... when 1 => ... end case;
+   CORRECT: case to_integer(x) is when 0 => ... when 1 => ... when others => return to_unsigned(0, 2); end case;"""
 
         if is_extension:
             p = logic_info['p']
@@ -1980,13 +1987,83 @@ Generate the complete VHDL code (entity + architecture + testbench) now:
             if 'library ieee' not in code.lower() and 'library IEEE' not in code:
                 code = 'library IEEE;\nuse IEEE.STD_LOGIC_1164.ALL;\nuse IEEE.NUMERIC_STD.ALL;\n\n' + code
 
+            # Remove conflicting std_logic_arith/std_logic_unsigned (incompatible with numeric_std)
+            code = re.sub(r'(?i)\buse\s+IEEE\.STD_LOGIC_ARITH\.ALL\s*;', '-- removed: std_logic_arith conflicts with numeric_std', code)
+            code = re.sub(r'(?i)\buse\s+IEEE\.STD_LOGIC_UNSIGNED\.ALL\s*;', '-- removed: std_logic_unsigned conflicts with numeric_std', code)
+            code = re.sub(r'(?i)\buse\s+IEEE\.STD_LOGIC_SIGNED\.ALL\s*;', '-- removed: std_logic_signed conflicts with numeric_std', code)
+
+            # Replace conv_integer (from std_logic_arith) with to_integer (from numeric_std)
+            code = re.sub(r'\bconv_integer\b', 'to_integer', code)
+
             # Fix function parameter names that shadow entity ports (GHDL -Whide error)
             code = self._fix_vhdl_port_shadows(code)
+
+            # Fix case statements missing "when others" (GHDL requires full coverage)
+            code = self._fix_vhdl_case_others(code)
 
             # Detect and fix truncated output (unterminated strings, missing end statements)
             code = self._fix_vhdl_truncation(code)
 
         return code
+
+    @staticmethod
+    def _fix_vhdl_case_others(code: str) -> str:
+        """Add 'when others' to VHDL case statements that are missing it.
+
+        GHDL --std=08 requires all case statements to fully cover the
+        selector type's range. to_integer() returns 'natural' (0..2^31-1),
+        so case statements with only specific values (0,1,2,3) must have
+        'when others' to cover the rest. Without it:
+          error: no choices for 4 to 2147483647
+
+        Uses a two-pass approach:
+          1. Parse the source to find case/end-case pairs and track nesting.
+          2. Insert 'when others' lines (from bottom to top) where missing.
+        """
+        lines = code.split('\n')
+
+        # Stack entries: (case_line_index, has_when_others, has_return)
+        # has_return tracks whether any 'return' appears within this case
+        stack: list[dict] = []
+        # Collect insertions: list of (line_index, indent, in_function)
+        insertions: list[tuple[int, str, bool]] = []
+
+        for i, line in enumerate(lines):
+            stripped = line.strip().lower()
+
+            # Detect "case ... is"
+            if re.match(r'case\s+.+\s+is\b', stripped):
+                stack.append({
+                    'case_line': i,
+                    'has_when_others': False,
+                    'has_return': False,
+                })
+
+            # Track "when others" within current (innermost) case
+            elif 'when others' in stripped and stack:
+                stack[-1]['has_when_others'] = True
+
+            # Track "return" within current case (indicates we're in a function)
+            elif 'return ' in stripped and stack:
+                stack[-1]['has_return'] = True
+
+            # Detect "end case;"
+            elif re.match(r'end\s+case\s*;', stripped):
+                if stack:
+                    info = stack.pop()
+                    if not info['has_when_others']:
+                        indent = line[:len(line) - len(line.lstrip())]
+                        insertions.append((i, indent, info['has_return']))
+
+        # Apply insertions from bottom to top so line indices stay valid
+        for line_idx, indent, in_function in reversed(insertions):
+            if in_function:
+                new_line = f'{indent}    when others => return to_unsigned(0, 2);'
+            else:
+                new_line = f'{indent}    when others => null;'
+            lines.insert(line_idx, new_line)
+
+        return '\n'.join(lines)
 
     @staticmethod
     def _fix_vhdl_port_shadows(code: str) -> str:
@@ -2062,10 +2139,10 @@ Generate the complete VHDL code (entity + architecture + testbench) now:
                     func_depth = 1
                     while i < len(lines) and func_depth > 0:
                         fline = lines[i]
-                        if re.search(r'\bfunction\b', fline, re.IGNORECASE):
-                            func_depth += 1
                         if re.search(r'\bend\s+function\b', fline, re.IGNORECASE):
                             func_depth -= 1
+                        elif re.search(r'\bfunction\b', fline, re.IGNORECASE):
+                            func_depth += 1
                         # Rename parameter references in function body
                         for old, new in active_renames.items():
                             # Only rename standalone identifiers, not parts of other names
@@ -2119,7 +2196,9 @@ Generate the complete VHDL code (entity + architecture + testbench) now:
         end_arch_count = len(re.findall(r'\bend\s+(architecture\b|behavioral\b|rtl\b|structural\b)', code_lower))
 
         # Count process/end process pairs
-        process_starts = len(re.findall(r'\bprocess\b\s*[\(\n]', code_lower))
+        # Match lines starting with "process" (with optional whitespace)
+        # Handles: process(clk), process (clk, rst), process, process is
+        process_starts = len(re.findall(r'^\s*process\b', code_lower, re.MULTILINE))
         process_ends = len(re.findall(r'\bend\s+process\b', code_lower))
 
         # Add missing end statements
