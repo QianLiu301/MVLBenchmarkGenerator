@@ -2000,6 +2000,11 @@ Generate the complete VHDL code (entity + architecture + testbench) now:
             # Replace conv_integer (from std_logic_arith) with to_integer (from numeric_std)
             code = re.sub(r'\bconv_integer\b', 'to_integer', code)
 
+            # Remove stray '!' from LLM output corruption (VHDL-2008 replacement char)
+            # e.g. "result!<=" -> "result <="  or  "a_sig!:=" -> "a_sig :="
+            code = re.sub(r'(\w)!\s*(<=(?!=))', r'\1 \2', code)
+            code = re.sub(r'(\w)!\s*(:=)', r'\1 \2', code)
+
             # Move variable declarations from architecture body into process
             code = self._fix_vhdl_arch_variables(code)
 
