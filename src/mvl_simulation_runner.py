@@ -357,17 +357,14 @@ class MVLSimulationRunner:
 
             print(f"   C compile cmd: {' '.join(compile_cmd)}")
 
-            # On Windows with MSYS2, gcc may need its bin dir in PATH for DLLs
-            env = os.environ.copy()
-            compiler_dir = os.path.dirname(compiler)
-            if compiler_dir and compiler_dir not in env.get('PATH', ''):
-                env['PATH'] = compiler_dir + os.pathsep + env.get('PATH', '')
+            # On Windows, use shell=True so cmd.exe resolves DLLs via its PATH
+            use_shell = (os.name == 'nt')
 
             compile_result = subprocess.run(
                 compile_cmd,
                 capture_output=True,
                 timeout=30,
-                env=env
+                shell=use_shell
             )
 
             result['compile_time'] = round(time.time() - start, 2)
@@ -393,12 +390,6 @@ class MVLSimulationRunner:
         try:
             start = time.time()
 
-            # Ensure MSYS2 DLLs are findable by the compiled executable
-            run_env = os.environ.copy()
-            compiler_dir = os.path.dirname(compiler)
-            if compiler_dir and compiler_dir not in run_env.get('PATH', ''):
-                run_env['PATH'] = compiler_dir + os.pathsep + run_env.get('PATH', '')
-
             run_result = subprocess.run(
                 [str(exe_file)],
                 capture_output=True,
@@ -406,9 +397,9 @@ class MVLSimulationRunner:
                 timeout=60,
                 cwd=str(results_dir),
                 input=stdin_data,
-                env=run_env,
                 encoding='utf-8',
-                errors='replace'
+                errors='replace',
+                shell=use_shell
             )
 
             result['run_time'] = round(time.time() - start, 2)
@@ -553,17 +544,14 @@ class MVLSimulationRunner:
 
             print(f"   Verilog compile cmd: {' '.join(compile_cmd)}")
 
-            # Add iverilog bin dir to PATH for DLL resolution
-            env = os.environ.copy()
-            iverilog_dir = os.path.dirname(iverilog_cmd)
-            if iverilog_dir and iverilog_dir not in env.get('PATH', ''):
-                env['PATH'] = iverilog_dir + os.pathsep + env.get('PATH', '')
+            # On Windows, use shell=True so cmd.exe resolves DLLs via its PATH
+            use_shell = (os.name == 'nt')
 
             compile_result = subprocess.run(
                 compile_cmd,
                 capture_output=True,
                 timeout=10,
-                env=env
+                shell=use_shell
             )
 
             result['compile_time'] = round(time.time() - start, 2)
@@ -598,7 +586,8 @@ class MVLSimulationRunner:
                 cwd=str(results_dir),
                 input=stdin_data,
                 encoding='utf-8',
-                errors='replace'
+                errors='replace',
+                shell=use_shell
             )
 
             result['run_time'] = round(time.time() - start, 2)
@@ -705,6 +694,7 @@ class MVLSimulationRunner:
 
         # Step 1: Analyze (syntax check + parse)
         ghdl_cmd = self.tools.get('ghdl_cmd', 'ghdl')
+        use_shell = (os.name == 'nt')
         try:
             start = time.time()
             analyze_cmd = [
@@ -717,7 +707,8 @@ class MVLSimulationRunner:
             analyze_result = subprocess.run(
                 analyze_cmd,
                 capture_output=True,
-                timeout=30
+                timeout=30,
+                shell=use_shell
             )
             if analyze_result.returncode != 0:
                 stderr_text = self._decode_output(analyze_result.stderr)
@@ -749,7 +740,8 @@ class MVLSimulationRunner:
                 elab_cmd,
                 capture_output=True,
                 timeout=30,
-                cwd=str(work_dir)
+                cwd=str(work_dir),
+                shell=use_shell
             )
             result['compile_time'] = round(time.time() - start, 2)
 
@@ -790,7 +782,8 @@ class MVLSimulationRunner:
                 timeout=60,
                 cwd=str(work_dir),
                 encoding='utf-8',
-                errors='replace'
+                errors='replace',
+                shell=use_shell
             )
             result['run_time'] = round(time.time() - start, 2)
             # GHDL outputs report messages to stderr
