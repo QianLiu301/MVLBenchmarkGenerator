@@ -159,6 +159,7 @@ class MVLSimulationRunner:
 
         # Check Verilog tools (iverilog, vvp) and GHDL
         # Strategy: shutil.which first, then 'where' on Windows, then shell=True
+        # On Windows, also search common install paths for Icarus Verilog
         for tool_name, version_flag, tool_key in [
             ('iverilog', '-V', 'iverilog'),
             ('vvp', '-V', 'vvp'),
@@ -179,8 +180,106 @@ class MVLSimulationRunner:
                         print(f"   {tool_name} found via 'where': {tool_path}")
                 except:
                     pass
-            # Windows fallback: try shell=True
-            if not tool_path and os.name == 'nt':
+
+            # Windows fallback: scan common Icarus Verilog install paths
+            if not tool_path and os.name == 'nt' and tool_name in ('iverilog', 'vvp'):
+                import string
+                iverilog_relative_paths = [
+                    os.path.join('iverilog', 'bin', f'{tool_name}.exe'),
+                    os.path.join('Icarus Verilog', 'bin', f'{tool_name}.exe'),
+                    os.path.join('IcarusVerilog', 'bin', f'{tool_name}.exe'),
+                    os.path.join('iverilog', f'{tool_name}.exe'),
+                    os.path.join('msys64', 'ucrt64', 'bin', f'{tool_name}.exe'),
+                    os.path.join('msys64', 'mingw64', 'bin', f'{tool_name}.exe'),
+                    os.path.join('msys2', 'ucrt64', 'bin', f'{tool_name}.exe'),
+                    os.path.join('msys2', 'mingw64', 'bin', f'{tool_name}.exe'),
+                ]
+                # Also check Program Files
+                for pf in [os.environ.get('ProgramFiles', ''), os.environ.get('ProgramFiles(x86)', '')]:
+                    if pf:
+                        for name in ['iverilog', 'Icarus Verilog', 'IcarusVerilog']:
+                            candidate = os.path.join(pf, name, 'bin', f'{tool_name}.exe')
+                            if os.path.isfile(candidate):
+                                tool_path = candidate
+                                print(f"   {tool_name} found in Program Files: {tool_path}")
+                                break
+                    if tool_path:
+                        break
+
+                if not tool_path:
+                    search_roots = []
+                    for letter in string.ascii_uppercase:
+                        drive_path = f'{letter}:\\'
+                        if os.path.exists(drive_path):
+                            search_roots.append(drive_path)
+                            try:
+                                for entry in os.scandir(drive_path):
+                                    if entry.is_dir():
+                                        search_roots.append(entry.path)
+                            except (PermissionError, OSError):
+                                pass
+                    for root in search_roots:
+                        if tool_path:
+                            break
+                        for rel_path in iverilog_relative_paths:
+                            candidate = os.path.join(root, rel_path)
+                            if os.path.isfile(candidate):
+                                tool_path = candidate
+                                print(f"   {tool_name} found via path scan: {tool_path}")
+                                break
+
+            # Verify the tool actually works by checking returncode
+            if tool_path:
+                # Build environment with tool's bin dir in PATH (for DLL resolution)
+                verify_env = os.environ.copy()
+                tool_dir = os.path.dirname(os.path.abspath(tool_path)) if os.path.sep in tool_path or os.path.exists(tool_path) else ''
+                if tool_dir:
+                    verify_env['PATH'] = tool_dir + os.pathsep + verify_env.get('PATH', '')
+                    # For Icarus Verilog, also add lib/ivl directory
+                    lib_ivl = os.path.join(os.path.dirname(tool_dir), 'lib', 'ivl')
+                    if os.path.isdir(lib_ivl):
+                        verify_env['PATH'] = lib_ivl + os.pathsep + verify_env['PATH']
+
+                verified = False
+                try:
+                    result = subprocess.run(
+                        [tool_path, version_flag],
+                        capture_output=True,
+                        timeout=5,
+                        env=verify_env
+                    )
+                    if result.returncode == 0:
+                        verified = True
+                        tools[tool_key] = True
+                        tools[f'{tool_key}_cmd'] = tool_path
+                        tools[f'{tool_key}_env_path'] = verify_env['PATH']
+                        print(f"   {tool_name} verified OK: {tool_path}")
+                except:
+                    pass
+
+                # If direct execution failed (DLL issues), try shell=True
+                if not verified and os.name == 'nt':
+                    try:
+                        result = subprocess.run(
+                            f'{tool_path} {version_flag}',
+                            capture_output=True,
+                            timeout=5,
+                            shell=True
+                        )
+                        if result.returncode == 0:
+                            verified = True
+                            tools[tool_key] = True
+                            tools[f'{tool_key}_cmd'] = tool_path
+                            tools[f'{tool_key}_needs_shell'] = True
+                            print(f"   {tool_name} verified OK (shell=True): {tool_path}")
+                    except:
+                        pass
+
+                if not verified:
+                    print(f"   {tool_name} found at {tool_path} but FAILED to run (DLL issue?)")
+
+            # Last resort: shell=True with just the tool name
+            if not tools.get(tool_key) and os.name == 'nt':
                 try:
                     result = subprocess.run(
                         f'{tool_name} {version_flag}',
@@ -189,22 +288,15 @@ class MVLSimulationRunner:
                         shell=True
                     )
                     if result.returncode == 0:
-                        tool_path = tool_name
-                        print(f"   {tool_name} found via shell=True")
+                        tools[tool_key] = True
+                        tools[f'{tool_key}_cmd'] = tool_name
+                        tools[f'{tool_key}_needs_shell'] = True
+                        print(f"   {tool_name} found via shell=True (name only)")
                 except:
                     pass
-            if tool_path:
-                try:
-                    result = subprocess.run(
-                        [tool_path, version_flag],
-                        capture_output=True,
-                        timeout=5
-                    )
-                    tools[tool_key] = True
-                    tools[f'{tool_key}_cmd'] = tool_path
-                    print(f"   {tool_name} found: {tool_path}")
-                except:
-                    pass
+
+            if not tools.get(tool_key):
+                print(f"   {tool_name}: not found")
 
         return tools
 
@@ -343,6 +435,12 @@ class MVLSimulationRunner:
         # Select compiler (use detected command name for MSYS2/MinGW compatibility)
         compiler = self.tools.get('gcc_cmd', 'gcc')
 
+        # Build environment with compiler's DLL directory in PATH
+        c_env = os.environ.copy()
+        compiler_dir = os.path.dirname(os.path.abspath(compiler)) if os.path.exists(compiler) else ''
+        if compiler_dir and compiler_dir not in c_env.get('PATH', ''):
+            c_env['PATH'] = compiler_dir + os.pathsep + c_env.get('PATH', '')
+
         # Step 1: Compile
         try:
             start = time.time()
@@ -357,14 +455,11 @@ class MVLSimulationRunner:
 
             print(f"   C compile cmd: {' '.join(compile_cmd)}")
 
-            # On Windows, use shell=True so cmd.exe resolves DLLs via its PATH
-            use_shell = (os.name == 'nt')
-
             compile_result = subprocess.run(
                 compile_cmd,
                 capture_output=True,
                 timeout=30,
-                shell=use_shell
+                env=c_env
             )
 
             result['compile_time'] = round(time.time() - start, 2)
@@ -399,7 +494,7 @@ class MVLSimulationRunner:
                 input=stdin_data,
                 encoding='utf-8',
                 errors='replace',
-                shell=use_shell
+                env=c_env
             )
 
             result['run_time'] = round(time.time() - start, 2)
@@ -530,6 +625,22 @@ class MVLSimulationRunner:
             }
         }
 
+        # Build environment and determine if shell=True is needed
+        use_shell = self.tools.get('iverilog_needs_shell', False)
+        run_env = os.environ.copy()
+        stored_path = self.tools.get('iverilog_env_path')
+        if stored_path:
+            run_env['PATH'] = stored_path
+        else:
+            # Fallback: add tool's directory to PATH
+            iverilog_cmd_path = self.tools.get('iverilog_cmd', 'iverilog')
+            tool_dir = os.path.dirname(os.path.abspath(iverilog_cmd_path)) if os.path.exists(iverilog_cmd_path) else ''
+            if tool_dir and tool_dir not in run_env.get('PATH', ''):
+                run_env['PATH'] = tool_dir + os.pathsep + run_env.get('PATH', '')
+                lib_ivl = os.path.join(os.path.dirname(tool_dir), 'lib', 'ivl')
+                if os.path.isdir(lib_ivl):
+                    run_env['PATH'] = lib_ivl + os.pathsep + run_env['PATH']
+
         # Step 1: Compile with iverilog
         try:
             start = time.time()
@@ -543,15 +654,14 @@ class MVLSimulationRunner:
             ]
 
             print(f"   Verilog compile cmd: {' '.join(compile_cmd)}")
-
-            # On Windows, use shell=True so cmd.exe resolves DLLs via its PATH
-            use_shell = (os.name == 'nt')
+            print(f"   shell={use_shell}, env_path={'(stored)' if stored_path else '(default)'}")
 
             compile_result = subprocess.run(
                 compile_cmd,
                 capture_output=True,
                 timeout=10,
-                shell=use_shell
+                shell=use_shell,
+                env=run_env
             )
 
             result['compile_time'] = round(time.time() - start, 2)
@@ -578,6 +688,14 @@ class MVLSimulationRunner:
             start = time.time()
 
             vvp_cmd = self.tools.get('vvp_cmd', 'vvp')
+            vvp_shell = self.tools.get('vvp_needs_shell', use_shell)
+            vvp_env = os.environ.copy()
+            vvp_stored_path = self.tools.get('vvp_env_path')
+            if vvp_stored_path:
+                vvp_env['PATH'] = vvp_stored_path
+            elif stored_path:
+                vvp_env['PATH'] = stored_path  # Use iverilog's PATH
+
             run_result = subprocess.run(
                 [vvp_cmd, str(vvp_file)],
                 capture_output=True,
@@ -587,7 +705,8 @@ class MVLSimulationRunner:
                 input=stdin_data,
                 encoding='utf-8',
                 errors='replace',
-                shell=use_shell
+                shell=vvp_shell,
+                env=vvp_env
             )
 
             result['run_time'] = round(time.time() - start, 2)
@@ -692,9 +811,15 @@ class MVLSimulationRunner:
             }
         }
 
-        # Step 1: Analyze (syntax check + parse)
+        # Build environment for GHDL
         ghdl_cmd = self.tools.get('ghdl_cmd', 'ghdl')
-        use_shell = (os.name == 'nt')
+        use_shell = self.tools.get('ghdl_needs_shell', False)
+        ghdl_env = os.environ.copy()
+        ghdl_stored_path = self.tools.get('ghdl_env_path')
+        if ghdl_stored_path:
+            ghdl_env['PATH'] = ghdl_stored_path
+
+        # Step 1: Analyze (syntax check + parse)
         try:
             start = time.time()
             analyze_cmd = [
@@ -708,7 +833,8 @@ class MVLSimulationRunner:
                 analyze_cmd,
                 capture_output=True,
                 timeout=30,
-                shell=use_shell
+                shell=use_shell,
+                env=ghdl_env
             )
             if analyze_result.returncode != 0:
                 stderr_text = self._decode_output(analyze_result.stderr)
@@ -741,7 +867,8 @@ class MVLSimulationRunner:
                 capture_output=True,
                 timeout=30,
                 cwd=str(work_dir),
-                shell=use_shell
+                shell=use_shell,
+                env=ghdl_env
             )
             result['compile_time'] = round(time.time() - start, 2)
 
@@ -783,7 +910,8 @@ class MVLSimulationRunner:
                 cwd=str(work_dir),
                 encoding='utf-8',
                 errors='replace',
-                shell=use_shell
+                shell=use_shell,
+                env=ghdl_env
             )
             result['run_time'] = round(time.time() - start, 2)
             # GHDL outputs report messages to stderr
