@@ -2005,6 +2005,11 @@ Generate the complete VHDL code (entity + architecture + testbench) now:
             code = re.sub(r'(\w)!\s*(<=(?!=))', r'\1 \2', code)
             code = re.sub(r'(\w)!\s*(:=)', r'\1 \2', code)
 
+            # Fix inline if-then-else expressions (not valid VHDL)
+            # e.g. "zero <= (if is_zero then '1' else '0');" -> "zero <= '1' when is_zero else '0';"
+            # Also handle without parens: "sig <= if cond then val1 else val2;"
+            code = self._fix_vhdl_inline_if(code)
+
             # Move variable declarations from architecture body into process
             code = self._fix_vhdl_arch_variables(code)
 
@@ -2020,6 +2025,24 @@ Generate the complete VHDL code (entity + architecture + testbench) now:
             # Ensure testbench process ends with "wait;" to prevent infinite loop
             code = self._fix_vhdl_missing_wait(code)
 
+        return code
+
+    @staticmethod
+    def _fix_vhdl_inline_if(code: str) -> str:
+        """Convert inline if-then-else to VHDL conditional signal assignment.
+
+        LLMs sometimes generate C/Python-style ternary expressions:
+            sig <= (if cond then val1 else val2);
+        VHDL requires:
+            sig <= val1 when cond else val2;
+        """
+        # Pattern: target <= (if condition then value1 else value2);
+        # Also without parens: target <= if condition then value1 else value2;
+        pattern = re.compile(
+            r'(\w+\s*<=\s*)\(?if\s+(.+?)\s+then\s+(.+?)\s+else\s+(.+?)\)?\s*;',
+            re.IGNORECASE
+        )
+        code = pattern.sub(r'\1\3 when \2 else \4;', code)
         return code
 
     @staticmethod
