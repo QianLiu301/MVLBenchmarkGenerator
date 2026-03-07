@@ -650,7 +650,7 @@ class MVLGenerator:
         try:
             response = self.llm._call_api(
                 prompt,
-                max_tokens=8192,
+                max_tokens=16384,
                 system_prompt="You are an expert programmer. Generate clean, compilable code without any explanations."
             )
 
@@ -765,7 +765,7 @@ class MVLGenerator:
             full_response = ""
             system_prompt = "You are an expert programmer. Generate clean, compilable code without any explanations."
 
-            for chunk in self.llm._call_api_stream(prompt, max_tokens=8192, system_prompt=system_prompt):
+            for chunk in self.llm._call_api_stream(prompt, max_tokens=16384, system_prompt=system_prompt):
                 full_response += chunk
                 yield ("chunk", chunk)
 
@@ -1974,7 +1974,66 @@ Generate the complete VHDL code (entity + architecture + testbench) now:
             if 'library ieee' not in code.lower() and 'library IEEE' not in code:
                 code = 'library IEEE;\nuse IEEE.STD_LOGIC_1164.ALL;\nuse IEEE.NUMERIC_STD.ALL;\n\n' + code
 
+            # Detect and fix truncated output (unterminated strings, missing end statements)
+            code = self._fix_vhdl_truncation(code)
+
         return code
+
+    @staticmethod
+    def _fix_vhdl_truncation(code: str) -> str:
+        """Detect and attempt to fix truncated VHDL output from LLM.
+
+        Common truncation symptoms:
+        - Unterminated string literals
+        - Missing 'end architecture', 'end process', etc.
+        - Code ends abruptly mid-statement
+        """
+        lines = code.split('\n')
+
+        # Check for unterminated string on the last few lines
+        # Remove trailing lines that have unterminated strings
+        while lines:
+            last_line = lines[-1].strip()
+            if not last_line:
+                lines.pop()
+                continue
+            # Count quotes: odd number means unterminated string
+            quote_count = last_line.count('"')
+            if quote_count % 2 != 0:
+                # Unterminated string — remove this line
+                print(f"   ⚠️ Removing truncated line: {last_line[:80]}...")
+                lines.pop()
+                continue
+            break
+
+        # Check if code has proper VHDL endings
+        code_lower = '\n'.join(lines).lower()
+
+        # Count architecture/end architecture pairs
+        arch_count = len(re.findall(r'\barchitecture\b\s+\w+\s+of\b', code_lower))
+        end_arch_count = len(re.findall(r'\bend\s+(architecture\b|behavioral\b|rtl\b|structural\b)', code_lower))
+
+        # Count process/end process pairs
+        process_starts = len(re.findall(r'\bprocess\b\s*[\(\n]', code_lower))
+        process_ends = len(re.findall(r'\bend\s+process\b', code_lower))
+
+        # Add missing end statements
+        additions = []
+        for _ in range(process_starts - process_ends):
+            additions.append('    end process;')
+            print("   ⚠️ Added missing 'end process;'")
+
+        for _ in range(arch_count - end_arch_count):
+            additions.append('end architecture Behavioral;')
+            print("   ⚠️ Added missing 'end architecture;'")
+
+        if additions:
+            lines.extend(additions)
+
+        # Final check: ensure there's a semicolon-terminated statement at the end
+        # (skip empty/comment lines)
+        result = '\n'.join(lines)
+        return result
 
     def _fix_verilog_duplicate_decls(self, code: str) -> str:
         """Remove duplicate reg/wire declarations in Verilog.
@@ -2197,7 +2256,7 @@ Output the complete enhanced code now:"""
         try:
             response = self.llm._call_api(
                 enhance_prompt,
-                max_tokens=8192,
+                max_tokens=16384,
                 system_prompt="You are an expert programmer. Add test vectors to the provided code. Output ONLY code, no explanations."
             )
             enhanced_code = self._extract_code(response, language)

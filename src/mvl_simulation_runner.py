@@ -158,46 +158,59 @@ class MVLSimulationRunner:
                     pass
 
         # Check Verilog tools (iverilog, vvp) and GHDL
-        # Strategy: shutil.which first, then 'where' on Windows, then shell=True
-        # On Windows, also search common install paths for Icarus Verilog
+        # Strategy: shutil.which first, then 'where' on Windows, then path scan, then shell=True
+        # On Windows, also search common install paths for Icarus Verilog / oss-cad-suite
         for tool_name, version_flag, tool_key in [
             ('iverilog', '-V', 'iverilog'),
             ('vvp', '-V', 'vvp'),
             ('ghdl', '--version', 'ghdl'),
         ]:
             tool_path = shutil.which(tool_name)
-            # Windows fallback: try 'where' command
+
+            # Windows fallback: try 'where' via cmd.exe (shell=True) to get system PATH
+            # Python process may have different PATH than cmd.exe
             if not tool_path and os.name == 'nt':
                 try:
                     where_result = subprocess.run(
-                        ['where', tool_name],
+                        f'where {tool_name}',
                         capture_output=True,
                         text=True,
-                        timeout=5
+                        timeout=5,
+                        shell=True
                     )
                     if where_result.returncode == 0 and where_result.stdout.strip():
-                        tool_path = where_result.stdout.strip().split('\n')[0].strip()
-                        print(f"   {tool_name} found via 'where': {tool_path}")
+                        found_path = where_result.stdout.strip().split('\n')[0].strip()
+                        if os.path.isfile(found_path):
+                            tool_path = found_path
+                            print(f"   {tool_name} found via 'where': {tool_path}")
                 except:
                     pass
 
-            # Windows fallback: scan common Icarus Verilog install paths
-            if not tool_path and os.name == 'nt' and tool_name in ('iverilog', 'vvp'):
+            # Windows fallback: scan common install paths
+            if not tool_path and os.name == 'nt' and tool_name in ('iverilog', 'vvp', 'ghdl'):
                 import string
-                iverilog_relative_paths = [
+                scan_relative_paths = [
+                    # Icarus Verilog standalone
                     os.path.join('iverilog', 'bin', f'{tool_name}.exe'),
                     os.path.join('Icarus Verilog', 'bin', f'{tool_name}.exe'),
                     os.path.join('IcarusVerilog', 'bin', f'{tool_name}.exe'),
-                    os.path.join('iverilog', f'{tool_name}.exe'),
+                    # oss-cad-suite (common open-source FPGA toolchain bundle)
+                    os.path.join('oss-cad-suite', 'bin', f'{tool_name}.exe'),
+                    os.path.join('oss-cad-suite', 'lib', f'{tool_name}.exe'),
+                    # MSYS2
                     os.path.join('msys64', 'ucrt64', 'bin', f'{tool_name}.exe'),
                     os.path.join('msys64', 'mingw64', 'bin', f'{tool_name}.exe'),
                     os.path.join('msys2', 'ucrt64', 'bin', f'{tool_name}.exe'),
                     os.path.join('msys2', 'mingw64', 'bin', f'{tool_name}.exe'),
+                    # GHDL standalone
+                    os.path.join('GHDL', 'bin', f'{tool_name}.exe'),
+                    os.path.join('ghdl', 'bin', f'{tool_name}.exe'),
                 ]
                 # Also check Program Files
                 for pf in [os.environ.get('ProgramFiles', ''), os.environ.get('ProgramFiles(x86)', '')]:
                     if pf:
-                        for name in ['iverilog', 'Icarus Verilog', 'IcarusVerilog']:
+                        for name in ['iverilog', 'Icarus Verilog', 'IcarusVerilog',
+                                     'oss-cad-suite', 'GHDL', 'ghdl']:
                             candidate = os.path.join(pf, name, 'bin', f'{tool_name}.exe')
                             if os.path.isfile(candidate):
                                 tool_path = candidate
@@ -221,7 +234,7 @@ class MVLSimulationRunner:
                     for root in search_roots:
                         if tool_path:
                             break
-                        for rel_path in iverilog_relative_paths:
+                        for rel_path in scan_relative_paths:
                             candidate = os.path.join(root, rel_path)
                             if os.path.isfile(candidate):
                                 tool_path = candidate
