@@ -157,41 +157,54 @@ class MVLSimulationRunner:
                 except:
                     pass
 
-        # Check Verilog tools
-        if shutil.which('iverilog'):
-            try:
-                result = subprocess.run(
-                    ['iverilog', '-V'],
-                    capture_output=True,
-                    timeout=5
-                )
-                tools['iverilog'] = True
-            except:
-                pass
-
-        if shutil.which('vvp'):
-            try:
-                result = subprocess.run(
-                    ['vvp', '-V'],
-                    capture_output=True,
-                    timeout=5
-                )
-                tools['vvp'] = True
-            except:
-                pass
-
-        # Check GHDL
-        if shutil.which('ghdl'):
-            try:
-                result = subprocess.run(
-                    ['ghdl', '--version'],
-                    capture_output=True,
-                    timeout=5
-                )
-                # Some GHDL versions return non-zero for --version; just check it runs
-                tools['ghdl'] = True
-            except:
-                pass
+        # Check Verilog tools (iverilog, vvp) and GHDL
+        # Strategy: shutil.which first, then 'where' on Windows, then shell=True
+        for tool_name, version_flag, tool_key in [
+            ('iverilog', '-V', 'iverilog'),
+            ('vvp', '-V', 'vvp'),
+            ('ghdl', '--version', 'ghdl'),
+        ]:
+            tool_path = shutil.which(tool_name)
+            # Windows fallback: try 'where' command
+            if not tool_path and os.name == 'nt':
+                try:
+                    where_result = subprocess.run(
+                        ['where', tool_name],
+                        capture_output=True,
+                        text=True,
+                        timeout=5
+                    )
+                    if where_result.returncode == 0 and where_result.stdout.strip():
+                        tool_path = where_result.stdout.strip().split('\n')[0].strip()
+                        print(f"   {tool_name} found via 'where': {tool_path}")
+                except:
+                    pass
+            # Windows fallback: try shell=True
+            if not tool_path and os.name == 'nt':
+                try:
+                    result = subprocess.run(
+                        f'{tool_name} {version_flag}',
+                        capture_output=True,
+                        timeout=5,
+                        shell=True
+                    )
+                    if result.returncode == 0:
+                        tool_path = tool_name
+                        print(f"   {tool_name} found via shell=True")
+                except:
+                    pass
+            if tool_path:
+                try:
+                    result = subprocess.run(
+                        [tool_path, version_flag],
+                        capture_output=True,
+                        timeout=5
+                    )
+                    tools[tool_key] = True
+                    tools[f'{tool_key}_cmd'] = tool_path
+                    print(f"   {tool_name} found: {tool_path}")
+                except:
+                    pass
 
         return tools
 
@@ -530,8 +543,9 @@ class MVLSimulationRunner:
         try:
             start = time.time()
 
+            iverilog_cmd = self.tools.get('iverilog_cmd', 'iverilog')
             compile_cmd = [
-                'iverilog',
+                iverilog_cmd,
                 '-g2012',
                 '-o', str(vvp_file),
                 str(file_path)
@@ -539,10 +553,17 @@ class MVLSimulationRunner:
 
             print(f"   Verilog compile cmd: {' '.join(compile_cmd)}")
 
+            # Add iverilog bin dir to PATH for DLL resolution
+            env = os.environ.copy()
+            iverilog_dir = os.path.dirname(iverilog_cmd)
+            if iverilog_dir and iverilog_dir not in env.get('PATH', ''):
+                env['PATH'] = iverilog_dir + os.pathsep + env.get('PATH', '')
+
             compile_result = subprocess.run(
                 compile_cmd,
                 capture_output=True,
-                timeout=10
+                timeout=10,
+                env=env
             )
 
             result['compile_time'] = round(time.time() - start, 2)
@@ -568,8 +589,9 @@ class MVLSimulationRunner:
         try:
             start = time.time()
 
+            vvp_cmd = self.tools.get('vvp_cmd', 'vvp')
             run_result = subprocess.run(
-                ['vvp', str(vvp_file)],
+                [vvp_cmd, str(vvp_file)],
                 capture_output=True,
                 text=True,
                 timeout=15,
@@ -682,10 +704,11 @@ class MVLSimulationRunner:
         }
 
         # Step 1: Analyze (syntax check + parse)
+        ghdl_cmd = self.tools.get('ghdl_cmd', 'ghdl')
         try:
             start = time.time()
             analyze_cmd = [
-                'ghdl', '-a',
+                ghdl_cmd, '-a',
                 '--std=08',
                 '--workdir=' + str(work_dir),
                 str(file_path)
@@ -716,7 +739,7 @@ class MVLSimulationRunner:
         entity_name = self._find_vhdl_entity(file_path) or file_path.stem.replace('-', '_')
         try:
             elab_cmd = [
-                'ghdl', '-e',
+                ghdl_cmd, '-e',
                 '--std=08',
                 '--workdir=' + str(work_dir),
                 entity_name
@@ -754,7 +777,7 @@ class MVLSimulationRunner:
         try:
             start = time.time()
             run_cmd = [
-                'ghdl', '-r',
+                ghdl_cmd, '-r',
                 '--std=08',
                 '--workdir=' + str(work_dir),
                 entity_name,
