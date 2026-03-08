@@ -2488,14 +2488,18 @@ Generate the complete VHDL code (entity + architecture + testbench) now:
 
     @staticmethod
     def _fix_vhdl_others_in_expr(code: str) -> str:
-        """Fix (others => '0') and (others => '1') used in expression contexts.
+        """Fix (others => '0') and (others => '1') used in COMPARISON contexts only.
 
-        GHDL cannot infer the length of an 'others' aggregate in comparisons,
-        assignments to variables, or other expression contexts. Only target-context
-        assignments (signal <= (others => '0')) are allowed.
+        GHDL cannot infer the length of an 'others' aggregate in comparisons like:
+            if unsigned(a) = (others => '0') then ...
+            if v_result = (others => '0') then ...
 
-        Strategy: Detect the data width from entity port declarations, then replace
-        (others => 'X') in comparisons/expressions with properly sized alternatives.
+        But (others => '0') IS legal in assignment contexts:
+            result <= (others => '0');       -- signal assignment: OK
+            v_result := (others => '0');     -- variable assignment: OK
+
+        Strategy: Only replace (others => 'X') after equality/comparison operators
+        (= /=) that are NOT part of assignment operators (<= :=).
         """
         # Determine data width from entity port — look for 'a : in std_logic_vector(N downto 0)'
         width_match = re.search(
@@ -2525,8 +2529,6 @@ Generate the complete VHDL code (entity + architecture + testbench) now:
                 code_part = line
                 comment_part = ''
 
-            # Fix: comparisons like  "= (others => '0')" or ">= (others => '0')"
-            # Replace with to_unsigned(0, width) for '0', or (2^width-1) for '1'
             def replace_others(m):
                 bit_val = m.group(1)
                 if bit_val == '0':
@@ -2534,19 +2536,25 @@ Generate the complete VHDL code (entity + architecture + testbench) now:
                 else:  # '1'
                     return f'= (x"{format((1 << data_width) - 1, "0" + str((data_width + 3) // 4) + "X")}")'
 
-            # Pattern: comparison operator followed by (others => 'X')
+            # Only match '=' preceded by something that is NOT '<' or ':' (i.e., comparison = or /=)
+            # This avoids breaking:  result <= (others => '0')  and  v_result := (others => '0')
             code_part = re.sub(
-                r'=\s*\(\s*others\s*=>\s*\'([01])\'\s*\)',
+                r'(?<![<:])=\s*\(\s*others\s*=>\s*\'([01])\'\s*\)',
                 replace_others, code_part
             )
 
-            # Fix: "unsigned(X) = (others => '0')" patterns — the unsigned() wrapping
-            # We already replaced (others => '0') with to_unsigned(0, W), but
-            # if it's "unsigned(a) = to_unsigned(0, W)" that's correct.
+            # Also fix /= (not-equal) comparisons with (others => ...)
+            def replace_others_neq(m):
+                bit_val = m.group(1)
+                if bit_val == '0':
+                    return f'/= to_unsigned(0, {data_width})'
+                else:
+                    return f'/= (x"{format((1 << data_width) - 1, "0" + str((data_width + 3) // 4) + "X")}")'
 
-            # Fix: if/when condition with (others => ...) on RHS of assignment
-            # e.g., "v_result := (others => '0');" — this is OK in VHDL for variables
-            # but NOT for "if X = (others => '0')" — already handled above.
+            code_part = re.sub(
+                r'/=\s*\(\s*others\s*=>\s*\'([01])\'\s*\)',
+                replace_others_neq, code_part
+            )
 
             result.append(code_part + comment_part)
 
