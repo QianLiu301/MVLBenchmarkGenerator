@@ -662,6 +662,10 @@ class MVLGenerator:
             if not code:
                 return {'success': False, 'error': 'Failed to extract code from response'}
 
+            # For VHDL: wrap LLM architecture output with entity header + deterministic testbench
+            if language.lower() == 'vhdl' and module_type in ('alu', None):
+                code = self._assemble_vhdl(code, k_value, bitwidth, mod_value, logic_info)
+
             # Fix common issues
             code = self._fix_code(code, language)
 
@@ -776,6 +780,10 @@ class MVLGenerator:
             if not code:
                 yield ("error", 'Failed to extract code from response')
                 return
+
+            # For VHDL: wrap LLM architecture output with entity header + deterministic testbench
+            if language.lower() == 'vhdl' and module_type in ('alu', None):
+                code = self._assemble_vhdl(code, k_value, bitwidth, mod_value, logic_info)
 
             code = self._fix_code(code, language)
 
@@ -1723,7 +1731,14 @@ DEC SPECIAL CASE:
     else v_result := resize(resize(unsigned(a), {data_width + 1}) - 1, {data_width}); v_carry := '0'; end if;"""
 
     def _create_vhdl_prompt(self, k: int, bits: int, mod: int, operations: List[str], logic_info: Dict = None) -> str:
-        """Create prompt for VHDL code generation"""
+        """Create prompt for VHDL code generation.
+
+        Strategy: Template-based approach. We provide a complete VHDL skeleton with
+        entity, port, architecture shell, and testbench already written. The LLM
+        only needs to fill in the process body (case/when for each opcode).
+        This eliminates ~90% of VHDL compilation errors because the structural
+        boilerplate (which LLMs get wrong most often) is generated deterministically.
+        """
         ops_str = ', '.join(operations)
         if logic_info is None:
             logic_info = self._resolve_logic_type(k)
@@ -1731,75 +1746,50 @@ DEC SPECIAL CASE:
         import math
         data_width = math.ceil(math.log2(mod)) if mod > 1 else 1
         is_extension = (logic_info['category'] == 'extension_field' and logic_info.get('tables'))
-
-        algebra_section = self._build_algebra_section(k, bits, mod, logic_info, 'vhdl')
-
-        # Pre-compute expected test results — use GF operations for extension fields
         max_val = mod - 1
         neg_half = mod // 2
 
-        if is_extension:
-            gf_vals = self._compute_gf_test_values(k, bits, logic_info)
-            add_max = gf_vals['add_max']
-            mul_max = gf_vals['mul_max']
-            neg_max = gf_vals['neg_max']
-            inc_max = gf_vals['inc_max']
-            dec_max = gf_vals['dec_max']
-            dec_0 = gf_vals['dec_0']
-            neg_10 = gf_vals['neg_10']
-            neg_1 = gf_vals['neg_1']
-            sub_10_20 = gf_vals['sub_10_20']
-            mul_10_20 = gf_vals['mul_10_20']
-            add_10_20 = gf_vals['add_10_20']
-            sub_20_10 = gf_vals['sub_20_10']
-            inc_10 = gf_vals['inc_10']
-            dec_10 = gf_vals['dec_10']
-        else:
-            add_max = (2 * max_val) % mod
-            mul_max = (max_val * max_val) % mod
-            neg_max = (mod - max_val) % mod
-            inc_max = (max_val + 1) % mod
-            dec_max = (max_val - 1 + mod) % mod
-            dec_0 = (0 - 1 + mod) % mod
-            neg_10 = (mod - 10) % mod
-            neg_1 = (mod - 1) % mod
-            sub_10_20 = (10 - 20 + mod) % mod
-            mul_10_20 = (10 * 20) % mod
-            add_10_20 = 30
-            sub_20_10 = 10
-            inc_10 = 11
-            dec_10 = 9
-
-        # Pre-compute VHDL-safe literals (hex for values > 2^31-1)
+        # Pre-compute VHDL-safe literals
         mod_val_lit = self._vhdl_unsigned_literal(mod, data_width + 1)
-        max_val_slv = self._vhdl_slv_literal(max_val, data_width)
         neg_half_lit = self._vhdl_unsigned_literal(neg_half, data_width)
-        # Testbench assertion literals
-        dec0_slv = self._vhdl_slv_literal(dec_0, data_width)
-        add_max_slv = self._vhdl_slv_literal(add_max, data_width)
-        mul_max_slv = self._vhdl_slv_literal(mul_max, data_width)
-        neg_max_slv = self._vhdl_slv_literal(neg_max, data_width)
-        dec_max_slv = self._vhdl_slv_literal(dec_max, data_width)
-        neg_10_slv = self._vhdl_slv_literal(neg_10, data_width)
-        neg_1_slv = self._vhdl_slv_literal(neg_1, data_width)
-        sub_10_20_slv = self._vhdl_slv_literal(sub_10_20, data_width)
 
-        prompt = f"""Generate a complete VHDL design for a {bits}-trit ALU operating in base-{k}.
+        algebra_section = self._build_algebra_section(k, bits, mod, logic_info, 'vhdl')
 
-CRITICAL RULES:
-1. Output ONLY VHDL code, no markdown, no explanations
-2. Must be synthesizable and simulatable with GHDL
-3. Include BOTH the entity/architecture AND a testbench
+        # Build the deterministic testbench
+        testbench_code = self._build_vhdl_testbench(k, bits, mod, data_width, logic_info)
 
-SPECIFICATIONS:
-- K-value: {k}
-- Bitwidth: {bits} trits (need {data_width} bits to represent 0 to {mod - 1})
-- MOD value: {mod} ({k}^{bits})
-- Operations: {ops_str}
-
+        # Build the VHDL template skeleton that wraps the LLM output
+        if is_extension:
+            extra_vars = f"""        -- Digit extraction variables (GF({k}) = GF({logic_info['p']}^{logic_info['n']}))
+        variable a_digits, b_digits, r_digits : unsigned({bits * int(math.ceil(math.log2(k))) - 1} downto 0);"""
+            arith_hint = f"""
 {algebra_section}
 
-ENTITY INTERFACE:
+IMPLEMENTATION APPROACH for GF({k}):
+- Extract {bits} digits from a and b (each digit is {int(math.ceil(math.log2(k)))} bits)
+- Implement GF_ADD and GF_MUL lookup functions using case statements
+- ALL operations use digit-wise GF({k}) table lookups
+- Carry and negative flags are always '0' for GF field arithmetic"""
+        else:
+            extra_vars = ""
+            arith_hint = f"""
+{algebra_section}
+
+ARITHMETIC RULES (base-{k}, mod {mod}):
+- ADD: resize both operands to {data_width+1} bits, add, then mod MOD_VAL, resize to {data_width}
+- SUB: compare a,b first; if a<b then add MOD_VAL; carry='1' when a<b
+- MUL: unsigned(a)*unsigned(b) gives {data_width*2}-bit result, then mod MOD_VAL
+- NEG: (MOD_VAL - resize(unsigned(a),{data_width+1})) mod MOD_VAL
+- INC: if a=max then 0 with carry='1', else a+1
+- DEC: if a=0 then MOD_VAL-1 with carry='1', else a-1"""
+
+        prompt = f"""Generate ONLY the architecture body for a {bits}-trit base-{k} ALU.
+
+Output ONLY VHDL code. No markdown, no explanations, no ``` delimiters.
+
+I will wrap your output into this exact skeleton:
+
+```
 library IEEE;
 use IEEE.STD_LOGIC_1164.ALL;
 use IEEE.NUMERIC_STD.ALL;
@@ -1817,59 +1807,242 @@ entity mvl_alu_{k}_{bits}bit is
         carry   : out std_logic
     );
 end entity mvl_alu_{k}_{bits}bit;
+```
 
-{self._build_vhdl_arch_section(k, bits, mod, data_width, is_extension, logic_info, mod_val_lit, neg_half_lit, max_val)}
+You MUST generate the architecture starting with:
+  architecture Behavioral of mvl_alu_{k}_{bits}bit is
+and ending with:
+  end architecture Behavioral;
 
-TESTBENCH EXPECTED VALUES (pre-computed, mathematically verified — use these EXACT values):
-  ADD(0, 0) = 0
-  SUB(0, 0) = 0
-  MUL(0, 0) = 0
-  NEG(0) = 0
-  INC(0) = 1
-  DEC(0) = {dec_0}
-  ADD({max_val}, {max_val}) = {add_max}
-  SUB({max_val}, {max_val}) = 0
-  MUL({max_val}, {max_val}) = {mul_max}
-  NEG({max_val}) = {neg_max}
-  INC({max_val}) = {inc_max}
-  DEC({max_val}) = {dec_max}
-  ADD(10, 20) = {add_10_20}
-  SUB(20, 10) = {sub_20_10}
-  SUB(10, 20) = {sub_10_20}
-  MUL(10, 20) = {mul_10_20}
-  NEG(10) = {neg_10}
-  NEG(1) = {neg_1}
-  INC(10) = {inc_10}
-  DEC(10) = {dec_10}
+The testbench is already written separately — do NOT generate any testbench code.
 
-⚠️ MANDATORY TESTBENCH REQUIREMENT:
-The testbench MUST begin with library/use declarations:
-  library IEEE;
-  use IEEE.STD_LOGIC_1164.ALL;
-  use IEEE.NUMERIC_STD.ALL;
-You MUST include a testbench entity mvl_alu_{k}_{bits}bit_tb with AT LEAST 20 assert/report test vectors. Code with fewer than 20 tests will be REJECTED.
-Include:
-- 6 edge-case tests (one per opcode with a=0, b=0)
-- 6 max-value tests using the pre-computed expected values above
-- 8+ additional tests with various values
-⚠️ EACH test MUST explicitly assign BOTH a_sig AND b_sig before setting the opcode — even if the values
-are the same as the previous test! Do NOT rely on previous test values.
-⚠️ CRITICAL: Use the pre-computed expected values above — do NOT compute NEG/SUB/DEC results yourself!
-{"CORRECT testbench pattern — for SMALL values (≤ 2147483647), use to_unsigned:" + chr(10) + "  a_sig <= std_logic_vector(to_unsigned(VALUE_A, " + str(data_width) + "));" + chr(10) + "  assert result_sig = std_logic_vector(to_unsigned(EXPECTED, " + str(data_width) + ")) report ...;" + chr(10) + "CORRECT testbench pattern — for LARGE values (> 2147483647), use hex literal DIRECTLY — NO std_logic_vector() wrapper:" + chr(10) + "  a_sig <= " + max_val_slv + ";  -- max_val = " + str(max_val) + chr(10) + "  b_sig <= " + max_val_slv + ";" + chr(10) + "  opcode_sig <= " + '"' + "0000" + '"' + ";" + chr(10) + "  wait for 20 ns;" + chr(10) + "  assert result_sig = (" + add_max_slv + ") report " + '"' + "Test: ADD max max" + '"' + " severity error;" + chr(10) + "⚠️ CRITICAL: to_unsigned(N, " + str(data_width) + ") WILL FAIL for ANY N > 2147483647!" + chr(10) + "   Pre-computed hex literals (copy-paste these EXACTLY):" + chr(10) + "   max_val " + str(max_val) + ": " + max_val_slv + chr(10) + "   DEC(0) = " + str(dec_0) + ": " + dec0_slv + chr(10) + "   ADD(max,max) = " + str(add_max) + ": " + add_max_slv + chr(10) + "   MUL(max,max) = " + str(mul_max) + ": " + mul_max_slv + chr(10) + "   DEC(max) = " + str(dec_max) + ": " + dec_max_slv + chr(10) + "   NEG(max) = " + str(neg_max) + ": " + neg_max_slv + chr(10) + "   NEG(10) = " + str(neg_10) + ": " + neg_10_slv + chr(10) + "   NEG(1) = " + str(neg_1) + ": " + neg_1_slv + chr(10) + "   SUB(10,20) = " + str(sub_10_20) + ": " + sub_10_20_slv if mod > 2147483647 else "CORRECT pattern for EVERY test:" + chr(10) + "  a_sig <= std_logic_vector(to_unsigned(VALUE_A, " + str(data_width) + "));" + chr(10) + "  b_sig <= std_logic_vector(to_unsigned(VALUE_B, " + str(data_width) + "));" + chr(10) + "  opcode_sig <= " + '"' + "XXXX" + '"' + ";" + chr(10) + "  wait for 10 ns;" + chr(10) + "  assert result_sig = std_logic_vector(to_unsigned(EXPECTED, " + str(data_width) + ")) report " + '"' + "Test N: ..." + '"' + " severity error;"}
-⚠️ IMPORTANT — ALWAYS print test results using standalone `report` statements (severity note):
-  report "Test 1: ADD A=0 B=0 -> R=0 Z=1 N=0 C=0" severity note;
-  assert result_sig = ... report "FAIL Test 1" severity error;
-Each test MUST have BOTH: a `report ... severity note` line (always prints) AND an `assert` line (prints only on failure).
-This ensures GHDL outputs visible test results regardless of pass/fail.
-⚠️ CRITICAL: The testbench process MUST end with a bare "wait;" statement (no "for" clause) AFTER the last test.
-This stops the process and prevents infinite re-execution. Without it, the simulation will loop forever and timeout!
-  report "All tests complete" severity note;
-  wait;  -- STOP simulation here (MANDATORY!)
-  end process;
+AVAILABLE CONSTANTS & VARIABLES inside the process:
+  constant MOD_VAL : unsigned({data_width} downto 0) := {mod_val_lit};
+  variable v_result : unsigned({data_width - 1} downto 0);
+  variable v_carry  : std_logic;
+  variable sum_tmp  : unsigned({data_width} downto 0);
+  variable mul_tmp  : unsigned({data_width * 2 - 1} downto 0);
+{extra_vars}
 
-Generate the complete VHDL code (entity + architecture + testbench) now:
+OPCODE MAPPING:
+  "0000" => ADD, "0001" => SUB, "0010" => MUL,
+  "0011" => NEG, "0100" => INC, "0101" => DEC
+  when others => v_result := (others => '0'); v_carry := '0';
+
+{arith_hint}
+
+VHDL SYNTAX REMINDERS:
+- Comments: "--" only (not // or #)
+- Variables go between "process(...) is" and "begin"
+- Use "if/then/else/end if;" for variable assignments (not "when/else")
+- case must have "when others =>"
+- Use resize() for width conversion: resize(unsigned(a), {data_width+1})
+- Function parameters must NOT shadow port names (a, b, result). Use x_val, y_val.
+{"- Large values (>2147483647): use hex unsigned literals, e.g. unsigned'(x" + '"..."' + ")" if mod > 2**31-1 else ""}
+
+Generate the architecture now:
 """
         return prompt
+
+    @staticmethod
+    def _build_vhdl_testbench(k: int, bits: int, mod: int, data_width: int, logic_info: Dict) -> str:
+        """Generate a complete, deterministic VHDL testbench.
+
+        This testbench is generated entirely in Python with pre-computed expected
+        values — no LLM involvement. This eliminates all testbench-related
+        compilation errors (report string quoting, entity name mismatches,
+        missing wait, wrong literals, etc.).
+        """
+        is_extension = (logic_info['category'] == 'extension_field' and logic_info.get('tables'))
+        max_val = mod - 1
+
+        # Compute expected values
+        if is_extension:
+            gf_vals = MVLGenerator._compute_gf_test_values(k, bits, logic_info)
+            test_cases = [
+                # (test_num, op_name, opcode, a_val, b_val, expected, zero, neg, carry)
+                (1,  "ADD", "0000", 0, 0, gf_vals.get('add_0_0', 0), 1, 0, 0),
+                (2,  "SUB", "0001", 0, 0, gf_vals.get('sub_0_0', 0), 1, 0, 0),
+                (3,  "MUL", "0010", 0, 0, gf_vals.get('mul_0_0', 0), 1, 0, 0),
+                (4,  "NEG", "0011", 0, 0, gf_vals.get('neg_0', 0), 1, 0, 0),
+                (5,  "INC", "0100", 0, 0, gf_vals.get('inc_0', 1), 0, 0, 0),
+                (6,  "DEC", "0101", 0, 0, gf_vals['dec_0'], 0, 0, 0),
+                (7,  "ADD", "0000", max_val, max_val, gf_vals['add_max'], 0, 0, 0),
+                (8,  "SUB", "0001", max_val, max_val, gf_vals.get('sub_max', 0), 1, 0, 0),
+                (9,  "MUL", "0010", max_val, max_val, gf_vals['mul_max'], 0, 0, 0),
+                (10, "NEG", "0011", max_val, 0, gf_vals['neg_max'], 0, 0, 0),
+                (11, "INC", "0100", max_val, 0, gf_vals['inc_max'], 0, 0, 0),
+                (12, "DEC", "0101", max_val, 0, gf_vals['dec_max'], 0, 0, 0),
+                (13, "ADD", "0000", 10, 20, gf_vals['add_10_20'], 0, 0, 0),
+                (14, "SUB", "0001", 20, 10, gf_vals['sub_20_10'], 0, 0, 0),
+                (15, "SUB", "0001", 10, 20, gf_vals['sub_10_20'], 0, 0, 0),
+                (16, "MUL", "0010", 10, 20, gf_vals['mul_10_20'], 0, 0, 0),
+                (17, "NEG", "0011", 10, 0, gf_vals['neg_10'], 0, 0, 0),
+                (18, "NEG", "0011", 1, 0, gf_vals['neg_1'], 0, 0, 0),
+                (19, "INC", "0100", 10, 0, gf_vals['inc_10'], 0, 0, 0),
+                (20, "DEC", "0101", 10, 0, gf_vals['dec_10'], 0, 0, 0),
+                (21, "ADD", "0000", 5, 5, gf_vals.get('add_5_5', (5 + 5) % mod), 0, 0, 0),
+            ]
+        else:
+            neg_half = mod // 2
+            test_cases = [
+                (1,  "ADD", "0000", 0, 0, 0, 1, 0, 0),
+                (2,  "SUB", "0001", 0, 0, 0, 1, 0, 0),
+                (3,  "MUL", "0010", 0, 0, 0, 1, 0, 0),
+                (4,  "NEG", "0011", 0, 0, 0, 1, 0, 0),
+                (5,  "INC", "0100", 0, 0, 1, 0, 0, 0),
+                (6,  "DEC", "0101", 0, 0, (mod - 1), 0, 1, 1),
+                (7,  "ADD", "0000", max_val, max_val, (2 * max_val) % mod, 0, 0, 1 if 2 * max_val >= mod else 0),
+                (8,  "SUB", "0001", max_val, max_val, 0, 1, 0, 0),
+                (9,  "MUL", "0010", max_val, max_val, (max_val * max_val) % mod, 0, 0, 0),
+                (10, "NEG", "0011", max_val, 0, (mod - max_val) % mod, 0, 0, 0),
+                (11, "INC", "0100", max_val, 0, 0, 1, 0, 1),
+                (12, "DEC", "0101", max_val, 0, max_val - 1, 0, 0 if max_val - 1 < neg_half else 1, 0),
+                (13, "ADD", "0000", 10, 20, 30, 0, 0, 0),
+                (14, "SUB", "0001", 20, 10, 10, 0, 0, 0),
+                (15, "SUB", "0001", 10, 20, (10 - 20 + mod) % mod, 0, 1, 1),
+                (16, "MUL", "0010", 10, 20, (10 * 20) % mod, 0, 0, 0),
+                (17, "NEG", "0011", 10, 0, (mod - 10) % mod, 0, 1, 0),
+                (18, "NEG", "0011", 1, 0, (mod - 1) % mod, 0, 1, 0),
+                (19, "INC", "0100", 10, 0, 11, 0, 0, 0),
+                (20, "DEC", "0101", 10, 0, 9, 0, 0, 0),
+                (21, "ADD", "0000", 1, 1, 2, 0, 0, 0),
+            ]
+
+        def slv_lit(val):
+            return MVLGenerator._vhdl_slv_literal(val, data_width)
+
+        # Build test process body
+        test_lines = []
+        for tc in test_cases:
+            num, op, opc, a, b, exp, z, n, c = tc
+            test_lines.append(f"        -- Test {num}: {op} A={a} B={b}")
+            test_lines.append(f"        a_sig <= {slv_lit(a)};")
+            test_lines.append(f"        b_sig <= {slv_lit(b)};")
+            test_lines.append(f'        opcode_sig <= "{opc}";')
+            test_lines.append(f"        wait for 20 ns;")
+            test_lines.append(f'        report "Test {num}: {op} A={a} B={b} -> R=" '
+                              f'& integer\'image(to_integer(unsigned(result_sig))) '
+                              f'& " Z=" & std_logic\'image(zero_sig)'
+                              f' severity note;')
+            test_lines.append(f"        assert result_sig = {slv_lit(exp)}")
+            test_lines.append(f'            report "FAIL Test {num}: {op} A={a} B={b} expected {exp}" severity error;')
+
+        tests_body = '\n'.join(test_lines)
+
+        tb = f"""-- Testbench (deterministically generated)
+library IEEE;
+use IEEE.STD_LOGIC_1164.ALL;
+use IEEE.NUMERIC_STD.ALL;
+
+entity mvl_alu_{k}_{bits}bit_tb is
+end entity mvl_alu_{k}_{bits}bit_tb;
+
+architecture Behavioral of mvl_alu_{k}_{bits}bit_tb is
+    signal clk_sig      : std_logic := '0';
+    signal rst_sig      : std_logic := '0';
+    signal a_sig        : std_logic_vector({data_width - 1} downto 0) := (others => '0');
+    signal b_sig        : std_logic_vector({data_width - 1} downto 0) := (others => '0');
+    signal opcode_sig   : std_logic_vector(3 downto 0) := (others => '0');
+    signal result_sig   : std_logic_vector({data_width - 1} downto 0);
+    signal zero_sig     : std_logic;
+    signal negative_sig : std_logic;
+    signal carry_sig    : std_logic;
+begin
+    -- Clock generation
+    clk_sig <= not clk_sig after 5 ns;
+
+    -- DUT instantiation
+    uut: entity work.mvl_alu_{k}_{bits}bit
+        port map (
+            clk      => clk_sig,
+            rst      => rst_sig,
+            a        => a_sig,
+            b        => b_sig,
+            opcode   => opcode_sig,
+            result   => result_sig,
+            zero     => zero_sig,
+            negative => negative_sig,
+            carry    => carry_sig
+        );
+
+    -- Test process
+    stim_proc: process
+    begin
+        -- Reset
+        rst_sig <= '1';
+        wait for 20 ns;
+        rst_sig <= '0';
+        wait for 20 ns;
+
+{tests_body}
+
+        report "All {len(test_cases)} tests complete" severity note;
+        wait;  -- stop simulation
+    end process;
+end architecture Behavioral;
+"""
+        return tb
+
+    def _assemble_vhdl(self, arch_code: str, k: int, bits: int, mod: int, logic_info: Dict) -> str:
+        """Assemble complete VHDL file from LLM-generated architecture + deterministic parts.
+
+        The LLM generates only the architecture body. This method:
+        1. Adds the entity header (library/use/entity declaration) if missing
+        2. Appends the deterministically-generated testbench
+        """
+        import math
+        data_width = math.ceil(math.log2(mod)) if mod > 1 else 1
+
+        # Check if LLM already included the entity header
+        has_entity = bool(re.search(r'(?i)\bentity\s+mvl_alu', arch_code))
+        has_library = bool(re.search(r'(?i)\blibrary\s+ieee', arch_code))
+
+        parts = []
+
+        if not has_library:
+            parts.append("library IEEE;")
+            parts.append("use IEEE.STD_LOGIC_1164.ALL;")
+            parts.append("use IEEE.NUMERIC_STD.ALL;")
+            parts.append("")
+
+        if not has_entity:
+            parts.append(f"entity mvl_alu_{k}_{bits}bit is")
+            parts.append("    port (")
+            parts.append("        clk     : in  std_logic;")
+            parts.append("        rst     : in  std_logic;")
+            parts.append(f"        a       : in  std_logic_vector({data_width - 1} downto 0);")
+            parts.append(f"        b       : in  std_logic_vector({data_width - 1} downto 0);")
+            parts.append("        opcode  : in  std_logic_vector(3 downto 0);")
+            parts.append(f"        result  : out std_logic_vector({data_width - 1} downto 0);")
+            parts.append("        zero    : out std_logic;")
+            parts.append("        negative: out std_logic;")
+            parts.append("        carry   : out std_logic")
+            parts.append("    );")
+            parts.append(f"end entity mvl_alu_{k}_{bits}bit;")
+            parts.append("")
+
+        # Add the LLM-generated architecture
+        parts.append(arch_code.strip())
+        parts.append("")
+
+        # Remove any LLM-generated testbench (we use our own)
+        combined = '\n'.join(parts)
+        # Find where testbench entity starts and remove everything from there
+        tb_match = re.search(r'\n\s*--.*?[Tt]est\s*[Bb]ench.*?\n\s*library', combined, re.IGNORECASE)
+        if tb_match:
+            combined = combined[:tb_match.start()].rstrip()
+        else:
+            # Also try to find "entity ..._tb is"
+            tb_match2 = re.search(r'\n\s*(?:library\s+IEEE;[\s\S]*?)?\s*entity\s+\w+_tb\s+is', combined, re.IGNORECASE)
+            if tb_match2:
+                combined = combined[:tb_match2.start()].rstrip()
+
+        # Append deterministic testbench
+        testbench = self._build_vhdl_testbench(k, bits, mod, data_width, logic_info)
+        combined = combined + '\n\n' + testbench
+
+        return combined
 
     @staticmethod
     def _detect_language(code: str) -> Optional[str]:
