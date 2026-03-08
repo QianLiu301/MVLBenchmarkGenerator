@@ -376,7 +376,8 @@ class MVLGenerator:
             leading_bits = width - hex_bits
             leading_val = value >> hex_bits
             leading_bin = format(leading_val, f'0{leading_bits}b')
-            return f'"{leading_bin}" & x"{hex_str[-hex_bits//4:]}"'
+            # Wrap in unsigned'(...) so GHDL can resolve the type of "bin" & x"hex"
+            return f'unsigned\'("{leading_bin}" & x"{hex_str[-hex_bits//4:]}")'
         elif hex_bits == width:
             return f'x"{hex_str}"'
         else:
@@ -389,7 +390,8 @@ class MVLGenerator:
             if remaining_bits > 0:
                 leading_val = value >> (hex_chars * 4)
                 leading_bin = format(leading_val, f'0{remaining_bits}b')
-                return f'"{leading_bin}" & x"{hex_portion}"'
+                # Wrap in unsigned'(...) so GHDL can resolve the type of "bin" & x"hex"
+                return f'unsigned\'("{leading_bin}" & x"{hex_portion}")'
             else:
                 return f'x"{hex_portion}"'
 
@@ -2070,15 +2072,18 @@ end architecture Behavioral;
 
         # Remove any LLM-generated testbench (we use our own)
         combined = '\n'.join(parts)
-        # Find where testbench entity starts and remove everything from there
-        tb_match = re.search(r'\n\s*--.*?[Tt]est\s*[Bb]ench.*?\n\s*library', combined, re.IGNORECASE)
-        if tb_match:
-            combined = combined[:tb_match.start()].rstrip()
-        else:
-            # Also try to find "entity ..._tb is"
-            tb_match2 = re.search(r'\n\s*(?:library\s+IEEE;[\s\S]*?)?\s*entity\s+\w+_tb\s+is', combined, re.IGNORECASE)
-            if tb_match2:
-                combined = combined[:tb_match2.start()].rstrip()
+        # Try multiple patterns to find where LLM testbench starts, use earliest match
+        tb_patterns = [
+            # Pattern 1: "-- Testbench" comment followed by library
+            re.search(r'\n\s*--.*?[Tt]est\s*[Bb]ench.*?\n\s*library', combined, re.IGNORECASE),
+            # Pattern 2: "entity ..._tb is"
+            re.search(r'\n\s*(?:library\s+IEEE;[\s\S]*?)?\s*entity\s+\w+_tb\s+is', combined, re.IGNORECASE),
+            # Pattern 3: "architecture ... of ..._tb is" (entity already removed but arch remains)
+            re.search(r'\n\s*architecture\s+\w+\s+of\s+\w+_tb\s+is', combined, re.IGNORECASE),
+        ]
+        tb_positions = [m.start() for m in tb_patterns if m is not None]
+        if tb_positions:
+            combined = combined[:min(tb_positions)].rstrip()
 
         # Append deterministic testbench
         testbench = self._build_vhdl_testbench(k, bits, mod, data_width, logic_info)
@@ -2291,6 +2296,12 @@ end architecture Behavioral;
             # Ensure unsensitized testbench process ends with "wait;" to prevent infinite loop
             code = self._fix_vhdl_missing_wait(code)
 
+            # Fix variable assignments using signal operator '<=' instead of ':='
+            code = self._fix_vhdl_variable_signal_assign(code)
+
+            # Fix (expr mod expr)(N downto 0) → resize(expr mod expr, N+1)
+            code = self._fix_vhdl_mod_slice(code)
+
         return code
 
     @staticmethod
@@ -2382,8 +2393,10 @@ end architecture Behavioral;
         """Move variable declarations from architecture body into the process.
 
         VHDL only allows variables inside processes or subprograms, not in
-        the architecture declarative region. LLMs sometimes place variable
-        declarations between 'begin' (of architecture) and 'process'.
+        the architecture declarative or statement region. LLMs sometimes place
+        variable declarations either:
+        1. In the declarative region (between 'architecture...is' and 'begin')
+        2. In the statement region (between 'begin' and 'process')
 
         Strategy: move stray variable (and associated type) declarations
         into the first process's declarative region (between process(...) and begin).
@@ -2391,6 +2404,7 @@ end architecture Behavioral;
         lines = code.split('\n')
 
         # Phase 1: find architecture 'begin' — skip begin inside functions/procedures
+        arch_decl_start = None  # line after "architecture ... of ... is"
         arch_begin = None
         first_process = None
         process_begin = None  # the 'begin' that belongs to the first process
@@ -2401,6 +2415,7 @@ end architecture Behavioral;
             stripped = line.strip().lower()
             if re.match(r'architecture\s+\w+\s+of\s+', stripped):
                 arch_found = True
+                arch_decl_start = i + 1
                 subprog_depth = 0
             elif arch_found and arch_begin is None:
                 if re.match(r'(impure\s+)?function\s+', stripped) or re.match(r'procedure\s+', stripped):
@@ -2416,19 +2431,35 @@ end architecture Behavioral;
                 if stripped == 'begin':
                     process_begin = i
 
-        if arch_begin is None:
+        if arch_decl_start is None:
             return code
 
-        # Phase 2: find stray variable/type declarations between arch begin and first process
-        scan_end = first_process if first_process is not None else len(lines)
+        # Phase 2: find stray variable declarations in BOTH regions:
+        # (a) declarative region: between 'architecture...is' and 'begin'
+        # (b) statement region: between 'begin' and first 'process'
         stray_indices = []  # indices of lines to move
 
-        for i in range(arch_begin + 1, scan_end):
-            stripped_lower = lines[i].strip().lower()
-            if re.match(r'variable\s+', stripped_lower):
-                stray_indices.append(i)
-            elif re.match(r'type\s+\w+\s+is\s+', stripped_lower):
-                stray_indices.append(i)
+        # Scan declarative region (before begin) — skip inside functions/procedures
+        if arch_begin is not None:
+            sub_depth = 0
+            for i in range(arch_decl_start, arch_begin):
+                stripped_lower = lines[i].strip().lower()
+                if re.match(r'(impure\s+)?function\s+', stripped_lower) or re.match(r'procedure\s+', stripped_lower):
+                    sub_depth += 1
+                elif re.match(r'end\s+(function|procedure)\b', stripped_lower):
+                    sub_depth = max(0, sub_depth - 1)
+                elif sub_depth == 0 and re.match(r'variable\s+', stripped_lower):
+                    stray_indices.append(i)
+
+        # Scan statement region (after begin, before first process)
+        if arch_begin is not None:
+            scan_end = first_process if first_process is not None else len(lines)
+            for i in range(arch_begin + 1, scan_end):
+                stripped_lower = lines[i].strip().lower()
+                if re.match(r'variable\s+', stripped_lower):
+                    stray_indices.append(i)
+                elif re.match(r'type\s+\w+\s+is\s+', stripped_lower):
+                    stray_indices.append(i)
 
         if not stray_indices:
             return code
@@ -2862,7 +2893,8 @@ end architecture Behavioral;
             if remaining_bits > 0:
                 leading_val = value >> (hex_chars * 4)
                 leading_bin = format(leading_val, f'0{remaining_bits}b')
-                return f'{prefix}{width_hi}{mid}"{leading_bin}" & x"{hex_portion}"'
+                # Wrap in unsigned'(...) so GHDL can resolve type of "bin" & x"hex"
+                return f'{prefix}{width_hi}{mid}unsigned\'("{leading_bin}" & x"{hex_portion}")'
             else:
                 return f'{prefix}{width_hi}{mid}x"{hex_portion}"'
 
@@ -3208,6 +3240,104 @@ end architecture Behavioral;
         # (skip empty/comment lines)
         result = '\n'.join(lines)
         return result
+
+    @staticmethod
+    def _fix_vhdl_variable_signal_assign(code: str) -> str:
+        """Fix signal assignment operator '<=' used on variables inside processes.
+
+        VHDL variables must use ':=' for assignment, not '<=' (signal assignment).
+        LLMs often confuse the two operators. This fix detects variable names
+        (declared with 'variable' keyword) inside processes and replaces '<=' with ':='.
+
+        Only fixes inside process blocks to avoid touching real signal assignments.
+        """
+        lines = code.split('\n')
+        result = list(lines)
+
+        i = 0
+        while i < len(result):
+            stripped = result[i].strip().lower()
+            # Detect process start
+            if re.match(r'(\w+\s*:\s*)?process\b', stripped):
+                proc_start = i
+
+                # Find 'begin' and 'end process'
+                proc_begin = None
+                proc_end = None
+                depth = 0
+                for j in range(i + 1, len(result)):
+                    s = result[j].strip().lower()
+                    if re.match(r'(impure\s+)?function\s+', s) or re.match(r'procedure\s+', s):
+                        depth += 1
+                    elif re.match(r'end\s+(function|procedure)\b', s):
+                        depth = max(0, depth - 1)
+                    elif s == 'begin' and depth == 0 and proc_begin is None:
+                        proc_begin = j
+                    elif re.match(r'end\s+process\b', s) and depth == 0:
+                        proc_end = j
+                        break
+
+                if proc_begin is None or proc_end is None:
+                    i += 1
+                    continue
+
+                # Collect variable names declared in the process declarative region
+                var_names = set()
+                for j in range(proc_start + 1, proc_begin):
+                    vm = re.match(r'\s*variable\s+(\w+)\s*:', result[j], re.IGNORECASE)
+                    if vm:
+                        var_names.add(vm.group(1).lower())
+
+                if var_names:
+                    # Build pattern to match variable signal assignments
+                    # Match: var_name <= expr;  but NOT var_name <= when (conditional)
+                    for j in range(proc_begin + 1, proc_end):
+                        line = result[j]
+                        for vname in var_names:
+                            # Match: vname <= value (case insensitive for variable name)
+                            pattern = re.compile(
+                                r'(\b' + re.escape(vname) + r'\s*)<=(\s*)',
+                                re.IGNORECASE
+                            )
+                            if pattern.search(line):
+                                new_line = pattern.sub(r'\1:=\2', line)
+                                if new_line != line:
+                                    print(f"   ⚠️ Fixed variable assignment: {vname} <= → :=")
+                                    result[j] = new_line
+
+                i = proc_end + 1 if proc_end else i + 1
+            else:
+                i += 1
+
+        return '\n'.join(result)
+
+    @staticmethod
+    def _fix_vhdl_mod_slice(code: str) -> str:
+        """Fix invalid VHDL syntax: (expr mod expr)(N downto 0).
+
+        VHDL does not allow indexing/slicing the result of a 'mod' operation
+        directly. LLMs generate patterns like:
+            v_result := (sum_tmp mod MOD_VAL)(27 downto 0);
+
+        Fix: use resize() instead:
+            v_result := resize(sum_tmp mod MOD_VAL, 28);
+        """
+        # Pattern: (expr mod expr)(N downto 0)
+        def fix_mod_slice(m):
+            expr = m.group(1)
+            hi = int(m.group(2))
+            width = hi + 1
+            print(f"   ⚠️ Fixed mod slice: ({expr})({hi} downto 0) → resize({expr}, {width})")
+            return f'resize({expr}, {width})'
+
+        code = re.sub(
+            r'\(([^()]+\bmod\b[^()]+)\)\s*\(\s*(\d+)\s+downto\s+0\s*\)',
+            fix_mod_slice,
+            code,
+            flags=re.IGNORECASE
+        )
+
+        return code
 
     def _fix_verilog_duplicate_decls(self, code: str) -> str:
         """Remove duplicate reg/wire declarations in Verilog.
