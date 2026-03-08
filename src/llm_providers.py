@@ -1823,9 +1823,23 @@ class MistralProvider(LLMProvider):
     1. Visit: https://console.mistral.ai/
     2. Sign up and get API key
 
-    Models: codestral-latest, mistral-large-latest, mistral-small-latest
+    Models: codestral-latest, mistral-large-latest, mistral-medium-latest, mistral-small-latest
     API: OpenAI-compatible (v1/chat/completions)
+
+    Features:
+    - Model fallback chain: codestral-latest -> mistral-large-latest -> mistral-small-latest
+    - Retry with exponential backoff (max 3 retries)
+    - Debug logging for request/response tracking
+    - Token usage statistics
+    - Streaming support with fallback
     """
+
+    # 模型回退链：如果主模型失败，尝试下一个
+    MODEL_FALLBACK_CHAIN = [
+        "codestral-latest",
+        "mistral-large-latest",
+        "mistral-small-latest",
+    ]
 
     def __init__(self, api_key: Optional[str] = None, model: str = "codestral-latest"):
         self.api_key = api_key or os.getenv("MISTRAL_API_KEY")
@@ -1835,39 +1849,156 @@ class MistralProvider(LLMProvider):
         if not self.api_key:
             raise ValueError("Mistral API key not provided. Get key at: https://console.mistral.ai/")
 
+        print(f"  🤖 Mistral provider initialized: model={self.model}")
+
     def _call_api(self, prompt: str, max_tokens: int = 4000, system_prompt: str = None) -> str:
+        """
+        Call Mistral API with retry logic, model fallback, and debug logging.
+
+        Features:
+        - 3 retries with exponential backoff per model
+        - Model fallback chain if primary model fails
+        - Detailed debug logging
+        - Token usage tracking
+        """
+        # ============================================================
+        # 调试信息：调用参数
+        # ============================================================
+        print(f"   🔍 [DEBUG][Mistral._call_api] Called with max_tokens={max_tokens}")
+        print(f"   🔍 [DEBUG] Model: {self.model}")
+        print(f"   🔍 [DEBUG] Prompt length: {len(prompt)} chars")
+        if system_prompt:
+            print(f"   🔍 [DEBUG] System prompt length: {len(system_prompt)} chars")
+
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json"
         }
 
-        payload = {
-            "model": self.model,
-            "messages": [
-                {
-                    "role": "system",
-                    "content": system_prompt or "You are a helpful assistant that generates clear, concise BDD scenario descriptions for hardware verification."
-                },
-                {
-                    "role": "user",
-                    "content": prompt
-                }
-            ],
-            "max_tokens": max_tokens,
-            "temperature": 0.7
-        }
+        # 构建模型尝试列表：当前模型优先，然后是回退链中的其他模型
+        models_to_try = [self.model]
+        for fallback_model in self.MODEL_FALLBACK_CHAIN:
+            if fallback_model != self.model and fallback_model not in models_to_try:
+                models_to_try.append(fallback_model)
 
-        try:
-            proxies = self._get_proxies()
-            response = requests.post(self.api_url, headers=headers, json=payload, timeout=60, proxies=proxies)
-            response.raise_for_status()
-            result = response.json()
-            return result['choices'][0]['message']['content'].strip()
-        except Exception as e:
-            print(f"⚠️  Mistral API request failed: {e}")
-            return self._fallback_description(prompt)
+        for model_idx, current_model in enumerate(models_to_try):
+            if model_idx > 0:
+                print(f"   🔄 [FALLBACK] Trying fallback model: {current_model}")
+
+            payload = {
+                "model": current_model,
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": system_prompt or "You are a helpful assistant that generates clear, concise BDD scenario descriptions for hardware verification."
+                    },
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ],
+                "max_tokens": max_tokens,
+                "temperature": 0.7
+            }
+
+            # ============================================================
+            # 调试信息：请求详情
+            # ============================================================
+            print(f"   🔍 [DEBUG] Request URL: {self.api_url}")
+            print(f"   🔍 [DEBUG] Request payload: model={current_model}, messages=2, max_tokens={max_tokens}, temp=0.7")
+
+            max_retries = 3
+            retry_delay = 2
+
+            for attempt in range(max_retries):
+                try:
+                    if attempt > 0:
+                        print(f"   🔄 [DEBUG] Retry {attempt}/{max_retries} for model {current_model}")
+
+                    print(f"   📡 [DEBUG] Sending request to Mistral API... (attempt {attempt + 1}/{max_retries})")
+
+                    proxies = self._get_proxies()
+                    response = requests.post(
+                        self.api_url, headers=headers, json=payload,
+                        timeout=60, proxies=proxies
+                    )
+
+                    # ============================================================
+                    # 调试信息：响应状态
+                    # ============================================================
+                    print(f"   📥 [DEBUG] Response status: {response.status_code}")
+
+                    if response.status_code == 200:
+                        result = response.json()
+                        content = result['choices'][0]['message']['content'].strip()
+
+                        # ============================================================
+                        # 调试信息：成功和 token 统计
+                        # ============================================================
+                        usage = result.get('usage', {})
+                        print(f"   ✅ [DEBUG] API call successful")
+                        print(f"   📊 [DEBUG] Response length: {len(content)} chars")
+
+                        if usage:
+                            prompt_tokens = usage.get('prompt_tokens', 'N/A')
+                            completion_tokens = usage.get('completion_tokens', 'N/A')
+                            total_tokens = usage.get('total_tokens', 'N/A')
+                            print(f"   📊 [DEBUG] Token usage: prompt={prompt_tokens}, "
+                                  f"completion={completion_tokens}, total={total_tokens}")
+
+                        finish_reason = result['choices'][0].get('finish_reason', 'unknown')
+                        print(f"   🎯 [DEBUG] Finish reason: {finish_reason}")
+
+                        if 'model' in result:
+                            print(f"   🤖 [DEBUG] Model used: {result['model']}")
+
+                        print(f"   ✅ [DEBUG][Mistral._call_api] Returning response ({len(content)} chars)")
+                        return content
+                    else:
+                        error_detail = response.text
+                        print(f"   ❌ [ERROR] API request failed: Status {response.status_code}")
+                        print(f"   ❌ [ERROR] Error detail: {error_detail[:200]}")
+
+                        # 422 通常表示模型不可用，直接跳到下一个模型
+                        if response.status_code == 422:
+                            print(f"   ⚠️  [WARN] Model {current_model} not available, trying next model")
+                            break
+
+                        if attempt < max_retries - 1:
+                            print(f"   ⏳ [DEBUG] Waiting {retry_delay}s before retry...")
+                            time.sleep(retry_delay)
+                            retry_delay *= 2
+
+                except requests.exceptions.Timeout:
+                    print(f"   ❌ [ERROR] Request timeout (60s)")
+                    if attempt < max_retries - 1:
+                        print(f"   🔄 [DEBUG] Retrying after timeout...")
+                        time.sleep(retry_delay)
+                        retry_delay *= 2
+
+                except requests.exceptions.RequestException as e:
+                    print(f"   ❌ [ERROR] Network error: {type(e).__name__}: {str(e)}")
+                    if attempt < max_retries - 1:
+                        print(f"   🔄 [DEBUG] Retrying after network error...")
+                        time.sleep(retry_delay)
+                        retry_delay *= 2
+
+                except Exception as e:
+                    print(f"   ❌ [ERROR] Unexpected error: {type(e).__name__}: {str(e)}")
+                    if attempt < max_retries - 1:
+                        print(f"   🔄 [DEBUG] Retrying after unexpected error...")
+                        time.sleep(retry_delay)
+                        retry_delay *= 2
+
+        # 所有模型和重试都失败
+        print(f"   ⚠️  [WARN] All models and retries exhausted, returning fallback")
+        return self._fallback_description(prompt)
 
     def _call_api_stream(self, prompt: str, max_tokens: int = 4000, system_prompt: str = None):
+        """
+        Streaming API call for Mistral.
+        Yields chunks of generated text with fallback to non-streaming.
+        """
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json"
@@ -1892,10 +2023,15 @@ class MistralProvider(LLMProvider):
 
         try:
             proxies = self._get_proxies()
-            response = requests.post(self.api_url, headers=headers, json=payload, proxies=proxies, stream=True,
-                                     timeout=180)
+            print(f"   📡 [DEBUG] Mistral streaming request: model={self.model}, max_tokens={max_tokens}")
+            response = requests.post(
+                self.api_url, headers=headers, json=payload,
+                proxies=proxies, stream=True, timeout=180
+            )
             response.raise_for_status()
 
+            chunk_count = 0
+            total_chars = 0
             for line in response.iter_lines():
                 if line:
                     line = line.decode('utf-8')
@@ -1909,17 +2045,29 @@ class MistralProvider(LLMProvider):
                                 delta = chunk_data['choices'][0].get('delta', {})
                                 content = delta.get('content', '')
                                 if content:
+                                    chunk_count += 1
+                                    total_chars += len(content)
                                     yield content
                         except json.JSONDecodeError:
                             continue
+
+            print(f"   ✅ [DEBUG] Mistral streaming complete: {chunk_count} chunks, {total_chars} chars")
+
         except Exception as e:
-            print(f"⚠️ Mistral streaming failed: {e}")
+            print(f"   ⚠️ Mistral streaming failed: {e}")
+            print(f"   🔄 [DEBUG] Falling back to non-streaming API call")
             result = self._call_api(prompt, max_tokens, system_prompt)
             if result:
                 yield result
 
-    def generate_scenario_description(self, operation_name: str, operation_code: str, operation_description: str,
-                                      bitwidth: int) -> str:
+    def generate_scenario_description(
+            self,
+            operation_name: str,
+            operation_code: str,
+            operation_description: str,
+            bitwidth: int
+    ) -> str:
+        """Generate a BDD scenario description"""
         prompt = f"""Generate a clear BDD scenario description for testing a {bitwidth}-bit ALU operation.
 
 Operation Details:
@@ -1938,7 +2086,13 @@ Generate the scenario description:
 """
         return self._call_api(prompt, max_tokens=150)
 
-    def generate_feature_description(self, bitwidth: int, operations_count: int, operations_list: List[str]) -> str:
+    def generate_feature_description(
+            self,
+            bitwidth: int,
+            operations_count: int,
+            operations_list: List[str]
+    ) -> str:
+        """Generate a Feature-level description"""
         prompt = f"""Generate a BDD Feature description for a {bitwidth}-bit ALU verification suite.
 
 ALU Details:
@@ -1951,6 +2105,9 @@ Generate a concise Feature description (2-4 sentences):
         return self._call_api(prompt, max_tokens=200)
 
     def _fallback_description(self, prompt: str) -> str:
+        """
+        Fallback: return JSON format for intent parsing, or default description
+        """
         if "JSON" in prompt or "json" in prompt or '"operation"' in prompt:
             print("   🔧 [FALLBACK] Returning JSON format for intent parsing")
             return self._fallback_intent_json(prompt)
@@ -2206,7 +2363,8 @@ class LLMFactory:
             elif provider_type in ['qwen', 'tongyi']:
                 print("🆓 Using Qwen (FREE tier, no proxy needed)")
             elif provider_type in ['mistral', 'codestral']:
-                print("💰 Using Mistral/Codestral (code-specialized)")
+                model = kwargs.get('model', 'codestral-latest')
+                print(f"💰 Using Mistral/Codestral (code-specialized) - Model: {model} [retry + model fallback]")
             elif provider_type in ['together', 'together_ai']:
                 print("🆓 Using Together AI (multi-model platform)")
 
