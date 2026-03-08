@@ -1587,31 +1587,53 @@ Generate the complete Verilog module with testbench now:
         import math
         bits_per_digit = math.ceil(math.log2(k)) if k > 1 else 1
 
-        common_rules = f"""⚠️ VHDL COMMENT SYNTAX: Comments MUST use "--", NOT "!" or "//" or "#".
-   WRONG: !this is a comment    WRONG: //this is a comment
-   CORRECT: -- this is a comment
+        common_rules = f"""⚠️ VHDL CRITICAL RULES — violating ANY of these causes GHDL compilation/simulation failure:
 
-⚠️ VHDL FUNCTION PARAMETER NAMING (CRITICAL — causes GHDL compilation failure):
-   Function parameters MUST NOT use the same names as entity ports!
-   Entity has ports: a, b, result, zero, negative, carry.
-   WRONG:  function gf_add(a : unsigned; b : unsigned) ...     ← "a" hides port "a"!
-   CORRECT: function gf_add(x_val : unsigned; y_val : unsigned) ...  ← unique names
+RULE 1 — COMMENTS: Use "--" only. NOT "!" or "//" or "#".
 
-⚠️ VHDL VARIABLE DECLARATION RULES (CRITICAL — violations cause compilation failure):
-1. ALL variable declarations MUST be in the process DECLARATIVE REGION (between "process" and "begin").
-   Do NOT declare variables inside case/when branches or if/else blocks — this is ILLEGAL in VHDL!
-2. Do NOT use "when...else" syntax for variable assignment inside a process — ANYWHERE!
-   It is only valid in VHDL-2008 and GHDL defaults to VHDL-93.
+RULE 2 — FUNCTION PARAMETER NAMING:
+   Parameters MUST NOT shadow entity ports (a, b, result, zero, negative, carry).
+   WRONG:  function gf_add(a : unsigned; b : unsigned) ...
+   CORRECT: function gf_add(x_val : unsigned; y_val : unsigned) ...
+
+RULE 3 — VARIABLE DECLARATIONS:
+   ALL variable declarations MUST be between "process(...)" and "begin" (declarative region).
+   NEVER declare variables inside case/when/if/else blocks — this is ILLEGAL.
+
+RULE 4 — NO "when...else" FOR VARIABLE ASSIGNMENT:
    WRONG:  v_carry := '1' when condition else '0';
    CORRECT: if condition then v_carry := '1'; else v_carry := '0'; end if;
-- Use variables (NOT signals) inside process for intermediate results
-⚠️ CASE STATEMENT RULE (CRITICAL — missing this causes GHDL compilation failure):
-   EVERY case statement MUST have "when others =>" as the LAST choice!
-   to_integer() returns 'natural' (0 to 2147483647), so case statements must
-   cover all values. Without 'when others', GHDL reports:
-     "error: no choices for N to 2147483647"
-   WRONG:  case to_integer(x) is when 0 => ... when 1 => ... end case;
-   CORRECT: case to_integer(x) is when 0 => ... when 1 => ... when others => return to_unsigned(0, 2); end case;"""
+
+RULE 5 — CASE STATEMENTS MUST HAVE "when others =>":
+   to_integer() returns 'natural' (0..2^31-1), so ALL cases need a fallback.
+
+RULE 6 — NO (others => 'X') IN COMPARISONS OR EXPRESSIONS:
+   GHDL cannot infer aggregate length in expression context!
+   WRONG:  if unsigned(a) = (others => '0') then ...
+   WRONG:  if v_result = (others => '0') then ...
+   CORRECT: if unsigned(a) = to_unsigned(0, {data_width}) then ...
+   CORRECT: if v_result = to_unsigned(0, {data_width}) then ...
+   NOTE: (others => '0') is ONLY allowed on the RHS of signal/variable assignment:
+     result <= (others => '0');  -- OK
+     v_result := (others => '0');  -- OK
+
+RULE 7 — NO BARE INTEGER LITERALS > 2147483647:
+   VHDL integer range is limited to 2^31-1. For large values, use hex:
+   WRONG:  if v_result >= 339111536424 then ...
+   WRONG:  to_unsigned(339111536424, {data_width})
+   CORRECT: if v_result >= unsigned'(x"4EF49F6728") then ...
+   CORRECT: resize(unsigned'(x"4EF49F6728"), {data_width})
+
+RULE 8 — NO std_logic_vector() WRAPPER ON HEX LITERALS:
+   x"..." is already std_logic_vector type.
+   WRONG:  a_sig <= std_logic_vector(x"9DE93ECE50");
+   CORRECT: a_sig <= x"9DE93ECE50";
+
+RULE 9 — NO "wait;" IN SENSITIZED PROCESSES:
+   process(clk, rst) CANNOT contain any wait statement.
+   Only unsensitized processes (no sensitivity list) may use wait.
+
+RULE 10 — USE VARIABLES (NOT SIGNALS) INSIDE PROCESS for intermediate results."""
 
         if is_extension:
             p = logic_info['p']
@@ -2029,6 +2051,10 @@ Generate the complete VHDL code (entity + architecture + testbench) now:
             # VHDL integer range is limited to INTEGER'HIGH (2147483647); larger values
             # cause bound check failures at runtime in GHDL.
             code = self._fix_vhdl_large_integers(code)
+
+            # Fix (others => '0') in comparisons — GHDL cannot infer aggregate length
+            # in expression context. Replace with to_unsigned(0, N) or (N downto 0 => '0').
+            code = self._fix_vhdl_others_in_expr(code)
 
             # Detect and fix truncated output (unterminated strings, missing end statements)
             code = self._fix_vhdl_truncation(code)
@@ -2455,6 +2481,72 @@ Generate the complete VHDL code (entity + architecture + testbench) now:
 
             # Then: fix remaining bare large integers in expressions
             code_part = re.sub(r'(?<!["\w])(\d{10,})(?!["\w])', replace_bare_int, code_part)
+
+            result.append(code_part + comment_part)
+
+        return '\n'.join(result)
+
+    @staticmethod
+    def _fix_vhdl_others_in_expr(code: str) -> str:
+        """Fix (others => '0') and (others => '1') used in expression contexts.
+
+        GHDL cannot infer the length of an 'others' aggregate in comparisons,
+        assignments to variables, or other expression contexts. Only target-context
+        assignments (signal <= (others => '0')) are allowed.
+
+        Strategy: Detect the data width from entity port declarations, then replace
+        (others => 'X') in comparisons/expressions with properly sized alternatives.
+        """
+        # Determine data width from entity port — look for 'a : in std_logic_vector(N downto 0)'
+        width_match = re.search(
+            r'a\s*:\s*in\s+std_logic_vector\s*\(\s*(\d+)\s+downto\s+0\s*\)',
+            code, re.IGNORECASE
+        )
+        data_width = int(width_match.group(1)) + 1 if width_match else None
+
+        if data_width is None:
+            return code
+
+        lines = code.split('\n')
+        result = []
+        for line in lines:
+            # Skip comments
+            stripped = line.lstrip()
+            if stripped.startswith('--'):
+                result.append(line)
+                continue
+
+            # Split code and comment
+            comment_pos = line.find('--')
+            if comment_pos >= 0:
+                code_part = line[:comment_pos]
+                comment_part = line[comment_pos:]
+            else:
+                code_part = line
+                comment_part = ''
+
+            # Fix: comparisons like  "= (others => '0')" or ">= (others => '0')"
+            # Replace with to_unsigned(0, width) for '0', or (2^width-1) for '1'
+            def replace_others(m):
+                bit_val = m.group(1)
+                if bit_val == '0':
+                    return f'= to_unsigned(0, {data_width})'
+                else:  # '1'
+                    return f'= (x"{format((1 << data_width) - 1, "0" + str((data_width + 3) // 4) + "X")}")'
+
+            # Pattern: comparison operator followed by (others => 'X')
+            code_part = re.sub(
+                r'=\s*\(\s*others\s*=>\s*\'([01])\'\s*\)',
+                replace_others, code_part
+            )
+
+            # Fix: "unsigned(X) = (others => '0')" patterns — the unsigned() wrapping
+            # We already replaced (others => '0') with to_unsigned(0, W), but
+            # if it's "unsigned(a) = to_unsigned(0, W)" that's correct.
+
+            # Fix: if/when condition with (others => ...) on RHS of assignment
+            # e.g., "v_result := (others => '0');" — this is OK in VHDL for variables
+            # but NOT for "if X = (others => '0')" — already handled above.
 
             result.append(code_part + comment_part)
 
