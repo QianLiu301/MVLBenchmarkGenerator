@@ -2025,7 +2025,10 @@ Generate the complete VHDL code (entity + architecture + testbench) now:
             # Detect and fix truncated output (unterminated strings, missing end statements)
             code = self._fix_vhdl_truncation(code)
 
-            # Ensure testbench process ends with "wait;" to prevent infinite loop
+            # Remove bare 'wait;' from sensitized processes and clock processes
+            code = self._fix_vhdl_stray_wait(code)
+
+            # Ensure unsensitized testbench process ends with "wait;" to prevent infinite loop
             code = self._fix_vhdl_missing_wait(code)
 
         return code
@@ -2373,36 +2376,147 @@ Generate the complete VHDL code (entity + architecture + testbench) now:
         return '\n'.join(new_lines)
 
     @staticmethod
-    def _fix_vhdl_missing_wait(code: str) -> str:
-        """Ensure every VHDL testbench process ends with a bare 'wait;'.
+    def _fix_vhdl_stray_wait(code: str) -> str:
+        """Remove bare 'wait;' from sensitized processes and clock generator processes.
 
-        Without a terminal wait, the process restarts from the top after reaching
-        'end process', causing an infinite simulation loop that hits the timeout.
+        VHDL forbids 'wait' statements in sensitized processes (those with a sensitivity list).
+        Clock generator processes that use 'wait for' to toggle clk must loop forever —
+        a bare 'wait;' would stop the clock after one cycle.
         """
         lines = code.split('\n')
-        result = []
+        lines_to_remove = set()
+
         i = 0
         while i < len(lines):
             stripped = lines[i].strip().lower()
-            # Detect "end process" lines
-            if re.match(r'end\s+process\b', stripped):
-                # Check if the previous non-blank line is "wait;"
-                has_wait = False
-                for j in range(len(result) - 1, max(len(result) - 5, -1), -1):
-                    prev = result[j].strip().lower()
-                    if prev == '':
-                        continue
-                    if prev == 'wait;' or prev == 'wait ;':
-                        has_wait = True
-                    break
-                if not has_wait:
-                    # Determine indent from end process line
-                    indent = lines[i][:len(lines[i]) - len(lines[i].lstrip())]
-                    result.append(indent + '    wait;  -- auto-added: prevent infinite loop')
-                    print("   ⚠️ Added terminal 'wait;' before 'end process' to prevent simulation timeout")
-            result.append(lines[i])
+            proc_match = re.match(r'(\w+\s*:\s*)?process\b(.*)', stripped)
+            if proc_match:
+                proc_start = i
+                remainder = proc_match.group(2).strip()
+                has_sensitivity = bool(re.match(r'\s*\(', remainder))
+
+                # Find matching 'end process' and scan for patterns
+                proc_end = None
+                has_wait_for = False
+                is_clock = False
+                bare_wait_indices = []
+
+                for j in range(i + 1, len(lines)):
+                    s = lines[j].strip().lower()
+                    if re.match(r'end\s+process\b', s):
+                        proc_end = j
+                        break
+                    if re.match(r'wait\s+for\s+', s):
+                        has_wait_for = True
+                    if 'clk' in s and '<=' in s and ("'0'" in s or "'1'" in s):
+                        is_clock = True
+                    # Bare 'wait;' (no 'for', no 'until', no 'on')
+                    bare = re.sub(r'--.*', '', s).strip()
+                    if bare in ('wait;', 'wait ;') or re.match(r'wait\s*;$', bare):
+                        bare_wait_indices.append(j)
+
+                if proc_end is not None:
+                    is_clock_process = has_wait_for and is_clock
+                    if has_sensitivity or is_clock_process:
+                        for idx in bare_wait_indices:
+                            lines_to_remove.add(idx)
+                            desc = "sensitized process" if has_sensitivity else "clock process"
+                            print(f"   ⚠️ Removed illegal bare 'wait;' from {desc} (line {idx + 1})")
+                    i = proc_end + 1
+                    continue
             i += 1
-        return '\n'.join(result)
+
+        if lines_to_remove:
+            lines = [line for idx, line in enumerate(lines) if idx not in lines_to_remove]
+
+        return '\n'.join(lines)
+
+    @staticmethod
+    def _fix_vhdl_missing_wait(code: str) -> str:
+        """Ensure every unsensitized VHDL testbench process ends with a bare 'wait;'.
+
+        Without a terminal wait, an unsensitized process restarts from the top after
+        reaching 'end process', causing an infinite simulation loop that hits the timeout.
+
+        IMPORTANT: Do NOT add 'wait;' to:
+        - Sensitized processes (those with a sensitivity list) — VHDL forbids it.
+        - Clock generator processes (those using 'wait for' to toggle clk) — they
+          must loop forever; a terminal 'wait;' would stop the clock after one cycle.
+        """
+        lines = code.split('\n')
+
+        # First pass: identify process blocks and their properties
+        # (start_line, end_line, has_sensitivity_list, is_clock_process, has_terminal_wait)
+        processes = []
+        i = 0
+        while i < len(lines):
+            stripped = lines[i].strip().lower()
+            # Detect process start — with or without label
+            proc_match = re.match(r'(\w+\s*:\s*)?process\b(.*)', stripped)
+            if proc_match:
+                proc_start = i
+                remainder = proc_match.group(2).strip()
+                # Check for sensitivity list: process(clk, rst) or process (clk)
+                has_sensitivity = bool(re.match(r'\s*\(', remainder))
+
+                # Find matching 'end process'
+                proc_end = None
+                has_wait_for = False
+                has_terminal_wait = False
+                is_clock = False
+                for j in range(i + 1, len(lines)):
+                    s = lines[j].strip().lower()
+                    if re.match(r'end\s+process\b', s):
+                        proc_end = j
+                        # Check if the previous non-blank line is a bare 'wait;'
+                        for k in range(j - 1, max(j - 5, i), -1):
+                            prev = lines[k].strip().lower()
+                            if prev == '':
+                                continue
+                            if prev in ('wait;', 'wait ;') or re.match(r'wait\s*;', prev):
+                                has_terminal_wait = True
+                            break
+                        break
+                    # Detect 'wait for' (clock generator pattern)
+                    if re.match(r'wait\s+for\s+', s):
+                        has_wait_for = True
+                    # Detect clock toggling pattern
+                    if 'clk' in s and ('<=' in s) and ("'0'" in s or "'1'" in s):
+                        is_clock = True
+
+                if proc_end is not None:
+                    # A clock process uses 'wait for' and toggles clk
+                    is_clock_process = has_wait_for and is_clock
+                    processes.append({
+                        'start': proc_start,
+                        'end': proc_end,
+                        'sensitized': has_sensitivity,
+                        'is_clock': is_clock_process,
+                        'has_terminal_wait': has_terminal_wait,
+                    })
+                    i = proc_end + 1
+                    continue
+            i += 1
+
+        # Second pass: add 'wait;' only where needed
+        # Work from bottom to top so line indices stay valid
+        for proc in reversed(processes):
+            if proc['has_terminal_wait']:
+                continue  # already has one
+            if proc['sensitized']:
+                # Remove any erroneously existing 'wait;' in sensitized process
+                # (shouldn't be there, but clean up just in case)
+                continue
+            if proc['is_clock']:
+                continue  # clock process must loop forever
+
+            # This is an unsensitized, non-clock process without terminal wait — add one
+            end_idx = proc['end']
+            indent = lines[end_idx][:len(lines[end_idx]) - len(lines[end_idx].lstrip())]
+            lines.insert(end_idx, indent + '    wait;  -- auto-added: prevent infinite loop')
+            print("   ⚠️ Added terminal 'wait;' before 'end process' to prevent simulation timeout")
+
+        return '\n'.join(lines)
 
     @staticmethod
     def _fix_vhdl_truncation(code: str) -> str:
