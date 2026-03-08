@@ -2043,6 +2043,31 @@ end architecture Behavioral;
         parts.append(arch_code.strip())
         parts.append("")
 
+        # Fix MOD_VAL constant: LLMs often produce wrong hex literal width or value
+        # We know the exact correct value, so replace whatever the LLM generated
+        if mod > 2147483647:  # Only for large values that need hex literals
+            correct_mod_lit = self._vhdl_unsigned_literal(mod, data_width + 1)
+            # Replace: constant MOD_VAL : unsigned(N downto 0) := <wrong_literal>;
+            # The LLM might generate x"HEX", to_unsigned(...), or "bits" & x"HEX"
+            parts_str = '\n'.join(parts)
+            mod_pattern = re.compile(
+                r'(constant\s+MOD_VAL\s*:\s*unsigned\s*\(\s*\d+\s+downto\s+0\s*\)\s*:=\s*)'
+                r'(.+?)\s*;',
+                re.IGNORECASE
+            )
+            mod_match = mod_pattern.search(parts_str)
+            if mod_match:
+                current_lit = mod_match.group(2).strip()
+                if current_lit != correct_mod_lit:
+                    print(f"   🔧 [FIX] MOD_VAL literal: {current_lit} -> {correct_mod_lit}")
+                    parts_str = mod_pattern.sub(
+                        lambda m: f'{m.group(1)}{correct_mod_lit};',
+                        parts_str
+                    )
+                    parts = [parts_str]
+                    # Skip the '\n'.join below since parts is already a single string
+            del parts_str
+
         # Remove any LLM-generated testbench (we use our own)
         combined = '\n'.join(parts)
         # Find where testbench entity starts and remove everything from there
@@ -2244,6 +2269,10 @@ end architecture Behavioral;
             # VHDL integer range is limited to INTEGER'HIGH (2147483647); larger values
             # cause bound check failures at runtime in GHDL.
             code = self._fix_vhdl_large_integers(code)
+
+            # Fix hex literal width mismatches in unsigned declarations/assignments
+            # e.g. unsigned(37 downto 0) := x"23EDE4000" — 38 bits needed but hex is 36 bits
+            code = self._fix_vhdl_hex_width_mismatch(code)
 
             # Fix (others => '0') in comparisons — GHDL cannot infer aggregate length
             # in expression context. Replace with to_unsigned(0, N) or (N downto 0 => '0').
@@ -2788,6 +2817,63 @@ end architecture Behavioral;
             result.append(code_part + comment_part)
 
         return '\n'.join(result)
+
+    @staticmethod
+    def _fix_vhdl_hex_width_mismatch(code: str) -> str:
+        """Fix hex literal width mismatches in VHDL unsigned declarations and assignments.
+
+        LLMs often generate hex literals with the wrong number of digits for
+        non-multiple-of-4 bit widths. For example:
+            signal s : unsigned(37 downto 0) := x"0123EDE4000";
+        Here unsigned(37 downto 0) is 38 bits, but x"0123EDE4000" is 11*4=44 bits.
+        The correct form: "01" & x"23EDE4000" (2 + 36 = 38 bits).
+
+        Note: MOD_VAL is handled separately in _assemble_vhdl() with the known-correct
+        value. This method handles other hex literals where the value is correct
+        but the width formatting is wrong.
+        """
+
+        def fix_unsigned_decl(m):
+            """Fix: unsigned(N downto 0) := x"HEX" """
+            prefix = m.group(1)
+            width_hi = int(m.group(2))
+            mid = m.group(3)
+            hex_str = m.group(4)
+            expected_bits = width_hi + 1
+            hex_bits = len(hex_str) * 4
+
+            if hex_bits == expected_bits:
+                return m.group(0)
+
+            try:
+                value = int(hex_str, 16)
+            except ValueError:
+                return m.group(0)
+
+            # Only fix if the value fits in the expected width
+            if value >= (1 << expected_bits):
+                return m.group(0)
+
+            # Reformat to correct width
+            hex_chars = expected_bits // 4
+            remaining_bits = expected_bits - hex_chars * 4
+            lower_mask = (1 << (hex_chars * 4)) - 1
+            hex_portion = format(value & lower_mask, f'0{hex_chars}X')
+            if remaining_bits > 0:
+                leading_val = value >> (hex_chars * 4)
+                leading_bin = format(leading_val, f'0{remaining_bits}b')
+                return f'{prefix}{width_hi}{mid}"{leading_bin}" & x"{hex_portion}"'
+            else:
+                return f'{prefix}{width_hi}{mid}x"{hex_portion}"'
+
+        # Fix: unsigned(N downto 0) := x"HEX"
+        code = re.sub(
+            r'(unsigned\s*\(\s*)(\d+)(\s+downto\s+0\s*\)\s*:?=\s*)x"([0-9A-Fa-f]+)"',
+            fix_unsigned_decl,
+            code
+        )
+
+        return code
 
     @staticmethod
     def _fix_vhdl_others_in_expr(code: str) -> str:
