@@ -2718,6 +2718,41 @@ end architecture Behavioral;
             hex_str = int_to_hex(val)
             return f'unsigned\'(x"{hex_str}")'
 
+        def apply_outside_strings(line_text, func):
+            """Apply a transformation function only to parts of the line outside VHDL string literals.
+
+            VHDL strings are delimited by double quotes. Inside strings, "" is an escaped quote.
+            We split the line into alternating non-string/string segments and only transform non-string parts.
+            """
+            segments = []
+            i = 0
+            in_string = False
+            seg_start = 0
+            while i < len(line_text):
+                if not in_string:
+                    if line_text[i] == '"':
+                        # End of non-string segment, start of string
+                        segments.append(('code', line_text[seg_start:i]))
+                        seg_start = i
+                        in_string = True
+                else:
+                    if line_text[i] == '"':
+                        # Check for escaped quote ""
+                        if i + 1 < len(line_text) and line_text[i + 1] == '"':
+                            i += 1  # skip the second quote
+                        else:
+                            # End of string segment
+                            segments.append(('str', line_text[seg_start:i + 1]))
+                            seg_start = i + 1
+                            in_string = False
+                i += 1
+            # Remaining part
+            if seg_start < len(line_text):
+                segments.append(('str' if in_string else 'code', line_text[seg_start:]))
+
+            # Apply func only to code segments
+            return ''.join(func(s) if kind == 'code' else s for kind, s in segments)
+
         lines = code.split('\n')
         result = []
         for line in lines:
@@ -2737,13 +2772,18 @@ end architecture Behavioral;
                 comment_part = ''
 
             # First: fix to_unsigned(LARGE, width) → resize(unsigned'(x"HEX"), width)
-            code_part = re.sub(
-                r'to_unsigned\s*\(\s*(\d{10,})\s*,\s*(\d+)\s*\)',
-                replace_to_unsigned, code_part
-            )
+            def fix_to_unsigned(s):
+                return re.sub(
+                    r'to_unsigned\s*\(\s*(\d{10,})\s*,\s*(\d+)\s*\)',
+                    replace_to_unsigned, s
+                )
 
             # Then: fix remaining bare large integers in expressions
-            code_part = re.sub(r'(?<!["\w])(\d{10,})(?!["\w])', replace_bare_int, code_part)
+            def fix_bare_int(s):
+                return re.sub(r'(?<!["\w])(\d{10,})(?!["\w])', replace_bare_int, s)
+
+            code_part = apply_outside_strings(code_part, fix_to_unsigned)
+            code_part = apply_outside_strings(code_part, fix_bare_int)
 
             result.append(code_part + comment_part)
 
@@ -2831,6 +2871,11 @@ end architecture Behavioral;
             report "Test: R=unsigned'(x"ABC") Z=0" severity note;
         The inner quotes break VHDL parsing. In VHDL, embedded quotes must be
         doubled: x""ABC"". This method finds report strings and escapes inner quotes.
+
+        Handles two patterns:
+        1. Simple report: report "..." severity note;
+        2. Concatenated report: report "..." & expr & "..." severity note;
+           For case 2, we use a targeted pattern fix for common hex-in-string issues.
         """
         lines = code.split('\n')
         result = []
@@ -2841,6 +2886,7 @@ end architecture Behavioral;
                 continue
 
             # Match: report "..." severity ...;  or just  report "...";
+            # This handles simple (non-concatenated) report strings
             m = re.match(
                 r'^(\s*report\s+)"(.+)"(\s*severity\s+\w+)?\s*;',
                 line, re.IGNORECASE
@@ -2856,8 +2902,24 @@ end architecture Behavioral;
                 body = body.replace('"', '""')     # escape inner quotes
                 body = body.replace('\x00', '""')  # restore already-escaped
                 result.append(f'{prefix}"{body}"{suffix};')
-            else:
-                result.append(line)
+                continue
+
+            # Also handle assert ... report "..." severity ...;
+            m2 = re.match(
+                r'^(\s*assert\s+.+\s+report\s+)"(.+)"(\s*severity\s+\w+)?\s*;',
+                line, re.IGNORECASE
+            )
+            if m2:
+                prefix = m2.group(1)
+                body = m2.group(2)
+                suffix = m2.group(3) or ''
+                body = body.replace('""', '\x00')
+                body = body.replace('"', '""')
+                body = body.replace('\x00', '""')
+                result.append(f'{prefix}"{body}"{suffix};')
+                continue
+
+            result.append(line)
         return '\n'.join(result)
 
     @staticmethod
