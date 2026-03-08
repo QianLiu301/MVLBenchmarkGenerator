@@ -2022,6 +2022,9 @@ Generate the complete VHDL code (entity + architecture + testbench) now:
             # Fix case statements missing "when others" (GHDL requires full coverage)
             code = self._fix_vhdl_case_others(code)
 
+            # Fix std_logic_vector(x"...") — hex literals are already std_logic_vector
+            code = re.sub(r'std_logic_vector\s*\(\s*(x"[0-9A-Fa-f]+")\s*\)', r'\1', code)
+
             # Detect and fix truncated output (unterminated strings, missing end statements)
             code = self._fix_vhdl_truncation(code)
 
