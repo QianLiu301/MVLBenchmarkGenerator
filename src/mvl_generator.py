@@ -2056,6 +2056,10 @@ Generate the complete VHDL code (entity + architecture + testbench) now:
             # in expression context. Replace with to_unsigned(0, N) or (N downto 0 => '0').
             code = self._fix_vhdl_others_in_expr(code)
 
+            # Fix report strings with unescaped inner double quotes
+            # e.g. report "R=unsigned'(x"ABC")" -> report "R=unsigned'(x""ABC"")"
+            code = self._fix_vhdl_report_strings(code)
+
             # Detect and fix truncated output (unterminated strings, missing end statements)
             code = self._fix_vhdl_truncation(code)
 
@@ -2558,6 +2562,43 @@ Generate the complete VHDL code (entity + architecture + testbench) now:
 
             result.append(code_part + comment_part)
 
+        return '\n'.join(result)
+
+    @staticmethod
+    def _fix_vhdl_report_strings(code: str) -> str:
+        """Fix report statements with unescaped double quotes inside the string.
+
+        LLMs generate report strings like:
+            report "Test: R=unsigned'(x"ABC") Z=0" severity note;
+        The inner quotes break VHDL parsing. In VHDL, embedded quotes must be
+        doubled: x""ABC"". This method finds report strings and escapes inner quotes.
+        """
+        lines = code.split('\n')
+        result = []
+        for line in lines:
+            stripped = line.lstrip()
+            if stripped.startswith('--'):
+                result.append(line)
+                continue
+
+            # Match: report "..." severity ...;  or just  report "...";
+            m = re.match(
+                r'^(\s*report\s+)"(.+)"(\s*severity\s+\w+)?\s*;',
+                line, re.IGNORECASE
+            )
+            if m:
+                prefix = m.group(1)       # 'report '
+                body = m.group(2)         # string content (without outer quotes)
+                suffix = m.group(3) or '' # ' severity note' or empty
+                # Escape any unescaped inner double quotes
+                # First, un-double any already-escaped ones to avoid double-escaping,
+                # then re-escape all inner quotes
+                body = body.replace('""', '\x00')  # protect already-escaped
+                body = body.replace('"', '""')     # escape inner quotes
+                body = body.replace('\x00', '""')  # restore already-escaped
+                result.append(f'{prefix}"{body}"{suffix};')
+            else:
+                result.append(line)
         return '\n'.join(result)
 
     @staticmethod
