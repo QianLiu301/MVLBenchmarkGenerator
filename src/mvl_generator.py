@@ -2025,6 +2025,11 @@ Generate the complete VHDL code (entity + architecture + testbench) now:
             # Fix std_logic_vector(x"...") — hex literals are already std_logic_vector
             code = re.sub(r'std_logic_vector\s*\(\s*(x"[0-9A-Fa-f]+")\s*\)', r'\1', code)
 
+            # Replace large integer literals (> 2^31-1) with hex unsigned constants
+            # VHDL integer range is limited to INTEGER'HIGH (2147483647); larger values
+            # cause bound check failures at runtime in GHDL.
+            code = self._fix_vhdl_large_integers(code)
+
             # Detect and fix truncated output (unterminated strings, missing end statements)
             code = self._fix_vhdl_truncation(code)
 
@@ -2377,6 +2382,83 @@ Generate the complete VHDL code (entity + architecture + testbench) now:
             i += 1
 
         return '\n'.join(new_lines)
+
+    @staticmethod
+    def _fix_vhdl_large_integers(code: str) -> str:
+        """Replace large integer literals (> 2^31-1) with unsigned hex constants.
+
+        VHDL's integer type is bounded by INTEGER'HIGH (typically 2^31-1 = 2147483647).
+        LLMs often emit bare decimal literals for large mod values or comparison thresholds
+        (e.g., v_result >= 339111536424) which cause GHDL runtime bound check failures.
+
+        Handles two patterns:
+        1. to_unsigned(LARGE, width) → resize(unsigned'(x"HEX"), width)
+        2. bare LARGE in expressions → unsigned'(x"HEX")
+        """
+        max_int = 2147483647  # 2^31 - 1
+
+        def int_to_hex(val):
+            """Convert integer to even-length uppercase hex string."""
+            hex_str = format(val, 'X')
+            if len(hex_str) % 2 != 0:
+                hex_str = '0' + hex_str
+            return hex_str
+
+        def replace_to_unsigned(match):
+            """Replace to_unsigned(LARGE, W) with resize(unsigned'(x"HEX"), W)."""
+            num_str = match.group(1)
+            width = match.group(2)
+            try:
+                val = int(num_str)
+            except ValueError:
+                return match.group(0)
+            if val <= max_int:
+                return match.group(0)
+            hex_str = int_to_hex(val)
+            return f'resize(unsigned\'(x"{hex_str}"), {width})'
+
+        def replace_bare_int(match):
+            """Replace bare large integer with unsigned'(x"HEX")."""
+            num_str = match.group(0)
+            try:
+                val = int(num_str)
+            except ValueError:
+                return num_str
+            if val <= max_int:
+                return num_str
+            hex_str = int_to_hex(val)
+            return f'unsigned\'(x"{hex_str}")'
+
+        lines = code.split('\n')
+        result = []
+        for line in lines:
+            # Skip pure comment lines
+            stripped = line.lstrip()
+            if stripped.startswith('--'):
+                result.append(line)
+                continue
+
+            # Split line into code part and comment part
+            comment_pos = line.find('--')
+            if comment_pos >= 0:
+                code_part = line[:comment_pos]
+                comment_part = line[comment_pos:]
+            else:
+                code_part = line
+                comment_part = ''
+
+            # First: fix to_unsigned(LARGE, width) → resize(unsigned'(x"HEX"), width)
+            code_part = re.sub(
+                r'to_unsigned\s*\(\s*(\d{10,})\s*,\s*(\d+)\s*\)',
+                replace_to_unsigned, code_part
+            )
+
+            # Then: fix remaining bare large integers in expressions
+            code_part = re.sub(r'(?<!["\w])(\d{10,})(?!["\w])', replace_bare_int, code_part)
+
+            result.append(code_part + comment_part)
+
+        return '\n'.join(result)
 
     @staticmethod
     def _fix_vhdl_stray_wait(code: str) -> str:
