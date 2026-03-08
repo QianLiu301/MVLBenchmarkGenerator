@@ -885,6 +885,7 @@ class MVLGenerator:
 CRITICAL RULES:
 1. Output ONLY {lang_upper} code, no markdown, no explanations
 2. Must include AT LEAST 20 test vectors
+3. Do NOT import unnecessary libraries (e.g. numpy, scipy, pandas) — use only Python builtins
 
 SPECIFICATIONS:
 - K-value: {k} (base-{k} system, each digit has {k} possible values: 0 to {k-1})
@@ -975,6 +976,7 @@ CRITICAL RULES:
 1. Output ONLY {lang_upper} code, no markdown, no explanations
 2. Must include AT LEAST 20 test vectors
 3. The code must compile and simulate WITHOUT errors
+4. For Python: do NOT import unnecessary libraries (e.g. numpy, scipy, pandas) — use only builtins
 
 SPECIFICATIONS:
 - K-value: {k} (base-{k} system)
@@ -1080,6 +1082,7 @@ CRITICAL RULES:
 1. Output ONLY {lang_upper} code, no markdown, no explanations
 2. Must include AT LEAST 20 test instructions in the test program
 3. The code must compile and simulate WITHOUT errors
+4. For Python: do NOT import unnecessary libraries (e.g. numpy, scipy, pandas) — use only builtins
 
 SPECIFICATIONS:
 - K-value: {k} (base-{k} system)
@@ -1444,6 +1447,7 @@ CRITICAL RULES:
 1. Output ONLY Python code, no markdown, no explanations
 2. Must be complete and runnable with python3
 3. if __name__ == "__main__" block MUST contain AT LEAST 20 test vectors — HARD REQUIREMENT
+4. Do NOT import unnecessary libraries (e.g. numpy, scipy, pandas) — use only Python builtins
 
 SPECIFICATIONS:
 - K-value: {k}
@@ -2185,6 +2189,28 @@ end architecture Behavioral;
         elif lang == 'python':
             if 'import random' not in code and 'random.' in code:
                 code = 'import random\n' + code
+
+            # Remove unused imports that LLM sometimes adds
+            unused_imports = {
+                'numpy': ('import numpy', 'np.', 'numpy.'),
+                'math': ('import math', 'math.'),
+                'sys': ('import sys', 'sys.'),
+                'os': ('import os', 'os.'),
+                'typing': ('from typing', ': List', ': Dict', ': Tuple', ': Optional', '-> List', '-> Dict', '-> Tuple', '-> Optional'),
+            }
+            for module, (import_pattern, *usage_patterns) in unused_imports.items():
+                if import_pattern in code:
+                    # Check if any usage pattern exists in the code (excluding the import line itself)
+                    code_without_imports = '\n'.join(
+                        line for line in code.split('\n')
+                        if import_pattern not in line
+                    )
+                    if not any(usage in code_without_imports for usage in usage_patterns):
+                        # Remove the import line(s) for this module
+                        code = '\n'.join(
+                            line for line in code.split('\n')
+                            if import_pattern not in line
+                        )
 
         elif lang == 'verilog':
             # Fix duplicate reg/wire declarations (keep the widest one)
