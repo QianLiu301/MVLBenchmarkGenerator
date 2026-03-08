@@ -481,28 +481,23 @@ class MVLGenerator:
   GF({k}) Multiplication Table (pre-computed, mathematically verified):
   {mul_readable}
 
-  The tables as arrays (copy directly into your code):
-  GF_ADD = {add_literal}
-  GF_MUL = {mul_literal}
-
+  {"" if language in ('vhdl', 'verilog') else "The tables as arrays (copy directly into your code):" + chr(10) + "  GF_ADD = " + add_literal + chr(10) + "  GF_MUL = " + mul_literal + chr(10)}
+  {"⚠️  DO NOT declare GF tables as VHDL array constants or custom types!" + chr(10) + "  Implement gf_add and gf_mul as PURE FUNCTIONS using nested case statements:" + chr(10) + "    function gf_add(x_val : unsigned; y_val : unsigned) return unsigned is" + chr(10) + "      variable r : unsigned(x_val" + "'" + "range) := (others => " + "'" + "0" + "'" + ");" + chr(10) + "    begin" + chr(10) + "      case to_integer(x_val) is" + chr(10) + "        when 0 => case to_integer(y_val) is" + chr(10) + "                    when 0 => r := to_unsigned(0, r" + "'" + "length);" + chr(10) + "                    when 1 => r := to_unsigned(1, r" + "'" + "length);" + chr(10) + "                    -- ... all " + str(k) + " values" + chr(10) + "                    when others => r := (others => " + "'" + "0" + "'" + ");" + chr(10) + "                  end case;" + chr(10) + "        -- ... all " + str(k) + " rows from the table above" + chr(10) + "        when others => r := (others => " + "'" + "0" + "'" + ");" + chr(10) + "      end case;" + chr(10) + "      return r;" + chr(10) + "    end function;" + chr(10) + "  Use the readable tables above to fill in every case value." if language == 'vhdl' else ""}
   OPERATION DEFINITIONS (all digit-wise, using the tables above):
-  - ADD: for each digit position i: result_digit[i] = GF_ADD[a_digit[i]][b_digit[i]]
-  - SUB: for each digit position i: find x such that GF_ADD[x][b_digit[i]] == a_digit[i] (additive inverse then add)
-  - MUL: convolution of digits using GF_MUL, then reduce each digit mod the field.
+  - ADD: for each digit position i: result_digit[i] = gf_add(a_digit[i], b_digit[i])
+  - SUB: for each digit position i: find x such that gf_add(x, b_digit[i]) == a_digit[i] (additive inverse then add)
+  - MUL: convolution of digits using gf_mul, then reduce each digit mod the field.
          For simplicity, implement as schoolbook polynomial multiplication:
          for i in range({bits}): for j in range({bits}):
-           if i+j < {bits}: result[i+j] = GF_ADD[result[i+j]][GF_MUL[a[i]][b[j]]]
-  - NEG: for each digit position i: find x such that GF_ADD[x][a_digit[i]] == 0
+           if i+j < {bits}: result[i+j] = gf_add(result[i+j], gf_mul(a[i], b[j]))
+  - NEG: for each digit position i: find x such that gf_add(x, a_digit[i]) == 0
          (additive inverse in GF({k}), using the addition table)
          In GF({p}^{n}), characteristic is {p}. {"Since char=2, every element is its own additive inverse, so NEG(a) = a (identity)." if p == 2 else f"For each digit d, negate each polynomial coefficient mod {p}."}
-  - INC: add 1 to the least significant digit using GF_ADD: result_digit[0] = GF_ADD[a_digit[0]][1], rest unchanged
-  - DEC: subtract 1 from the least significant digit: find additive inverse of 1, then GF_ADD
+  - INC: add 1 to the least significant digit using gf_add: result_digit[0] = gf_add(a_digit[0], to_unsigned(1, N)), rest unchanged
+  - DEC: subtract 1 from the least significant digit: find additive inverse of 1, then gf_add
 
   HELPER FUNCTIONS NEEDED:
-  1. to_digits(value, k={k}, width={bits}): convert integer to array of {bits} base-{k} digits
-  2. from_digits(digits, k={k}): convert digit array back to integer
-  3. gf_add_digits(a_digits, b_digits): digit-wise addition using GF_ADD table
-  4. gf_mul_digits(a_digits, b_digits): polynomial multiplication using GF_MUL table
+  {"1. gf_add(x_val, y_val) -> unsigned: GF addition via nested case statements (see example above)" + chr(10) + "  2. gf_mul(x_val, y_val) -> unsigned: GF multiplication via nested case statements" + chr(10) + "  3. Extract digits using slicing: a_d_i := unsigned(a(i*W+W-1 downto i*W))" + chr(10) + "  4. Reassemble result: result <= std_logic_vector(r_d_N & ... & r_d_1 & r_d_0)" if language == 'vhdl' else "1. to_digits(value, k=" + str(k) + ", width=" + str(bits) + "): convert integer to array of " + str(bits) + " base-" + str(k) + " digits" + chr(10) + "  2. from_digits(digits, k=" + str(k) + "): convert digit array back to integer" + chr(10) + "  3. gf_add_digits(a_digits, b_digits): digit-wise addition using GF_ADD table" + chr(10) + "  4. gf_mul_digits(a_digits, b_digits): polynomial multiplication using GF_MUL table"}
 
   FLAGS:
   - Z (zero): result == 0
@@ -1656,25 +1651,47 @@ RULE 10 — USE VARIABLES (NOT SIGNALS) INSIDE PROCESS for intermediate results.
 
 {common_rules}
 
-⚠️ CRITICAL VHDL SYNTAX RULES FOR GF TABLES:
-- GF table elements are unsigned({bits_per_digit-1} downto 0) = {bits_per_digit} bits wide.
-  {hex_warning}
-  CORRECT: use {bits_per_digit}-bit BINARY string literals, e.g. {example_lits}
-  Example table row: ({example_row})
-- Function return types MUST be unconstrained: "return unsigned" NOT "return unsigned(N downto 0)"
-  WRONG:  function foo(x : unsigned) return unsigned({bits_per_digit-1} downto 0) is
-  CORRECT: function foo(x : unsigned({bits_per_digit-1} downto 0); y : unsigned({bits_per_digit-1} downto 0)) return unsigned is
-- Do NOT declare custom array types with constrained element types. Instead use individual variables.
-  WRONG:  type digit_array is array(0 to {bits-1}) of unsigned({bits_per_digit-1} downto 0);
-  CORRECT: use individual variables: variable a_d0 : unsigned({bits_per_digit-1} downto 0); etc.
-  OR use unconstrained arrays with proper type definitions.
-- Use to_unsigned(N, {bits_per_digit}) for digit constants, NOT hex literals.
+⚠️ CRITICAL VHDL RULES FOR GF TABLES — READ CAREFULLY:
+  ❌ DO NOT declare constant arrays, custom types, or 2D lookup tables for GF operations.
+  ❌ DO NOT use string literals like "0103" — VHDL strings only accept '0'/'1' characters.
+  ❌ DO NOT use (others => (others => '0')) — unsigned is NOT a composite type.
+  ❌ DO NOT use type/constant with the same identifier name.
+
+  ✅ Implement gf_add and gf_mul as PURE FUNCTIONS with nested case statements.
+  ✅ Each function takes two unsigned({bits_per_digit-1} downto 0) parameters and returns unsigned.
+  ✅ Use to_unsigned(N, {bits_per_digit}) for return values inside case branches.
+  ✅ Function return type MUST be unconstrained: "return unsigned" (NOT "return unsigned(N downto 0)")
+  ✅ Function parameters MUST NOT shadow entity ports — use x_val, y_val (NOT a, b).
+
+  Example gf_add function structure:
+    function gf_add(x_val : unsigned({bits_per_digit-1} downto 0); y_val : unsigned({bits_per_digit-1} downto 0)) return unsigned is
+      variable r : unsigned({bits_per_digit-1} downto 0);
+    begin
+      case to_integer(x_val) is
+        when 0 =>
+          case to_integer(y_val) is
+            when 0 => r := to_unsigned(0, {bits_per_digit});
+            when 1 => r := to_unsigned(1, {bits_per_digit});
+            -- ... fill from GF addition table row 0
+            when others => r := to_unsigned(0, {bits_per_digit});
+          end case;
+        when 1 =>
+          case to_integer(y_val) is
+            -- ... fill from GF addition table row 1
+            when others => r := to_unsigned(0, {bits_per_digit});
+          end case;
+        -- ... all {k} rows
+        when others => r := to_unsigned(0, {bits_per_digit});
+      end case;
+      return r;
+    end function;
+
+  Declare these functions in the architecture declarative region (before 'begin').
 
 IMPLEMENTATION APPROACH:
 - Use individual digit variables: a_d0, a_d1, ..., a_d{bits-1} of unsigned({bits_per_digit-1} downto 0)
 - Extract digits: a_d_i := unsigned(a(i*{bits_per_digit}+{bits_per_digit-1} downto i*{bits_per_digit}))
-- Implement GF_ADD and GF_MUL as VHDL functions using case statements on to_integer(a) and to_integer(b)
-- ALL operations MUST use digit-wise GF({k}) table lookups as described in ALGEBRAIC STRUCTURE.
+- ALL operations MUST use digit-wise gf_add/gf_mul function calls.
 - Carry and negative flags are always '0' for GF field arithmetic.
 - Zero flag: check if result = all zeros."""
         else:
@@ -2200,6 +2217,9 @@ end architecture Behavioral;
             code = re.sub(r'(\w)!\s*(<=(?!=))', r'\1 \2', code)
             code = re.sub(r'(\w)!\s*(:=)', r'\1 \2', code)
 
+            # Fix invalid GF lookup table declarations (extension field errors)
+            code = self._fix_vhdl_gf_tables(code)
+
             # Fix inline if-then-else expressions (not valid VHDL)
             # e.g. "zero <= (if is_zero then '1' else '0');" -> "zero <= '1' when is_zero else '0';"
             # Also handle without parens: "sig <= if cond then val1 else val2;"
@@ -2243,6 +2263,72 @@ end architecture Behavioral;
             code = self._fix_vhdl_missing_wait(code)
 
         return code
+
+    @staticmethod
+    def _fix_vhdl_gf_tables(code: str) -> str:
+        """Fix invalid GF lookup table declarations that LLMs generate for extension fields.
+
+        Common LLM errors:
+        1. Nested (others => (others => '0')) on unsigned — unsigned is not composite
+        2. Type and constant sharing the same identifier (e.g., type gf_add_table / constant gf_add_table)
+        3. String literals with non-std_logic chars (e.g., "0103" where '3' is invalid)
+        4. Custom 2D array type declarations with constrained unsigned elements
+        """
+        lines = code.split('\n')
+        result_lines = []
+        skip_block = False
+        brace_depth = 0
+
+        for i, line in enumerate(lines):
+            stripped = line.strip().lower()
+
+            # --- Fix 1 & 2: Remove invalid GF table constant/type declarations ---
+            # Detect: type ... is array ... of unsigned(...)
+            if re.match(r'\s*type\s+\w*(gf|galois|lookup|lut)\w*\s+is\s+array', stripped, re.IGNORECASE):
+                result_lines.append('-- removed invalid GF table type: ' + line.strip())
+                continue
+
+            # Detect: constant GF_ADD/GF_MUL : ... := (others => (others => ...))
+            if re.match(r'\s*constant\s+\w*(gf_add|gf_mul|gf_sub)\w*\s*:', stripped, re.IGNORECASE):
+                if '(others' in stripped and 'others' in stripped[stripped.index('(others') + 8:]:
+                    # Nested others — definitely invalid for unsigned
+                    result_lines.append('-- removed invalid nested-others GF constant: ' + line.strip())
+                    continue
+
+            # Detect: constant ... with same name as a prior type (naming collision)
+            # We handle this by checking if a type with same base name was already removed
+            if re.match(r'\s*constant\s+(\w+)\s*:\s*\1\s', stripped, re.IGNORECASE):
+                # constant FOO : FOO := ... (type and constant same name)
+                result_lines.append('-- removed self-typed GF constant: ' + line.strip())
+                continue
+
+            # --- Fix 3: String literals with invalid std_logic characters ---
+            # In VHDL, std_logic string literals can only contain: 'U','X','0','1','Z','W','L','H','-'
+            # LLMs generate things like "0103" or "0213" for GF table values
+            valid_sl_chars = set('UuXx01ZzWwLlHh-')
+            str_match = re.finditer(r'"([^"]*)"', line)
+            fixed_line = line
+            for m in str_match:
+                literal = m.group(1)
+                # Skip empty strings and hex literals (preceded by x or X)
+                if not literal:
+                    continue
+                prefix_pos = m.start() - 1
+                if prefix_pos >= 0 and line[prefix_pos] in 'xXoObB':
+                    continue
+                # Check if this looks like a bit string literal with invalid chars
+                if len(literal) >= 2 and all(c.isdigit() for c in literal):
+                    has_invalid = any(c not in valid_sl_chars for c in literal)
+                    if has_invalid:
+                        # This is likely a GF table value like "0103" — convert to integer
+                        # Try to interpret as a sequence of digit values
+                        # Replace entire line with a comment since we can't safely fix the context
+                        fixed_line = '-- removed invalid GF string literal: ' + line.strip()
+                        break
+
+            result_lines.append(fixed_line)
+
+        return '\n'.join(result_lines)
 
     @staticmethod
     def _fix_vhdl_inline_if(code: str) -> str:
