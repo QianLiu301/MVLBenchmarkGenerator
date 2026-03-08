@@ -2013,6 +2013,9 @@ Generate the complete VHDL code (entity + architecture + testbench) now:
             # Move variable declarations from architecture body into process
             code = self._fix_vhdl_arch_variables(code)
 
+            # Move variable declarations from inside process statements to declarative region
+            code = self._fix_vhdl_process_inner_variables(code)
+
             # Fix function parameter names that shadow entity ports (GHDL -Whide error)
             code = self._fix_vhdl_port_shadows(code)
 
@@ -2130,6 +2133,87 @@ Generate the complete VHDL code (entity + architecture + testbench) now:
                     result.extend(moved)
                 if line is not None:
                     result.append(line)
+
+        return '\n'.join(result)
+
+    @staticmethod
+    def _fix_vhdl_process_inner_variables(code: str) -> str:
+        """Move variable declarations from inside process statements to the declarative region.
+
+        VHDL requires all variable declarations to appear between 'process(...)' and 'begin',
+        NOT after 'begin' in the statement region. LLMs sometimes declare variables inline
+        (e.g., inside case/when branches or between statements).
+
+        Strategy: for each process, find variable declarations after the process 'begin'
+        and move them to just before 'begin'.
+        """
+        lines = code.split('\n')
+        result = list(lines)
+
+        # Find all process blocks: track (process_line, begin_line) pairs
+        i = 0
+        while i < len(result):
+            stripped = result[i].strip().lower()
+            # Detect process start
+            if re.match(r'(\w+\s*:\s*)?process\b', stripped):
+                proc_start = i
+                # Find the matching 'begin'
+                proc_begin = None
+                depth = 0
+                for j in range(i + 1, len(result)):
+                    s = result[j].strip().lower()
+                    # Skip nested function/procedure begin/end
+                    if re.match(r'(impure\s+)?function\s+', s) or re.match(r'procedure\s+', s):
+                        depth += 1
+                    elif re.match(r'end\s+(function|procedure)\b', s):
+                        depth = max(0, depth - 1)
+                    elif s == 'begin' and depth == 0:
+                        proc_begin = j
+                        break
+                if proc_begin is None:
+                    i += 1
+                    continue
+
+                # Find 'end process'
+                proc_end = None
+                for j in range(proc_begin + 1, len(result)):
+                    s = result[j].strip().lower()
+                    if re.match(r'end\s+process\b', s):
+                        proc_end = j
+                        break
+                if proc_end is None:
+                    i += 1
+                    continue
+
+                # Scan statement region for variable declarations
+                stray_indices = []
+                for j in range(proc_begin + 1, proc_end):
+                    s = result[j].strip().lower()
+                    if re.match(r'variable\s+', s):
+                        stray_indices.append(j)
+
+                if stray_indices:
+                    # Collect declarations and remove from statement region
+                    moved = []
+                    for idx in stray_indices:
+                        orig = result[idx].strip()
+                        # Use same indentation as existing declarations near proc_begin
+                        moved.append('        ' + orig)
+                        result[idx] = None  # mark for removal
+                        print(f"   ⚠️ Moved variable to process declarative region: {orig[:80]}")
+
+                    # Insert just before 'begin'
+                    new_result = []
+                    for j, line in enumerate(result):
+                        if j == proc_begin:
+                            new_result.extend(moved)
+                        if line is not None:
+                            new_result.append(line)
+                    result = new_result
+
+                i = proc_start + 1
+            else:
+                i += 1
 
         return '\n'.join(result)
 
