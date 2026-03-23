@@ -65,8 +65,14 @@ benchmark_validator = BenchmarkValidator(project_root=str(PROJECT_ROOT))
 # ============================================================
 
 @app.route('/')
+def landing():
+    """Serve landing page"""
+    return send_from_directory('templates', 'landing.html')
+
+
+@app.route('/app')
 def index():
-    """Serve main page"""
+    """Serve main tool page"""
     return send_from_directory('templates', 'index.html')
 
 

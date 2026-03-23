@@ -1,0 +1,575 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LLM-based MVL Benchmark Generator</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #ffffff;
+            color: #1e293b;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .hero {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 60px 24px 40px;
+            text-align: center;
+        }
+
+        .logo {
+            font-size: 64px;
+            margin-bottom: 32px;
+            line-height: 1;
+        }
+
+        .title {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 24px;
+            line-height: 1.2;
+        }
+
+        .title .highlight {
+            color: #d97707;
+        }
+
+        .description {
+            font-size: 1.1rem;
+            color: #64748b;
+            max-width: 640px;
+            line-height: 1.7;
+            margin-bottom: 40px;
+        }
+
+        .paper-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 12px 24px;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            color: #475569;
+            text-decoration: none;
+            font-size: 0.95rem;
+            transition: all 0.2s;
+            margin-bottom: 24px;
+        }
+
+        .paper-link:hover {
+            border-color: #d97707;
+            color: #d97707;
+            background: #fffbeb;
+        }
+
+        .start-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            padding: 18px 48px;
+            background: linear-gradient(135deg, #d97707 0%, #f59e0b 100%);
+            color: #fff;
+            border: none;
+            border-radius: 12px;
+            font-size: 1.15rem;
+            font-weight: 600;
+            cursor: pointer;
+            text-decoration: none;
+            transition: all 0.2s;
+            box-shadow: 0 4px 14px rgba(217, 119, 7, 0.3);
+        }
+
+        .start-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(217, 119, 7, 0.4);
+        }
+
+        .start-btn:active {
+            transform: translateY(0);
+        }
+
+        /* Features */
+        .features {
+            display: flex;
+            justify-content: center;
+            gap: 64px;
+            padding: 48px 24px;
+            max-width: 900px;
+            margin: 0 auto;
+        }
+
+        .feature {
+            text-align: center;
+            max-width: 220px;
+        }
+
+        .feature-icon {
+            font-size: 40px;
+            margin-bottom: 16px;
+        }
+
+        .feature h3 {
+            font-size: 1rem;
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: #1e293b;
+        }
+
+        .feature p {
+            font-size: 0.875rem;
+            color: #64748b;
+            line-height: 1.5;
+        }
+
+        /* Footer */
+        .footer {
+            text-align: center;
+            padding: 32px 24px;
+            color: #94a3b8;
+            font-size: 0.875rem;
+        }
+
+        .footer .authors {
+            margin-bottom: 8px;
+        }
+
+        .footer a {
+            color: #d97707;
+            text-decoration: none;
+        }
+
+        .footer a:hover {
+            text-decoration: underline;
+        }
+
+        /* Password Modal */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-overlay.active {
+            display: flex;
+        }
+
+        .password-box {
+            background: #fff;
+            border-radius: 12px;
+            padding: 32px;
+            width: 100%;
+            max-width: 400px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
+            text-align: center;
+        }
+
+        .password-box h2 {
+            font-size: 1.3rem;
+            margin-bottom: 8px;
+        }
+
+        .password-box .subtitle {
+            color: #64748b;
+            font-size: 0.9rem;
+            margin-bottom: 20px;
+        }
+
+        .password-box input {
+            width: 100%;
+            padding: 12px 16px;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 1rem;
+            outline: none;
+            transition: border-color 0.2s;
+            font-family: inherit;
+        }
+
+        .password-box input:focus {
+            border-color: #d97707;
+        }
+
+        .password-box input.error {
+            border-color: #ef4444;
+            animation: shake 0.3s ease-in-out;
+        }
+
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-6px); }
+            75% { transform: translateX(6px); }
+        }
+
+        .error-msg {
+            color: #ef4444;
+            font-size: 0.85rem;
+            margin-top: 8px;
+            min-height: 20px;
+        }
+
+        .password-box .submit-btn {
+            width: 100%;
+            padding: 12px;
+            margin-top: 16px;
+            background: linear-gradient(135deg, #d97707 0%, #f59e0b 100%);
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-family: inherit;
+        }
+
+        .password-box .submit-btn:hover {
+            opacity: 0.9;
+        }
+
+        .password-box .cancel-btn {
+            width: 100%;
+            padding: 10px;
+            margin-top: 8px;
+            background: none;
+            color: #94a3b8;
+            border: none;
+            font-size: 0.9rem;
+            cursor: pointer;
+            font-family: inherit;
+        }
+
+        .password-box .cancel-btn:hover {
+            color: #64748b;
+        }
+
+        /* Legal Modal */
+        .legal-modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .legal-modal-overlay.active {
+            display: flex;
+        }
+
+        .legal-modal {
+            background: #fff;
+            border-radius: 12px;
+            width: 90%;
+            max-width: 640px;
+            max-height: 80vh;
+            overflow-y: auto;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
+        }
+
+        .legal-modal-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 20px 24px;
+            border-bottom: 1px solid #e2e8f0;
+            position: sticky;
+            top: 0;
+            background: #fff;
+            border-radius: 12px 12px 0 0;
+        }
+
+        .legal-modal-header h2 {
+            font-size: 1.1rem;
+        }
+
+        .legal-modal-close {
+            background: none;
+            border: none;
+            font-size: 1.5rem;
+            cursor: pointer;
+            color: #94a3b8;
+            line-height: 1;
+        }
+
+        .legal-modal-close:hover {
+            color: #1e293b;
+        }
+
+        .legal-content {
+            padding: 24px;
+            font-size: 0.9rem;
+            color: #475569;
+            line-height: 1.7;
+        }
+
+        .legal-content h3 {
+            font-size: 0.95rem;
+            font-weight: 600;
+            margin: 20px 0 8px;
+            color: #1e293b;
+        }
+
+        .legal-content h3:first-child {
+            margin-top: 0;
+        }
+
+        .legal-content p {
+            margin-bottom: 12px;
+        }
+
+        .legal-content a {
+            color: #d97707;
+            text-decoration: none;
+        }
+
+        .legal-content a:hover {
+            text-decoration: underline;
+        }
+
+        /* Responsive */
+        @media (max-width: 640px) {
+            .title {
+                font-size: 1.75rem;
+            }
+
+            .description {
+                font-size: 1rem;
+            }
+
+            .features {
+                flex-direction: column;
+                align-items: center;
+                gap: 32px;
+            }
+
+            .start-btn {
+                padding: 16px 36px;
+                font-size: 1.05rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Hero Section -->
+    <section class="hero">
+        <div class="logo">🔢</div>
+        <h1 class="title"><span class="highlight">LLM</span>-based MVL <span class="highlight">Benchmark</span> Generator</h1>
+        <p class="description">
+            An automated pipeline for generating Multi-Valued Logic ALU designs and verification benchmarks using Large Language Models. Transform natural language specifications into C, Python, Verilog, and VHDL code with golden-model validation.
+        </p>
+        <a href="https://arxiv.org/abs/2505.06053" target="_blank" rel="noopener" class="paper-link">
+            📄 Read the Paper: arXiv:2505.06053
+        </a>
+        <br>
+        <button class="start-btn" id="startBtn">🚀 Start Using Tool</button>
+    </section>
+
+    <!-- Features Section -->
+    <section class="features">
+        <div class="feature">
+            <div class="feature-icon">🤖</div>
+            <h3>Multi-LLM Support</h3>
+            <p>GPT, Gemini, Groq, DeepSeek, Mistral, Qwen, Together, Grok</p>
+        </div>
+        <div class="feature">
+            <div class="feature-icon">⚡</div>
+            <h3>Automated Pipeline</h3>
+            <p>Generate → Simulate → Validate with golden-model comparison</p>
+        </div>
+        <div class="feature">
+            <div class="feature-icon">📊</div>
+            <h3>Multi-Language Output</h3>
+            <p>C, Python, Verilog, VHDL with cross-language validation</p>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="authors">
+            Authors: <a href="mailto:drechsler@uni-bremen.de">Rolf Drechsler</a> , <a href="mailto:treebush302@gmail.com">Qian Liu</a>
+        </div>
+        <a href="#" id="legalLink">Imprint / Legal Notice</a>
+    </footer>
+
+    <!-- Password Modal -->
+    <div class="modal-overlay" id="passwordModal">
+        <div class="password-box">
+            <h2>🔒 Access Required</h2>
+            <p class="subtitle">Please enter the password to continue</p>
+            <input type="password" id="passwordInput" placeholder="Enter password..." autocomplete="off">
+            <div class="error-msg" id="passwordError"></div>
+            <button class="submit-btn" id="passwordSubmit">Enter</button>
+            <button class="cancel-btn" id="passwordCancel">Cancel</button>
+        </div>
+    </div>
+
+    <!-- Legal Modal -->
+    <div class="legal-modal-overlay" id="legalModal">
+        <div class="legal-modal">
+            <div class="legal-modal-header">
+                <h2>Imprint / Legal Notice</h2>
+                <button class="legal-modal-close" id="legalClose">&times;</button>
+            </div>
+            <div class="legal-content">
+                <p><strong>Information provided according to §5 German Telemedia Act (TMG)</strong></p>
+
+                <h3>Institution</h3>
+                <p>
+                    <strong>University of Bremen</strong><br>
+                    Faculty 3<br>
+                    Group of Computer Architecture (AGRA)<br>
+                    Bibliothekstr. 5<br>
+                    28359 Bremen<br>
+                    Germany
+                </p>
+
+                <h3>Contact</h3>
+                <p>
+                    📧 Email: <a href="mailto:drechsler@uni-bremen.de">drechsler@uni-bremen.de</a><br>
+                    📧 Email: <a href="mailto:treebush302@gmail.com">treebush302@gmail.com</a>
+                </p>
+
+                <h3>Responsible for Content (according to §55(2) RStV)</h3>
+                <p>
+                    Prof. Dr. Rolf Drechsler<br>
+                    Qian Liu
+                </p>
+
+                <h3>Research Disclaimer</h3>
+                <p>
+                    This website and the associated tools are provided exclusively for academic research and
+                    educational purposes. The generated specifications, test scenarios, verification artifacts,
+                    and source code are experimental in nature and are provided without any warranty. They must
+                    not be used in safety-critical or production environments without independent verification
+                    and validation.
+                </p>
+
+                <h3>Liability for Content</h3>
+                <p>
+                    As a service provider, we are responsible for our own content on these pages in accordance with
+                    general laws (§7(1) TMG). However, according to §§8–10 TMG, we are not obliged to monitor
+                    transmitted or stored third-party information or to investigate circumstances that indicate
+                    illegal activity. Liability is only possible from the time of knowledge of a concrete infringement.
+                    Upon becoming aware of such violations, we will remove the affected content immediately.
+                </p>
+
+                <h3>Liability for Links (GitHub / arXiv)</h3>
+                <p>
+                    This website contains links to external third-party platforms, in particular GitHub (code
+                    repositories) and arXiv (scientific publications), over whose content we have no control.
+                    Therefore, we cannot assume any liability for these external contents. The respective platform
+                    operators are solely responsible for the content of the linked pages.
+                </p>
+
+                <h3>Privacy</h3>
+                <p>
+                    This website does not collect, store, or process any personal data. No cookies are used,
+                    and no tracking or analytics services are employed. External fonts are loaded from Google Fonts.
+                </p>
+
+                <h3>External Links (GitHub and arXiv)</h3>
+                <p>
+                    This website contains links to external services, including GitHub and arXiv. When clicking on
+                    these links, you leave this website and are subject to the terms and privacy policies of the external service.
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const SESSION_KEY = 'mvl_auth';
+
+        // If already authenticated, go directly to tool
+        if (sessionStorage.getItem(SESSION_KEY) === 'authenticated') {
+            window.location.href = '/app';
+        }
+
+        // Start button -> show password modal
+        document.getElementById('startBtn').addEventListener('click', function() {
+            document.getElementById('passwordModal').classList.add('active');
+            setTimeout(() => document.getElementById('passwordInput').focus(), 100);
+        });
+
+        // Password check
+        const input = document.getElementById('passwordInput');
+        const errorMsg = document.getElementById('passwordError');
+
+        function checkPassword() {
+            const pwd = input.value;
+            if (pwd === 'rolfliu2026') {
+                sessionStorage.setItem(SESSION_KEY, 'authenticated');
+                window.location.href = '/app';
+            } else {
+                input.classList.add('error');
+                errorMsg.textContent = 'Incorrect password. Please try again.';
+                setTimeout(() => input.classList.remove('error'), 300);
+            }
+        }
+
+        document.getElementById('passwordSubmit').addEventListener('click', checkPassword);
+        input.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') checkPassword();
+        });
+        input.addEventListener('input', function() {
+            errorMsg.textContent = '';
+        });
+
+        // Cancel
+        document.getElementById('passwordCancel').addEventListener('click', function() {
+            document.getElementById('passwordModal').classList.remove('active');
+            input.value = '';
+            errorMsg.textContent = '';
+        });
+
+        // Close modal on overlay click
+        document.getElementById('passwordModal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                this.classList.remove('active');
+                input.value = '';
+                errorMsg.textContent = '';
+            }
+        });
+
+        // Legal modal
+        document.getElementById('legalLink').addEventListener('click', function(e) {
+            e.preventDefault();
+            document.getElementById('legalModal').classList.add('active');
+        });
+
+        document.getElementById('legalClose').addEventListener('click', function() {
+            document.getElementById('legalModal').classList.remove('active');
+        });
+
+        document.getElementById('legalModal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                this.classList.remove('active');
+            }
+        });
+    </script>
+</body>
+</html>
