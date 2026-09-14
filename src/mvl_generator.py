@@ -195,6 +195,29 @@ class MVLGenerator:
             print(f"❌ Unexpected error setting up provider '{self.llm_provider_name}': {e}")
             return None
 
+    def _llm_call_state(self) -> Dict:
+        """Snapshot of what the last LLM call actually did (see LLMProvider._reset_call_state).
+
+        Taken right after the main generation call and BEFORE any follow-up
+        calls (test-coverage enhancement) so it reflects the code-producing request.
+        """
+        llm = self.llm
+        requested = getattr(llm, 'model', None) or self.model
+        responded = getattr(llm, 'last_response_model', None)
+        return {
+            'requested_model': requested,
+            'response_model': responded,
+            'model_match': (responded == requested) if (requested and responded) else None,
+            'llm_error': getattr(llm, 'last_error', None),
+            'fallback_used': bool(getattr(llm, 'fallback_used', False)),
+        }
+
+    def _describe_llm_failure(self, call_state: Dict) -> str:
+        """Human-readable reason when the provider returned template text instead of an answer."""
+        reason = call_state.get('llm_error') or 'no response from API'
+        return (f'LLM "{self.llm_provider_name}" (model {call_state.get("requested_model")}) '
+                f'did not return a real answer: {reason}')
+
     def _setup_output_dir(self, output_dir: Optional[str], project_root: Optional[str]) -> Path:
         """Setup output directory"""
         if output_dir:
@@ -657,13 +680,19 @@ class MVLGenerator:
         print(f"\n🤖 Calling {self.llm_provider_name.upper()} API (model: {actual_model})...")
 
         try:
+            self.llm._reset_call_state()
             response = self.llm._call_api(
                 prompt,
                 max_tokens=16384,
                 system_prompt="You are an expert programmer. Generate clean, compilable code without any explanations."
             )
+            call_state = self._llm_call_state()
+            if call_state['fallback_used']:
+                return {'success': False,
+                        'error': self._describe_llm_failure(call_state),
+                        **call_state}
 
-            print(f"✅ LLM response received ({len(response)} chars)")
+            print(f"✅ LLM response received ({len(response)} chars) from model: {call_state['response_model'] or '(not reported)'}")
 
             # Extract code
             code = self._extract_code(response, language)
@@ -702,7 +731,8 @@ class MVLGenerator:
                 'module_type': module_type,
                 'logic_type': resolved_logic,
                 'llm': self.llm_provider_name,
-                'validation_warnings': validation_warnings
+                'validation_warnings': validation_warnings,
+                **call_state
             }
 
         except Exception as e:
@@ -778,11 +808,17 @@ class MVLGenerator:
             full_response = ""
             system_prompt = "You are an expert programmer. Generate clean, compilable code without any explanations."
 
+            self.llm._reset_call_state()
             for chunk in self.llm._call_api_stream(prompt, max_tokens=16384, system_prompt=system_prompt):
                 full_response += chunk
                 yield ("chunk", chunk)
 
-            print(f"✅ LLM streaming response received ({len(full_response)} chars)")
+            call_state = self._llm_call_state()
+            if call_state['fallback_used']:
+                yield ("error", self._describe_llm_failure(call_state))
+                return
+
+            print(f"✅ LLM streaming response received ({len(full_response)} chars) from model: {call_state['response_model'] or '(not reported)'}")
 
             # Process the full response
             code = self._extract_code(full_response, language)
@@ -819,7 +855,8 @@ class MVLGenerator:
                 'module_type': module_type,
                 'logic_type': resolved_logic,
                 'llm': self.llm_provider_name,
-                'validation_warnings': validation_warnings
+                'validation_warnings': validation_warnings,
+                **call_state
             })
 
         except Exception as e:

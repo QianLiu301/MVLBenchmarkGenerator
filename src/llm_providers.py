@@ -62,6 +62,30 @@ class LLMProvider(ABC):
 
         return proxies
 
+    # ------------------------------------------------------------------
+    # Per-call telemetry: what actually answered.
+    # Providers keep their retry / fallback behaviour, but the caller can
+    # now see (a) the model name the API reported in its response, (b) the
+    # last error, and (c) whether template text was returned in place of a
+    # real answer. mvl_generator uses this to refuse to save fallback text
+    # as "generated code" and to show requested vs. responded model.
+    # ------------------------------------------------------------------
+    def _reset_call_state(self):
+        self.last_response_model = None
+        self.last_error = None
+        self.fallback_used = False
+
+    def _note_model(self, name):
+        if name:
+            self.last_response_model = str(name)
+
+    def _note_error(self, err):
+        # Gemini puts the API key in the query string; never let it reach logs / the UI.
+        self.last_error = re.sub(r'([?&]key=)[^&\s]+', r'\1***', str(err))
+
+    def _note_fallback(self):
+        self.fallback_used = True
+
     @abstractmethod
     def generate_scenario_description(
             self,
@@ -195,6 +219,7 @@ class GeminiProvider(LLMProvider):
                     return response.text
 
                 except errors.ServerError as e:
+                    self._note_error(e)
                     # 处理 5xx 错误(包括 503 overloaded)
                     last_error = e
                     if attempt < self.max_retries:
@@ -203,6 +228,7 @@ class GeminiProvider(LLMProvider):
                         break  # 这个模型的重试次数用完了
 
                 except Exception as e:
+                    self._note_error(e)
                     # 其他错误,不需要重试
                     last_error = e
                     break
@@ -256,12 +282,14 @@ class GeminiProvider(LLMProvider):
 
                 response.raise_for_status()
                 result = response.json()
+                self._note_model(result.get('modelVersion') or model_name)
 
                 if 'candidates' in result and result['candidates'][0]['content']['parts']:
                     return result['candidates'][0]['content']['parts'][0]['text'].strip()
                 return "Error: No content generated."
 
             except requests.exceptions.HTTPError as e:
+                self._note_error(e)
                 print(f"⚠️  Model {model_name} failed: {e}")
                 if hasattr(e, 'response') and e.response is not None:
                     try:
@@ -273,12 +301,14 @@ class GeminiProvider(LLMProvider):
                 continue
 
             except Exception as e:
+                self._note_error(e)
                 print(f"⚠️  Unexpected error with {model_name}: {e}")
                 last_error = str(e)
                 continue
 
         # 所有模型都失败
         print(f"❌ All Gemini models failed. Last error: {last_error}")
+        self._note_error(last_error)
         return self._fallback_description(prompt)
 
     def _call_api_stream(self, prompt: str, max_tokens: int = 8192, system_prompt: str = None):
@@ -336,6 +366,7 @@ class GeminiProvider(LLMProvider):
 
                     try:
                         data = json.loads(json_str)
+                        self._note_model(data.get('modelVersion'))
                         if 'candidates' in data:
                             for candidate in data['candidates']:
                                 if 'content' in candidate:
@@ -346,6 +377,7 @@ class GeminiProvider(LLMProvider):
                         continue
 
         except Exception as e:
+            self._note_error(e)
             print(f"⚠️ Gemini streaming failed: {e}, falling back to REST API")
             result = self._call_api_rest(prompt, max_tokens, system_prompt)
             if result:
@@ -403,6 +435,7 @@ Generate a concise Feature description (2-4 sentences):
         return self._call_api(prompt, max_tokens=200)
 
     def _fallback_description(self, prompt: str) -> str:
+        self._note_fallback()
         """
         🔧 修复: Fallback 返回 JSON 格式以支持 intent 解析
 
@@ -467,8 +500,10 @@ class GroqProvider(LLMProvider):
             response = requests.post(self.api_url, headers=headers, json=payload, timeout=30, proxies=proxies)
             response.raise_for_status()
             result = response.json()
+            self._note_model(result.get('model'))
             return result['choices'][0]['message']['content'].strip()
         except Exception as e:
+            self._note_error(e)
             print(f"⚠️  Groq API request failed: {e}")
             return self._fallback_description(prompt)
 
@@ -520,6 +555,7 @@ class GroqProvider(LLMProvider):
                                 break
                             try:
                                 chunk_data = json.loads(data)
+                                self._note_model(chunk_data.get('model'))
                                 if 'choices' in chunk_data and len(chunk_data['choices']) > 0:
                                     delta = chunk_data['choices'][0].get('delta', {})
                                     content = delta.get('content', '')
@@ -529,6 +565,7 @@ class GroqProvider(LLMProvider):
                                 continue
 
             except Exception as e:
+                self._note_error(e)
                 print(f"⚠️ Groq streaming failed: {e}")
                 result = self._call_api(prompt, max_tokens, system_prompt)
                 if result:
@@ -579,6 +616,7 @@ Generate a concise Feature description (2-4 sentences):
         return self._call_api(prompt, max_tokens=200)
 
     def _fallback_description(self, prompt: str) -> str:
+        self._note_fallback()
         """
         🔧 修复: Fallback 返回 JSON 格式以支持 intent 解析
         """
@@ -697,6 +735,7 @@ class DeepSeekProvider(LLMProvider):
 
                 if response.status_code == 200:
                     result = response.json()
+                    self._note_model(result.get('model'))
                     content = result['choices'][0]['message']['content'].strip()
 
                     # ============================================================
@@ -751,6 +790,7 @@ class DeepSeekProvider(LLMProvider):
                     return self._fallback_description(prompt)
 
             except requests.exceptions.RequestException as e:
+                self._note_error(e)
                 print(f"   ❌ [ERROR] Network error: {type(e).__name__}: {str(e)}")
                 if attempt < max_retries - 1:
                     print(f"   🔄 [DEBUG] Retrying after network error...")
@@ -761,6 +801,7 @@ class DeepSeekProvider(LLMProvider):
                     return self._fallback_description(prompt)
 
             except Exception as e:
+                self._note_error(e)
                 print(f"   ❌ [ERROR] Unexpected error: {type(e).__name__}: {str(e)}")
                 if attempt < max_retries - 1:
                     print(f"   🔄 [DEBUG] Retrying after unexpected error...")
@@ -820,6 +861,7 @@ Generate a concise Feature description (2-4 sentences):
         return self._call_api(prompt, max_tokens=200)
 
     def _fallback_description(self, prompt: str) -> str:
+        self._note_fallback()
         """
         🔧 修复: Fallback 返回 JSON 格式以支持 intent 解析
         """
@@ -876,6 +918,7 @@ Generate a concise Feature description (2-4 sentences):
                             break
                         try:
                             chunk_data = json.loads(data)
+                            self._note_model(chunk_data.get('model'))
                             if 'choices' in chunk_data and len(chunk_data['choices']) > 0:
                                 delta = chunk_data['choices'][0].get('delta', {})
                                 content = delta.get('content', '')
@@ -885,6 +928,7 @@ Generate a concise Feature description (2-4 sentences):
                             continue
 
         except Exception as e:
+            self._note_error(e)
             print(f"⚠️ DeepSeek streaming failed: {e}")
             result = self._call_api(prompt, max_tokens, system_prompt)
             if result:
@@ -992,6 +1036,7 @@ class OpenAIProvider(LLMProvider):
             return text
 
         except Exception as e:
+            self._note_error(e)
             print(f"❌ [ERROR] API request failed: {e}")
 
             if retry_count < self.max_retries - 1:
@@ -1042,12 +1087,14 @@ class OpenAIProvider(LLMProvider):
             response = self.client.chat.completions.create(**params)
 
             for chunk in response:
+                self._note_model(getattr(chunk, 'model', None))
                 if chunk.choices and len(chunk.choices) > 0:
                     delta = chunk.choices[0].delta
                     if hasattr(delta, 'content') and delta.content:
                         yield delta.content
 
         except Exception as e:
+            self._note_error(e)
             print(f"⚠️ OpenAI streaming failed: {e}")
             result = self._call_api(prompt, max_tokens, system_prompt)
             if result:
@@ -1139,6 +1186,7 @@ class OpenAIProvider(LLMProvider):
 
             # 调用 API
             response = self.client.chat.completions.create(**completion_params)
+            self._note_model(getattr(response, 'model', None))
 
             # 调试信息
             choice = response.choices[0]
@@ -1171,6 +1219,7 @@ class OpenAIProvider(LLMProvider):
                 print(f"✅ [SUCCESS] Got valid JSON response")
                 return result
             except json.JSONDecodeError as e:
+                self._note_error(e)
                 print(f"⚠️ [WARNING] JSON parse error: {e}")
                 print(f"   Raw content: {content[:200]}...")
 
@@ -1186,6 +1235,7 @@ class OpenAIProvider(LLMProvider):
                     return self._fallback_json()
 
         except Exception as e:
+            self._note_error(e)
             print(f"❌ [ERROR] API request failed: {e}")
 
             if retry_count < self.max_retries - 1:
@@ -1320,6 +1370,7 @@ Respond with ONLY the JSON object, no other text.
             return f"Verification suite for {bitwidth}-bit ALU with {operations_count} operations"
 
     def _fallback_json(self, operation_name: str = "UNKNOWN", opcode: str = "0000", bitwidth: int = 16) -> Dict:
+        self._note_fallback()
         """备用 JSON 响应，包含所有必需字段，使用默认值避免 KeyError"""
         return {
             "scenario": "Given ALU operation, When executed, Then produce correct output",
@@ -1330,6 +1381,7 @@ Respond with ONLY the JSON object, no other text.
         }
 
     def _fallback_text(self) -> str:
+        self._note_fallback()
         """备用文本响应 (用于 codex)"""
         return "Given ALU operation, When executed, Then produce correct output"
 
@@ -1418,8 +1470,10 @@ class ClaudeProvider(LLMProvider):
             response = requests.post(self.api_url, headers=headers, json=payload, timeout=30, proxies=proxies)
             response.raise_for_status()
             result = response.json()
+            self._note_model(result.get('model'))
             return result['content'][0]['text'].strip()
         except Exception as e:
+            self._note_error(e)
             print(f"⚠️  Claude API request failed: {e}")
             return self._fallback_description(prompt)
 
@@ -1504,6 +1558,7 @@ Generate the scenario description:
                             continue
 
         except Exception as e:
+            self._note_error(e)
             print(f"⚠️ Claude streaming failed: {e}")
             result = self._call_api(prompt, max_tokens, system_prompt)
             if result:
@@ -1528,6 +1583,7 @@ Generate a concise Feature description (2-4 sentences):
         return self._call_api(prompt, max_tokens=200)
 
     def _fallback_description(self, prompt: str) -> str:
+        self._note_fallback()
         """
         🔧 修复: Fallback 返回 JSON 格式以支持 intent 解析
         """
@@ -1585,8 +1641,10 @@ class GrokProvider(LLMProvider):
             response = requests.post(self.api_url, headers=headers, json=payload, timeout=120, proxies=proxies)
             response.raise_for_status()
             result = response.json()
+            self._note_model(result.get('model'))
             return result['choices'][0]['message']['content'].strip()
         except Exception as e:
+            self._note_error(e)
             print(f"⚠️  Grok API request failed: {e}")
             return self._fallback_description(prompt)
 
@@ -1628,6 +1686,7 @@ class GrokProvider(LLMProvider):
                             break
                         try:
                             chunk_data = json.loads(data)
+                            self._note_model(chunk_data.get('model'))
                             if 'choices' in chunk_data and len(chunk_data['choices']) > 0:
                                 delta = chunk_data['choices'][0].get('delta', {})
                                 content = delta.get('content', '')
@@ -1636,6 +1695,7 @@ class GrokProvider(LLMProvider):
                         except json.JSONDecodeError:
                             continue
         except Exception as e:
+            self._note_error(e)
             print(f"⚠️ Grok streaming failed: {e}")
             result = self._call_api(prompt, max_tokens, system_prompt)
             if result:
@@ -1674,6 +1734,7 @@ Generate a concise Feature description (2-4 sentences):
         return self._call_api(prompt, max_tokens=200)
 
     def _fallback_description(self, prompt: str) -> str:
+        self._note_fallback()
         if "JSON" in prompt or "json" in prompt or '"operation"' in prompt:
             print("   🔧 [FALLBACK] Returning JSON format for intent parsing")
             return self._fallback_intent_json(prompt)
@@ -1735,8 +1796,10 @@ class QwenProvider(LLMProvider):
                                      proxies=self._get_proxies(), timeout=300)
             response.raise_for_status()
             result = response.json()
+            self._note_model(result.get('model'))
             return result['choices'][0]['message']['content'].strip()
         except Exception as e:
+            self._note_error(e)
             print(f"⚠️  Qwen API request failed: {e}")
             return self._fallback_description(prompt)
 
@@ -1777,6 +1840,7 @@ class QwenProvider(LLMProvider):
                             break
                         try:
                             chunk_data = json.loads(data)
+                            self._note_model(chunk_data.get('model'))
                             if 'choices' in chunk_data and len(chunk_data['choices']) > 0:
                                 delta = chunk_data['choices'][0].get('delta', {})
                                 content = delta.get('content', '')
@@ -1785,6 +1849,7 @@ class QwenProvider(LLMProvider):
                         except json.JSONDecodeError:
                             continue
         except Exception as e:
+            self._note_error(e)
             print(f"⚠️ Qwen streaming failed: {e}")
             result = self._call_api(prompt, max_tokens, system_prompt)
             if result:
@@ -1823,6 +1888,7 @@ Generate a concise Feature description (2-4 sentences):
         return self._call_api(prompt, max_tokens=200)
 
     def _fallback_description(self, prompt: str) -> str:
+        self._note_fallback()
         if "JSON" in prompt or "json" in prompt or '"operation"' in prompt:
             print("   🔧 [FALLBACK] Returning JSON format for intent parsing")
             return self._fallback_intent_json(prompt)
@@ -1945,6 +2011,7 @@ class MistralProvider(LLMProvider):
 
                     if response.status_code == 200:
                         result = response.json()
+                        self._note_model(result.get('model'))
                         content = result['choices'][0]['message']['content'].strip()
 
                         # ============================================================
@@ -1992,6 +2059,7 @@ class MistralProvider(LLMProvider):
                         retry_delay *= 2
 
                 except requests.exceptions.RequestException as e:
+                    self._note_error(e)
                     print(f"   ❌ [ERROR] Network error: {type(e).__name__}: {str(e)}")
                     if attempt < max_retries - 1:
                         print(f"   🔄 [DEBUG] Retrying after network error...")
@@ -1999,6 +2067,7 @@ class MistralProvider(LLMProvider):
                         retry_delay *= 2
 
                 except Exception as e:
+                    self._note_error(e)
                     print(f"   ❌ [ERROR] Unexpected error: {type(e).__name__}: {str(e)}")
                     if attempt < max_retries - 1:
                         print(f"   🔄 [DEBUG] Retrying after unexpected error...")
@@ -2056,6 +2125,7 @@ class MistralProvider(LLMProvider):
                             break
                         try:
                             chunk_data = json.loads(data)
+                            self._note_model(chunk_data.get('model'))
                             if 'choices' in chunk_data and len(chunk_data['choices']) > 0:
                                 delta = chunk_data['choices'][0].get('delta', {})
                                 content = delta.get('content', '')
@@ -2069,6 +2139,7 @@ class MistralProvider(LLMProvider):
             print(f"   ✅ [DEBUG] Mistral streaming complete: {chunk_count} chunks, {total_chars} chars")
 
         except Exception as e:
+            self._note_error(e)
             print(f"   ⚠️ Mistral streaming failed: {e}")
             print(f"   🔄 [DEBUG] Falling back to non-streaming API call")
             result = self._call_api(prompt, max_tokens, system_prompt)
@@ -2120,6 +2191,7 @@ Generate a concise Feature description (2-4 sentences):
         return self._call_api(prompt, max_tokens=200)
 
     def _fallback_description(self, prompt: str) -> str:
+        self._note_fallback()
         """
         Fallback: return JSON format for intent parsing, or default description
         """
@@ -2178,8 +2250,10 @@ class TogetherProvider(LLMProvider):
             response = requests.post(self.api_url, headers=headers, json=payload, timeout=60, proxies=proxies)
             response.raise_for_status()
             result = response.json()
+            self._note_model(result.get('model'))
             return result['choices'][0]['message']['content'].strip()
         except Exception as e:
+            self._note_error(e)
             print(f"⚠️  Together AI API request failed: {e}")
             return self._fallback_description(prompt)
 
@@ -2221,6 +2295,7 @@ class TogetherProvider(LLMProvider):
                             break
                         try:
                             chunk_data = json.loads(data)
+                            self._note_model(chunk_data.get('model'))
                             if 'choices' in chunk_data and len(chunk_data['choices']) > 0:
                                 delta = chunk_data['choices'][0].get('delta', {})
                                 content = delta.get('content', '')
@@ -2229,6 +2304,7 @@ class TogetherProvider(LLMProvider):
                         except json.JSONDecodeError:
                             continue
         except Exception as e:
+            self._note_error(e)
             print(f"⚠️ Together AI streaming failed: {e}")
             result = self._call_api(prompt, max_tokens, system_prompt)
             if result:
@@ -2267,6 +2343,7 @@ Generate a concise Feature description (2-4 sentences):
         return self._call_api(prompt, max_tokens=200)
 
     def _fallback_description(self, prompt: str) -> str:
+        self._note_fallback()
         if "JSON" in prompt or "json" in prompt or '"operation"' in prompt:
             print("   🔧 [FALLBACK] Returning JSON format for intent parsing")
             return self._fallback_intent_json(prompt)

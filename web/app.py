@@ -28,9 +28,30 @@ DEFAULT_PROXY = 'http://127.0.0.1:10809'
 PROXY_URL = os.environ.get('PROXY_URL', os.environ.get('HTTPS_PROXY', DEFAULT_PROXY))
 
 
+def _proxy_reachable(url: str, timeout: float = 0.5) -> bool:
+    """True if something is listening on the proxy's host:port."""
+    import socket
+    from urllib.parse import urlparse
+    u = urlparse(url)
+    if not u.hostname or not u.port:
+        return True  # can't probe an unusual URL; assume the user knows
+    try:
+        with socket.create_connection((u.hostname, u.port), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
 def _setup_proxy():
     """设置代理环境变量，供 LLM providers 使用"""
-    if ENABLE_PROXY:
+    if ENABLE_PROXY and not _proxy_reachable(PROXY_URL):
+        # 代理默认开启，但本地 v2rayN 没跑时所有海外 API 都会静默失败。
+        # 探测不到监听端口就直连，并明确说出来。
+        os.environ.pop('HTTPS_PROXY', None)
+        os.environ.pop('HTTP_PROXY', None)
+        print(f"⚠️  Proxy {PROXY_URL} is not reachable — using direct connection instead.")
+        print("   (start your proxy and restart, or set ENABLE_PROXY=false to silence this)")
+    elif ENABLE_PROXY:
         os.environ['HTTPS_PROXY'] = PROXY_URL
         os.environ['HTTP_PROXY'] = PROXY_URL
         print(f"🌐 Proxy enabled: {PROXY_URL}")
