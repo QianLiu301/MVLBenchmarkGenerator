@@ -83,8 +83,8 @@ def api_status():
         'status': 'ok',
         'tools': simulation_runner.get_tools_status(),
         'llm_providers': [
-            'gemini', 'openai', 'gpt', 'claude', 'groq',
-            'deepseek', 'qwen', 'mistral', 'together', 'grok', 'local'
+            'gemini', 'mistral', 'deepseek', 'openai',
+            'qwen', 'gptoss', 'glm', 'together', 'local'
         ]
     })
 
@@ -109,7 +109,7 @@ def api_generate():
     try:
         data = request.json
 
-        llm_provider = data.get('llm', 'groq')
+        llm_provider = data.get('llm', 'gemini')
         model = data.get('model', None)
         module_type = data.get('module_type', 'alu')
         k_value = int(data.get('k_value', 3))
@@ -198,7 +198,7 @@ def api_generate_stream():
     try:
         data = request.json
 
-        llm_provider = data.get('llm', 'groq')
+        llm_provider = data.get('llm', 'gemini')
         model = data.get('model', None)
         module_type = data.get('module_type', 'alu')
         k_value = int(data.get('k_value', 3))

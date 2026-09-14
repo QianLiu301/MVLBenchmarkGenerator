@@ -598,10 +598,14 @@ class DeepSeekProvider(LLMProvider):
     2. Sign up
     3. Get API key
 
-    Model: deepseek-chat
+    Models: deepseek-v4-flash, deepseek-v4-pro  (deepseek-chat was retired)
     """
 
-    def __init__(self, api_key: Optional[str] = None, model: str = "deepseek-chat"):
+    # deepseek-v4 系列是推理模型，推理 token 计入 completion 额度，不设上限时
+    # 全部额度会被推理吃光、正文为空。reasoning_effort='low' 保留推理但设上限。
+    REASONING_EFFORT = 'low'
+
+    def __init__(self, api_key: Optional[str] = None, model: str = "deepseek-v4-flash"):
 
         self.api_key = api_key or os.getenv("DEEPSEEK_API_KEY")
         self.model = model
@@ -610,12 +614,17 @@ class DeepSeekProvider(LLMProvider):
         if not self.api_key:
             raise ValueError("DeepSeek API key not provided. Get free key at: https://platform.deepseek.com/")
 
-    def _get_proxies(self) -> None:
+    def _reasoning_config(self) -> Dict:
+        m = (self.model or '').lower()
+        return {'reasoning_effort': self.REASONING_EFFORT} if 'v4' in m else {}
+
+    def _get_proxies(self) -> Dict[str, None]:
         """
-        DeepSeek 不需要代理（国内 API）
-        覆盖父类方法，始终返回 None
+        DeepSeek 不需要代理（国内 API）。
+        注意: requests 里 proxies=None 表示"使用环境变量代理"，
+        必须显式传 {'http': None, 'https': None} 才能真正直连。
         """
-        return None
+        return {'http': None, 'https': None}
 
     def _call_api(self, prompt: str, max_tokens: int = 200, system_prompt: str = None) -> str:
         """
@@ -652,6 +661,7 @@ class DeepSeekProvider(LLMProvider):
             "max_tokens": max_tokens,
             "temperature": 0.7
         }
+        payload.update(self._reasoning_config())
 
         # ============================================================
         # 调试信息：请求详情
@@ -843,6 +853,7 @@ Generate a concise Feature description (2-4 sentences):
             "temperature": 0.7,
             "stream": True
         }
+        payload.update(self._reasoning_config())
 
         try:
             proxies = self._get_proxies()
@@ -1691,9 +1702,11 @@ class QwenProvider(LLMProvider):
         if not self.api_key:
             raise ValueError("Qwen API key not provided. Get key at: https://dashscope.console.aliyun.com/")
 
-    def _get_proxies(self) -> None:
-        """Qwen (Alibaba Cloud) does not need proxy for Chinese users"""
-        return None
+    def _get_proxies(self) -> Dict[str, None]:
+        """Qwen (Alibaba Cloud) 国内直连。
+        注意: requests 里 proxies=None 表示"使用环境变量代理"，
+        必须显式传 {'http': None, 'https': None} 才能真正绕过代理。"""
+        return {'http': None, 'https': None}
 
     def _call_api(self, prompt: str, max_tokens: int = 4000, system_prompt: str = None) -> str:
         headers = {
@@ -1718,7 +1731,8 @@ class QwenProvider(LLMProvider):
         }
 
         try:
-            response = requests.post(self.api_url, headers=headers, json=payload, timeout=60)
+            response = requests.post(self.api_url, headers=headers, json=payload,
+                                     proxies=self._get_proxies(), timeout=300)
             response.raise_for_status()
             result = response.json()
             return result['choices'][0]['message']['content'].strip()
@@ -1750,7 +1764,8 @@ class QwenProvider(LLMProvider):
         }
 
         try:
-            response = requests.post(self.api_url, headers=headers, json=payload, stream=True, timeout=180)
+            response = requests.post(self.api_url, headers=headers, json=payload,
+                                     proxies=self._get_proxies(), stream=True, timeout=180)
             response.raise_for_status()
 
             for line in response.iter_lines():
@@ -2294,6 +2309,59 @@ So that I can ensure it correctly performs all {operations_count} supported arit
 including {', '.join(operations_list[:5])}{' and more' if len(operations_list) > 5 else ''}"""
 
 
+# ========== GWDG ACADEMIC CLOUD (one key, several model families) ==========
+
+
+class AcademicCloudProvider(QwenProvider):
+    """GWDG Academic Cloud (SAIA)：OpenAI 兼容端点，一把 key 服务多个模型族。
+
+    继承 QwenProvider 只是复用它的 OpenAI 兼容请求/响应处理，与阿里云无关——
+    端点和 key 都是独立的。每个模型族派生一个子类而不是共用一个 provider 加
+    model 选项，这样输出目录 / 日志按模型族分开，跨模型对比时不会被合并。
+
+    Key 与端点：ACADEMIC_API_KEY / ACADEMIC_API_URL；也接受各子类自己的
+    {CONFIG_KEY}_API_KEY（与 config/llm_config.json 里的键一致）。
+    Keys: https://saia.gwdg.de/dashboard
+    """
+
+    DEFAULT_MODEL = "meta-llama-3.1-8b-instruct"
+    BASE_URL = "https://chat-ai.academiccloud.de/v1/chat/completions"
+    # 与 config/llm_config.json 里的键、mvl_generator 的注册名保持一致。
+    CONFIG_KEY = "llama"
+
+    def __init__(self, api_key: Optional[str] = None, model: Optional[str] = None):
+        env_prefix = self.CONFIG_KEY.upper()
+        api_key = (api_key or os.getenv(f"{env_prefix}_API_KEY")
+                   or os.getenv("ACADEMIC_API_KEY"))
+        if not api_key:
+            raise ValueError(
+                f"{type(self).__name__}: no API key. Set {env_prefix}_API_KEY or "
+                f"ACADEMIC_API_KEY (GWDG Academic Cloud). "
+                f"Keys: https://saia.gwdg.de/dashboard")
+        super().__init__(api_key=api_key, model=model or self.DEFAULT_MODEL)
+        self.api_url = (os.getenv(f"{env_prefix}_API_URL")
+                        or os.getenv("ACADEMIC_API_URL") or self.BASE_URL)
+
+
+class QwenProvider3(AcademicCloudProvider):
+    """Qwen3 Coder。取代原先走阿里云 DashScope 的 QwenProvider。"""
+    CONFIG_KEY = "qwen"
+    DEFAULT_MODEL = "qwen3-coder-next"
+
+
+class GptOssProvider(AcademicCloudProvider):
+    """OpenAI GPT-OSS 120B（开放权重），与走 api.openai.com 的 OpenAIProvider
+    是两回事，故独立成一家。"""
+    CONFIG_KEY = "gptoss"
+    DEFAULT_MODEL = "openai-gpt-oss-120b"
+
+
+class GlmProvider(AcademicCloudProvider):
+    """智谱 GLM-4.7。"""
+    CONFIG_KEY = "glm"
+    DEFAULT_MODEL = "glm-4.7"
+
+
 # ========== FACTORY ==========
 
 
@@ -2309,7 +2377,12 @@ class LLMFactory:
             'google': GeminiProvider,
             'groq': GroqProvider,
             'deepseek': DeepSeekProvider,
-            'qwen': QwenProvider,
+            'qwen': QwenProvider3,        # qwen3-coder-next via GWDG (replaces DashScope Qwen)
+            'dashscope': QwenProvider,    # legacy Alibaba DashScope endpoint
+            'gptoss': GptOssProvider,     # openai-gpt-oss-120b via GWDG
+            'gpt-oss': GptOssProvider,
+            'glm': GlmProvider,           # glm-4.7 via GWDG
+            'zhipu': GlmProvider,
             'tongyi': QwenProvider,
             'local': LocalLLMProvider,
 

@@ -28,3 +28,5 @@ Thumbs.db
 
 # Logs
 *.log
+# Claude Code local launch config
+.claude/launch.json

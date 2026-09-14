@@ -6,18 +6,21 @@ services:
     envVars:
       - key: PORT
         value: "5001"
+      - key: ENABLE_PROXY
+        value: "false"
+      # API keys — set the values in the Render dashboard, never here
       - key: GEMINI_API_KEY
-        sync: false
-      - key: OPENAI_API_KEY
-        sync: false
-      - key: GROQ_API_KEY
-        sync: false
-      - key: DEEPSEEK_API_KEY
         sync: false
       - key: MISTRAL_API_KEY
         sync: false
-      - key: QWEN_API_KEY
+      - key: DEEPSEEK_API_KEY
         sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      # GWDG Academic Cloud — one key serves qwen / gptoss / glm
+      - key: ACADEMIC_API_KEY
+        sync: false
+      # Together AI — Llama 3.3 70B
       - key: TOGETHER_API_KEY
         sync: false
     healthCheckPath: /api/status

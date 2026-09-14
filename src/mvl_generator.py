@@ -9,6 +9,7 @@ Supports:
 - Languages: C, Python, Verilog, VHDL
 """
 
+import os
 import re
 from datetime import datetime
 from pathlib import Path
@@ -90,6 +91,16 @@ class MVLGenerator:
                                 break
 
                     api_key = provider_config.get('api_key', '') if isinstance(provider_config, dict) else ''
+
+                    # Model / endpoint overrides from config (only when the request didn't pin a model)
+                    if isinstance(provider_config, dict):
+                        model_from_config = provider_config.get('model', '')
+                        if model_from_config and not self.model:
+                            self.model = model_from_config
+                        api_url = provider_config.get('api_url', '')
+                        if api_url:
+                            os.environ[f"{provider_name.upper()}_API_URL"] = api_url
+
                     if api_key:
                         print(f"   📄 Config loaded from: {resolved}")
                         print(f"      API key found for '{provider_name}': {api_key[:4]}***{api_key[-4:]}")
@@ -97,12 +108,6 @@ class MVLGenerator:
                     else:
                         print(f"      ⚠️ Config found but no api_key for '{provider_name}'")
                         print(f"      provider_config = {provider_config}")
-
-                    # Also check for model override from config
-                    if isinstance(provider_config, dict):
-                        model_from_config = provider_config.get('model', '')
-                        if model_from_config and not self.model:
-                            self.model = model_from_config
             except Exception as e:
                 print(f"      ❌ Error reading {config_path}: {e}")
                 continue
@@ -122,6 +127,9 @@ class MVLGenerator:
                 GroqProvider,
                 DeepSeekProvider,
                 QwenProvider,
+                QwenProvider3,
+                GptOssProvider,
+                GlmProvider,
                 MistralProvider,
                 TogetherProvider,
                 GrokProvider,
@@ -135,9 +143,13 @@ class MVLGenerator:
                 'claude': ClaudeProvider,
                 'groq': GroqProvider,
                 'deepseek': DeepSeekProvider,
-                'qwen': QwenProvider,
+                # 以下三家同在 GWDG Academic Cloud（同端点、同 key、同推理栈）
+                'qwen': QwenProvider3,      # qwen3-coder-next（取代原 DashScope Qwen）
+                'gptoss': GptOssProvider,   # openai-gpt-oss-120b（≠ api.openai.com）
+                'glm': GlmProvider,         # glm-4.7
+                'dashscope': QwenProvider,  # legacy Alibaba DashScope endpoint
                 'mistral': MistralProvider,
-                'together': TogetherProvider,
+                'together': TogetherProvider,  # Llama 3.3 70B
                 'grok': GrokProvider,
                 'local': LocalLLMProvider,
             }
@@ -145,7 +157,7 @@ class MVLGenerator:
             if self.llm_provider_name not in providers:
                 print(f"⚠️  Unknown LLM provider: {self.llm_provider_name}")
                 print(f"   Available: {', '.join(providers.keys())}")
-                self.llm_provider_name = 'groq'
+                self.llm_provider_name = 'gemini'
 
             provider_class = providers[self.llm_provider_name]
 

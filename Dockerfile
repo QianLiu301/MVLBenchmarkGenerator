@@ -49,11 +49,12 @@ COPY . .
 
 # Create output directories
 RUN mkdir -p /app/output/mvl_code/gemini \
-             /app/output/mvl_code/openai \
-             /app/output/mvl_code/groq \
-             /app/output/mvl_code/deepseek \
              /app/output/mvl_code/mistral \
+             /app/output/mvl_code/deepseek \
+             /app/output/mvl_code/openai \
              /app/output/mvl_code/qwen \
+             /app/output/mvl_code/gptoss \
+             /app/output/mvl_code/glm \
              /app/output/mvl_code/together \
              /app/output/mvl_results \
     && chmod -R 777 /app/output
