@@ -1387,39 +1387,48 @@ Respond with ONLY the JSON object, no other text.
 
     def _call_api(self, prompt: str, max_tokens: int = 500, system_prompt: str = None) -> str:
         """
-        统一的 API 调用接口
+        Plain-text chat completion — the non-streaming twin of _call_api_stream.
 
-        自动路由到合适的端点:
-        - Codex 模型 → completions endpoint (返回纯文本)
-        - 其他模型 → chat completions endpoint with JSON mode (返回 JSON 字符串)
+        MVL code generation wants raw code text. The JSON-mode path
+        (_call_api_with_json_mode) is kept for the BDD tooling but is no longer
+        the default: with response_format=json_object the model returned a JSON
+        object instead of code, so /api/generate and the test-coverage enhancer
+        silently got unusable output for OpenAI.
         """
-        print(f"\n{'='*60}")
         print(f"   🔍 [OpenAI._call_api] Model: {self.model} | max_tokens={max_tokens}")
-        print(f"{'='*60}")
 
-        # 🔑 Codex 模型使用 completions 接口
+        # Codex models only speak the completions endpoint
         if self._is_codex_model(self.model):
-            text_result = self._call_api_completions(prompt, max_tokens)
+            return self._call_api_completions(prompt, max_tokens)
 
-            # 尝试将文本包装成 JSON 格式以保持一致性
-            try:
-                # 检查是否已经是 JSON
-                json.loads(text_result)
-                return text_result
-            except:
-                # 不是 JSON,包装成 JSON
-                wrapped_json = json.dumps({
-                    "scenario": text_result,
-                    "model": self.model
-                }, ensure_ascii=False, indent=2)
-                print(f"   ✅ [DEBUG][OpenAI._call_api] Wrapped text as JSON ({len(wrapped_json)} chars)")
-                return wrapped_json
+        if not hasattr(self, 'client') or self.client is None:
+            self._note_error('OpenAI client not initialised')
+            return self._fallback_text()
 
-        # 其他模型使用 chat completions + JSON mode
-        result = self._call_api_with_json_mode(prompt, max_tokens, system_prompt)
-        json_str = json.dumps(result, ensure_ascii=False, indent=2)
-        print(f"   ✅ [DEBUG][OpenAI._call_api] Returning JSON string ({len(json_str)} chars)")
-        return json_str
+        messages = [
+            {"role": "system", "content": system_prompt or "You are a hardware verification expert."},
+            {"role": "user", "content": prompt},
+        ]
+        params = {"model": self.model, "messages": messages}
+        if 'gpt-5' in self.model.lower():
+            params['max_completion_tokens'] = max_tokens
+            params['temperature'] = 1
+        else:
+            params['max_tokens'] = max_tokens
+            params['temperature'] = 0.7
+
+        try:
+            response = self.client.chat.completions.create(**params)
+            self._note_model(getattr(response, 'model', None))
+            content = response.choices[0].message.content if response.choices else None
+            if not content or not content.strip():
+                self._note_error(f'empty response (finish_reason={getattr(response.choices[0], "finish_reason", None)})')
+                return self._fallback_text()
+            return content.strip()
+        except Exception as e:
+            self._note_error(e)
+            print(f"⚠️ OpenAI API request failed: {e}")
+            return self._fallback_text()
 
 
 class ClaudeProvider(LLMProvider):
