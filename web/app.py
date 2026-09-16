@@ -15,15 +15,12 @@ PORT = int(os.environ.get('PORT', 5001))
 DEBUG = os.environ.get('DEBUG', 'false').lower() == 'true'
 
 # ============================================================
-# 代理配置
-# 本地开发（需要代理访问海外 API）：
-#   ENABLE_PROXY=true  (默认)
+# 代理配置（默认关闭：直连）
+# 所有 LLM 端点实测可直连，默认不走代理。只有确实需要时才开启：
+#   ENABLE_PROXY=true
 #   PROXY_URL=http://127.0.0.1:10809  (可选，覆盖默认代理地址)
-#
-# 生产环境（服务器可直接访问 API）：
-#   ENABLE_PROXY=false
 # ============================================================
-ENABLE_PROXY = os.environ.get('ENABLE_PROXY', 'true').lower() in ('true', '1', 'yes')
+ENABLE_PROXY = os.environ.get('ENABLE_PROXY', 'false').lower() in ('true', '1', 'yes')
 DEFAULT_PROXY = 'http://127.0.0.1:10809'
 PROXY_URL = os.environ.get('PROXY_URL', os.environ.get('HTTPS_PROXY', DEFAULT_PROXY))
 
