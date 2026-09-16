@@ -1723,10 +1723,11 @@
                 {value: 'deepseek-v4-flash', text: 'DeepSeek V4 Flash'},
                 {value: 'deepseek-v4-pro', text: 'DeepSeek V4 Pro'}
             ],
+            // Measured 2026-09: devstral ~173 tok/s, magistral ~137 tok/s, codestral ~25 tok/s
             'mistral': [
-                {value: 'codestral-latest', text: 'Codestral'},
                 {value: 'devstral-latest', text: 'Devstral'},
-                {value: 'magistral-medium-latest', text: 'Magistral Medium'}
+                {value: 'magistral-medium-latest', text: 'Magistral Medium'},
+                {value: 'codestral-latest', text: 'Codestral (slow, ~25 tok/s)'}
             ]
         };
 
@@ -2198,20 +2199,16 @@
 
             const errors = [];
 
-            for (let i = 0; i < languages.length; i++) {
-                const lang = languages[i];
+            // All languages are generated concurrently: each is an independent
+            // LLM request, so wall time is max(lang) instead of sum(lang).
+            // The preview shows whichever tab is active; click a tab to follow it.
+            streamBuffers = {};
+            languages.forEach(l => { langStatus[l] = 'generating'; streamBuffers[l] = ''; });
+            renderResultTabs();
+            startProgressTicker(languages);
+
+            await Promise.all(languages.map(async (lang) => {
                 const requestBody = { ...baseRequest, language: lang };
-
-                langStatus[lang] = 'generating';
-                activeResultLang = lang;
-                renderResultTabs();
-
-                // Update header progress
-                if (languages.length > 1) {
-                    document.getElementById('gen-result-title').textContent =
-                        `Generating ${lang.toUpperCase()}... (${i + 1}/${languages.length})`;
-                }
-
                 try {
                     if (streamOutput) {
                         await generateStreamOne(requestBody);
@@ -2224,9 +2221,9 @@
                     langStatus[lang] = 'error';
                     errors.push(`${lang.toUpperCase()}: ${error.message}`);
                 }
-
                 renderResultTabs();
-            }
+            }));
+            stopProgressTicker();
 
             // Display final results
             const successLangs = languages.filter(l => currentResults[l]);
@@ -2272,10 +2269,48 @@
 
                 if (status === 'done') {
                     tab.onclick = () => switchResultTab(lang);
+                } else if (status === 'generating') {
+                    tab.onclick = () => { activeResultLang = lang; renderResultTabs(); renderStreamPreview(lang); };
                 }
 
                 container.appendChild(tab);
             });
+        }
+
+        // Per-language streamed text while generation is in flight (parallel requests)
+        let streamBuffers = {};
+        let progressTimer = null;
+        let progressStart = 0;
+
+        function renderStreamPreview(lang) {
+            const preview = document.getElementById('code-preview');
+            const text = streamBuffers[lang] || '';
+            const allLines = text.split('\n');
+            preview.textContent = allLines.slice(0, 50).join('\n');
+            if (allLines.length > 50) {
+                preview.textContent += '\n\n// ... (streaming)';
+            }
+            preview.scrollTop = preview.scrollHeight;
+        }
+
+        // Header shows elapsed time + characters received, so a slow model
+        // (Codestral ~25 tok/s, Gemini thinking) looks alive instead of hung.
+        function startProgressTicker(languages) {
+            progressStart = Date.now();
+            const title = document.getElementById('gen-result-title');
+            const tick = () => {
+                const secs = Math.floor((Date.now() - progressStart) / 1000);
+                const chars = Object.values(streamBuffers).reduce((n, t) => n + t.length, 0);
+                const pending = languages.filter(l => langStatus[l] === 'generating').length;
+                const which = languages.length > 1 ? ` (${languages.length - pending}/${languages.length} done)` : '';
+                title.textContent = `Generating...${which} ${secs}s · ${chars.toLocaleString()} chars`;
+            };
+            tick();
+            progressTimer = setInterval(tick, 1000);
+        }
+
+        function stopProgressTicker() {
+            if (progressTimer) { clearInterval(progressTimer); progressTimer = null; }
         }
 
         async function generateNormalOne(requestBody) {
@@ -2310,11 +2345,10 @@
         }
 
         async function generateStreamOne(requestBody) {
-            const preview = document.getElementById('code-preview');
-            preview.textContent = '';
-
+            // Preview is cleared once in generate(); per-language buffers live in streamBuffers.
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 180000);
+            // Slow models (Codestral ~25 tok/s) can take >3 min for Verilog; progress is visible now.
+            const timeoutId = setTimeout(() => controller.abort(), 600000);
 
             try {
                 const response = await fetch('/api/generate-stream', {
@@ -2332,8 +2366,8 @@
                 const reader = response.body.getReader();
                 const decoder = new TextDecoder();
                 let buffer = '';
-                let streamedText = '';
                 let streamError = null;
+                const lang = requestBody.language;
 
                 function processSSELine(line) {
                     if (!line.startsWith('data: ')) return;
@@ -2341,14 +2375,8 @@
                         const eventData = JSON.parse(line.slice(6));
 
                         if (eventData.type === 'chunk') {
-                            streamedText += eventData.content;
-                            const allLines = streamedText.split('\n');
-                            const displayLines = allLines.slice(0, 50);
-                            preview.textContent = displayLines.join('\n');
-                            if (allLines.length > 50) {
-                                preview.textContent += '\n\n// ... (streaming)';
-                            }
-                            preview.scrollTop = preview.scrollHeight;
+                            streamBuffers[lang] = (streamBuffers[lang] || '') + eventData.content;
+                            if (lang === activeResultLang) renderStreamPreview(lang);
 
                         } else if (eventData.type === 'done') {
                             currentResults[requestBody.language] = eventData.result;

@@ -200,6 +200,20 @@ class GeminiProvider(LLMProvider):
         # 🔧 保存最近的 prompt 用于 fallback 解析
         self._last_prompt = ""
 
+    # gemini-2.5+ 默认「动态思考」：实测同一个 ALU prompt 思考 7.5k token、
+    # 30 秒后才吐出第一个字符，且思考 token 计入 maxOutputTokens。给思考设上限
+    # 后首字延迟降到 ~8s（2048）/ <1s（0）。2048 与 HdlFormalLLM 保持一致，
+    # 与 DeepSeek 的 reasoning_effort='low' 是同一口径：保留推理但封顶。
+    # 可用环境变量 GEMINI_THINKING_BUDGET 覆盖（0 = 关闭思考，最快）。
+    THINKING_BUDGET = int(os.getenv("GEMINI_THINKING_BUDGET", "2048"))
+
+    def _thinking_config(self) -> Dict:
+        """推理型 Gemini 才需要 thinkingConfig；老模型带上会报错。"""
+        m = (self.model or '').lower()
+        if re.search(r'gemini-(2\.5|3)', m):
+            return {"thinkingConfig": {"thinkingBudget": self.THINKING_BUDGET}}
+        return {}
+
     def _call_api_sdk(self, prompt: str, max_tokens: int = 8192, system_prompt: str = None) -> str:
         """使用新的 google-genai SDK 调用 API,包含重试和模型降级"""
         self._last_prompt = prompt  # 🔧 保存 prompt
@@ -262,7 +276,8 @@ class GeminiProvider(LLMProvider):
                 "generationConfig": {
                     "maxOutputTokens": max_tokens,
                     "temperature": 0.4,
-                    "stopSequences": []
+                    "stopSequences": [],
+                    **self._thinking_config(),   # 见 THINKING_BUDGET
                 }
             }
 
@@ -327,7 +342,8 @@ class GeminiProvider(LLMProvider):
             "contents": [{"parts": [{"text": prompt}]}],
             "generationConfig": {
                 "maxOutputTokens": max_tokens,
-                "temperature": 0.3  # 与 REST 保持一致，代码生成用低温度
+                "temperature": 0.3,  # 与 REST 保持一致，代码生成用低温度
+                **self._thinking_config(),   # 见 THINKING_BUDGET
             }
         }
 
