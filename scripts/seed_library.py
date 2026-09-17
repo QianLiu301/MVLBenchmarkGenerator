@@ -73,7 +73,7 @@ def store(session, spec, lang, code, *, source, provider, model_req, model_resp,
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument('--provider', default='deepseek')
+    ap.add_argument('--provider', default='openai', help='never deepseek: that key is a personal paid account')
     ap.add_argument('--model', default=None)
     ap.add_argument('--module', default='alu', choices=['alu'])
     ap.add_argument('--k', default='3', help='comma list, e.g. 2,3,4,5,7')
@@ -86,6 +86,7 @@ def main():
     ap.add_argument('--notes', default='')
     ap.add_argument('--reset', action='store_true', help='delete ALL library rows first (local dev)')
     ap.add_argument('--reverify', action='store_true', help='re-run verification on every stored implementation')
+    ap.add_argument('--skip-existing', action='store_true', help='skip (spec, language) pairs that already have a published implementation')
     args = ap.parse_args()
 
     init_db()
@@ -147,17 +148,26 @@ def main():
                 n += 1
                 t0 = time.time()
                 tag = f"[{n}/{total}] {spec['slug']} {lang:8s} {args.provider}/{args.model or 'default'}"
+                if args.skip_existing:
+                    with session_scope() as s:
+                        bm = service.get_benchmark(s, spec['slug'])
+                        have = bm is not None and any(i.language == lang and i.status == 'published'
+                                                      for i in bm.implementations)
+                    if have:
+                        skipped += 1
+                        print(f"{tag}  = already in library, skipped", flush=True)
+                        continue
                 (code, info), log = quiet(generate_one, args.provider, args.model, k, bits, lang, operations)
                 if code is None:
                     failed += 1
-                    print(f"{tag}  ✗ generation failed: {info}")
+                    print(f"{tag}  ✗ generation failed: {info}", flush=True)
                     continue
                 metrics, vlog = quiet(service.verify_code, code, lang, k, bits, validator)
                 verdict = f"sim={metrics['sim_status']} golden={metrics['golden_status']} " \
                           f"{metrics['golden_passed']}/{metrics['golden_compared']}"
                 if args.verified_only and metrics['golden_status'] != 'PASS':
                     skipped += 1
-                    print(f"{tag}  – {verdict}  (not stored)  {time.time()-t0:.0f}s")
+                    print(f"{tag}  – {verdict}  (not stored)  {time.time()-t0:.0f}s", flush=True)
                     continue
                 with session_scope() as s:
                     bm, impl = store(s, spec, lang, code, source='llm-generated', provider=args.provider,
@@ -165,11 +175,11 @@ def main():
                                      metrics=metrics, prompt_hash=info.get('prompt_sha256'))
                 if impl is None:
                     skipped += 1
-                    print(f"{tag}  = identical code already stored  {time.time()-t0:.0f}s")
+                    print(f"{tag}  = identical code already stored  {time.time()-t0:.0f}s", flush=True)
                 else:
                     stored += 1
                     mark = '✓' if metrics['golden_status'] == 'PASS' else '!'
-                    print(f"{tag}  {mark} {verdict}  model={info.get('response_model')}  {time.time()-t0:.0f}s")
+                    print(f"{tag}  {mark} {verdict}  model={info.get('response_model')}  {time.time()-t0:.0f}s", flush=True)
     print(f"\nstored {stored}, skipped {skipped}, failed {failed} — {time.time()-t_all:.0f}s total")
 
 

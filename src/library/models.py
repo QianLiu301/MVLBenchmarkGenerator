@@ -12,7 +12,7 @@ ReviewEvent    = audit trail shown as "Review history" on the detail page.
 """
 from datetime import datetime
 
-from sqlalchemy import (Column, DateTime, ForeignKey, Integer, JSON, String,
+from sqlalchemy import (BigInteger, Column, DateTime, ForeignKey, Integer, JSON, String,
                         Text, UniqueConstraint)
 from sqlalchemy.orm import relationship
 
@@ -57,7 +57,7 @@ class Benchmark(Base):
     bitwidth = Column(Integer, nullable=False, index=True)
     logic_type = Column(String(64), nullable=False)                       # "GF(3)", "GF(2^2)", "mod 6"
     logic_family = Column(String(16), nullable=False, index=True)         # gf-prime / gf-ext / ring
-    mod_value = Column(Integer, nullable=False)
+    mod_value = Column(BigInteger, nullable=False)
     operations = Column(JSON, nullable=False, default=list)
     params = Column(JSON, nullable=False, default=dict)
     title = Column(String(160), nullable=False)
