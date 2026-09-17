@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% set nav = 'library' %}
+{% block title %}{{ i.filename }} — {{ b.slug }} — MVL Benchmark Library{% endblock %}
+{% block content %}
+<div class="small muted" style="margin-bottom:10px"><a href="{{ url_for('library.browse') }}">Library</a> › <a href="{{ url_for('library.detail', slug=b.slug) }}">{{ b.slug }}</a> › {{ i.filename }}</div>
+
+<div class="code-head">
+    <div>
+        <h1 style="font-size:1.3rem" class="mono">{{ i.filename }}</h1>
+        <div class="small muted">
+            {{ i.language_label }} · {{ i.source_label }}{% if i.model_responded %} · <span class="mono">{{ i.model_responded }}</span>{% endif %}
+            · {{ i.loc }} lines · {{ i.test_vectors }} test vectors ·
+            {% if i.golden_status == 'PASS' %}<span class="tag ok">golden model ✓ {{ i.golden_passed }}/{{ i.golden_compared }}</span>
+            {% elif i.golden_status == 'unverified' %}<span class="tag dim">unverified</span>
+            {% else %}<span class="tag bad">golden model ✗ {{ i.golden_status.replace('_',' ') }}</span>{% endif %}
+        </div>
+    </div>
+    <div class="detail-actions">
+        <button class="btn btn-outline btn-sm" onclick="navigator.clipboard.writeText(document.getElementById('src').dataset.raw).then(()=>{this.textContent='Copied ✓'})">Copy</button>
+        <a href="{{ url_for('library.download_impl', slug=b.slug, impl_id=i.id) }}" class="btn btn-primary btn-sm">⬇ Download</a>
+    </div>
+</div>
+
+<pre class="code" id="src" data-raw="{{ i.code }}">{% for line in i.code.split('\n') %}<span class="ln">{{ loop.index }}</span>{{ line }}
+{% endfor %}</pre>
+
+{% if report and (report.failures or report.compile_errors or report.run_errors) %}
+<div class="card" style="margin-top:20px">
+    <div class="section-title">Verification details</div>
+    {% if report.compile_errors %}<pre class="bibtex">{{ report.compile_errors }}</pre>{% endif %}
+    {% if report.run_errors %}<pre class="bibtex">{{ report.run_errors }}</pre>{% endif %}
+    {% if report.failures %}
+    <p class="small muted">First mismatches against the golden model:</p>
+    <div class="table-wrap"><table class="bench">
+        <thead><tr><th>Op</th><th class="num">A</th><th class="num">B</th><th class="num">Got</th><th class="num">Expected</th></tr></thead>
+        <tbody>{% for f in report.failures %}<tr><td class="mono">{{ f.op }}</td><td class="num">{{ f.a }}</td><td class="num">{{ f.b }}</td><td class="num">{{ f.got }}</td><td class="num">{{ f.expected }}</td></tr>{% endfor %}</tbody>
+    </table></div>
+    {% endif %}
+</div>
+{% endif %}
+{% endblock %}

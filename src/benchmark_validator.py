@@ -443,13 +443,14 @@ class BenchmarkValidator:
 
     # Patterns for different output formats LLMs commonly produce
     _PATTERNS = [
-        # "Test  1: ADD A=0 B=0 -> R=0 Z=1 N=0 C=0"
+        # "Test  1: ADD A=0 B=0 -> R=0 Z=1 N=0 C=0"          (C / Verilog / VHDL prompts)
+        # "Test 1: ADD a=0 b=0 result=0 z=1 n=0 c=0"         (Python prompt: no arrow, "result=")
         re.compile(
             r'Test\s*\d+\s*:\s*(?P<op>\w+)\s+'
             r'A\s*=\s*(?P<a>\d+)\s+'
             r'B\s*=\s*(?P<b>\d+)\s*'
-            r'(?:->|=>|:)\s*'
-            r'R\s*=\s*(?P<r>\d+)'
+            r'(?:->|=>|:)?\s*'
+            r'(?:R|RES|RESULT)\s*=\s*(?P<r>\d+)'
             r'(?:\s+Z\s*=\s*(?P<z>[01]))?'
             r'(?:\s+N\s*=\s*(?P<n>[01]))?'
             r'(?:\s+C\s*=\s*(?P<c>[01]))?',
@@ -474,11 +475,13 @@ class BenchmarkValidator:
             re.IGNORECASE,
         ),
         # Verilog $display: "Test  1: OP=0 A=  0 B=  0 R=  0 Z=1 N=0 C=0"
+        #                   "Test 1: OP=0 a=0 b=0 result=0"
         re.compile(
             r'Test\s*\d+\s*:\s*OP\s*=\s*(?P<opcode>\d+)\s+'
             r'A\s*=\s*(?P<a>\d+)\s+'
-            r'B\s*=\s*(?P<b>\d+)\s+'
-            r'R\s*=\s*(?P<r>\d+)'
+            r'B\s*=\s*(?P<b>\d+)\s*'
+            r'(?:->|=>|:)?\s*'
+            r'(?:R|RES|RESULT)\s*=\s*(?P<r>\d+)'
             r'(?:\s+Z\s*=\s*(?P<z>[01]))?'
             r'(?:\s+N\s*=\s*(?P<n>[01]))?'
             r'(?:\s+C\s*=\s*(?P<c>[01]))?',

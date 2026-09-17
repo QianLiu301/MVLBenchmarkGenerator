@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% set nav = 'generate' %}
+{% block title %}Sign in — MVL Benchmark Library{% endblock %}
+{% block content %}
+<div class="card login-box">
+    <h1>🔒 Restricted area</h1>
+    <p class="small muted">The generator calls paid LLM APIs and is limited to project members. Browsing and downloading the library does not require a password.</p>
+    <form method="post" action="{{ url_for('auth.login') }}">
+        <input type="hidden" name="next" value="{{ next_url }}">
+        <input type="password" name="password" placeholder="Password" autocomplete="current-password" autofocus required>
+        <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center">Enter</button>
+    </form>
+</div>
+{% endblock %}

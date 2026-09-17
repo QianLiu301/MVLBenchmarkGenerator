@@ -8,6 +8,14 @@ services:
         value: "5001"
       - key: ENABLE_PROXY
         value: "false"
+      # Library database (Neon Postgres) — set the connection string in the dashboard
+      - key: DATABASE_URL
+        sync: false
+      # Session signing key + shared password for /generate (and later /admin)
+      - key: SECRET_KEY
+        generateValue: true
+      - key: ACCESS_PASSWORD
+        sync: false
       # API keys — set the values in the Render dashboard, never here
       - key: GEMINI_API_KEY
         sync: false

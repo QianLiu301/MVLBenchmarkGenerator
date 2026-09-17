@@ -30,3 +30,6 @@ Thumbs.db
 *.log
 # Claude Code local launch config
 .claude/launch.json
+
+# Local SQLite library database
+data/

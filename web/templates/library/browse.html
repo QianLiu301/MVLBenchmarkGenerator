@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+{% set nav = 'library' %}
+{% block title %}Browse — MVL Benchmark Library{% endblock %}
+{% block content %}
+{% macro filter_link(field, value, label) -%}
+    {%- set is_active = (current.get(field)|string == value|string) -%}
+    {%- set args = current.copy() -%}
+    {%- if is_active %}{% set _ = args.pop(field) %}{% else %}{% set _ = args.update({field: value}) %}{% endif -%}
+    <a href="{{ url_for('library.browse', **args) }}" class="{{ 'active' if is_active else '' }}">{{ label }}<span class="n">{{ caller() }}</span></a>
+{%- endmacro %}
+
+<div class="browse">
+    <aside class="filters">
+        <div class="filter-group">
+            <h4>Module type</h4>
+            {% for value, n in facets.module_type %}{% call filter_link('module_type', value, module_labels.get(value, value)) %}{{ n }}{% endcall %}{% endfor %}
+        </div>
+        <div class="filter-group">
+            <h4>Radix k</h4>
+            {% for value, n in facets.k_value %}{% call filter_link('k_value', value, 'k = ' ~ value ~ ' · ' ~ radix_names.get(value, '')) %}{{ n }}{% endcall %}{% endfor %}
+        </div>
+        <div class="filter-group">
+            <h4>Bitwidth (digits)</h4>
+            {% for value, n in facets.bitwidth %}{% call filter_link('bitwidth', value, value ~ ' digits') %}{{ n }}{% endcall %}{% endfor %}
+        </div>
+        <div class="filter-group">
+            <h4>Algebraic structure</h4>
+            {% for value, n in facets.logic_family %}{% call filter_link('logic_family', value, family_labels.get(value, value)) %}{{ n }}{% endcall %}{% endfor %}
+        </div>
+        <div class="filter-group">
+            <h4>Language</h4>
+            {% for value, n in facets.language %}{% call filter_link('language', value, language_labels.get(value, value)) %}{{ n }}{% endcall %}{% endfor %}
+        </div>
+        <div class="filter-group">
+            <h4>Source</h4>
+            {% for value, n in facets.source %}{% call filter_link('source', value, source_labels.get(value, value)) %}{{ n }}{% endcall %}{% endfor %}
+        </div>
+        <div class="filter-group">
+            <h4>Verification</h4>
+            {% call filter_link('verified', '1', 'Golden-model verified') %}{% endcall %}
+        </div>
+        {% if current %}
+        <a href="{{ url_for('library.browse') }}" class="filter-clear">✕ Clear all filters</a>
+        {% endif %}
+    </aside>
+
+    <section>
+        <div class="browse-head">
+            <div class="section-title" style="margin:0">Benchmarks <span class="count">{{ benchmarks|length }} spec{{ '' if benchmarks|length == 1 else 's' }}</span></div>
+            <div style="display:flex;gap:8px;align-items:center">
+                {% if current %}
+                <div class="active-filters">
+                    {% for k, v in current.items() %}<span class="chip">{{ k }} = {{ v }}</span>{% endfor %}
+                </div>
+                {% endif %}
+                <a href="{{ url_for('library.download_all', **current) }}" class="btn btn-outline btn-sm">⬇ Download {{ 'selection' if current else 'all' }} (.zip)</a>
+            </div>
+        </div>
+
+        {% if benchmarks %}
+        <div class="table-wrap">
+        <table class="bench">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Module</th>
+                    <th class="num">k</th>
+                    <th class="num">Digits</th>
+                    <th>Structure</th>
+                    <th>Operations</th>
+                    <th>Implementations</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for b in benchmarks %}
+                {% set impls = b.published_implementations %}
+                <tr>
+                    <td><a href="{{ url_for('library.detail', slug=b.slug) }}" class="slug">{{ b.slug }}</a></td>
+                    <td>{{ b.module_label }}</td>
+                    <td class="num">{{ b.k_value }}</td>
+                    <td class="num">{{ b.bitwidth }}</td>
+                    <td>{{ b.logic_type }}</td>
+                    <td class="small muted">{{ b.operations|join(', ') }}</td>
+                    <td>
+                        <div class="lang-tags">
+                        {% for lang, label in language_labels.items() %}
+                            {% set of_lang = impls|selectattr('language', 'equalto', lang)|list %}
+                            {% if of_lang %}
+                                {% set ok = of_lang|selectattr('golden_status', 'equalto', 'PASS')|list|length %}
+                                <span class="tag {{ 'ok' if ok else 'dim' }}" title="{{ ok }} of {{ of_lang|length }} golden-model verified">{{ label }}{% if of_lang|length > 1 %} ×{{ of_lang|length }}{% endif %}</span>
+                            {% endif %}
+                        {% endfor %}
+                        </div>
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        </div>
+        <div class="legend">
+            <span><span class="tag ok">C</span> at least one golden-model verified implementation</span>
+            <span><span class="tag dim">C</span> implementation present, not verified</span>
+        </div>
+        {% else %}
+        <div class="empty">No benchmarks match these filters.</div>
+        {% endif %}
+    </section>
+</div>
+{% endblock %}

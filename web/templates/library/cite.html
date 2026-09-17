@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% set nav = 'cite' %}
+{% block title %}Cite — MVL Benchmark Library{% endblock %}
+{% block content %}
+<div class="prose">
+    <h1>Cite the MVL Benchmark Library</h1>
+    <p>
+        If you use benchmarks from this library in your work, please cite the paper that introduced
+        the generation and verification pipeline. Individual benchmark pages provide a BibTeX entry
+        with the benchmark's permanent URL in the <code>note</code> field.
+    </p>
+    <pre class="bibtex" id="bibtex">{{ bibtex }}</pre>
+    <button class="btn btn-outline btn-sm" style="margin-top:8px" onclick="navigator.clipboard.writeText(document.getElementById('bibtex').textContent).then(()=>{this.textContent='Copied ✓'})">Copy BibTeX</button>
+
+    <h2>Paper</h2>
+    <p>
+        Rolf Drechsler and Qian Liu. <em>LLM-based Generation of High-Level Benchmarks for MVL Designs.</em>
+        IEEE International Symposium on Multiple-Valued Logic (ISMVL), 2026.
+        <a href="https://www.dfki.de/en/web/research/projects-and-publications/publication/17116" target="_blank" rel="noopener">Publication page</a>
+    </p>
+
+    <h2>License</h2>
+    <p>
+        Benchmark files are licensed under
+        <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">Creative Commons Attribution 4.0 International (CC BY 4.0)</a>.
+        Every download archive includes a <code>LICENSE.txt</code> and a <code>CITATION.bib</code>.
+    </p>
+</div>
+{% endblock %}

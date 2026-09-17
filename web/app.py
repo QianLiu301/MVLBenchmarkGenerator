@@ -6,9 +6,17 @@ Web API for generating and running MVL benchmarks.
 
 import os
 import sys
+from datetime import timedelta
 from pathlib import Path
-from flask import Flask, request, jsonify, send_from_directory, send_file, Response
+from flask import Flask, request, jsonify, redirect, send_from_directory, send_file, Response, url_for
 from flask_cors import CORS
+
+# 本地开发：.env 里的变量（DATABASE_URL、ACCESS_PASSWORD…）；Render 上直接用环境变量
+try:
+    from dotenv import load_dotenv
+    load_dotenv(Path(__file__).parent.parent / '.env')
+except ImportError:
+    pass
 
 # 从环境变量读取配置
 PORT = int(os.environ.get('PORT', 5001))
@@ -70,8 +78,26 @@ from mvl_generator import MVLGenerator
 from mvl_simulation_runner import MVLSimulationRunner
 from benchmark_validator import BenchmarkValidator
 
+sys.path.insert(0, str(Path(__file__).parent))          # web/ — for blueprints
+from library.db import init_db
+from blueprints.auth import bp as auth_bp, is_authed, require_access
+from blueprints.library import bp as library_bp
+
 app = Flask(__name__, static_folder='static', template_folder='templates')
 CORS(app)
+# Signed session cookie for the password gate. Set SECRET_KEY on Render so
+# logins survive restarts; the random fallback only affects local dev.
+app.secret_key = os.environ.get('SECRET_KEY') or os.urandom(32)
+app.permanent_session_lifetime = timedelta(days=30)
+app.register_blueprint(auth_bp)
+app.register_blueprint(library_bp)
+init_db()
+
+
+@app.context_processor
+def _inject_globals():
+    return {'is_authed': is_authed()}
+
 
 # Global instances
 simulation_runner = MVLSimulationRunner(project_root=str(PROJECT_ROOT))
@@ -82,16 +108,17 @@ benchmark_validator = BenchmarkValidator(project_root=str(PROJECT_ROOT))
 # API Endpoints
 # ============================================================
 
-@app.route('/')
-def landing():
-    """Serve landing page"""
-    return send_from_directory('templates', 'landing.html')
+@app.route('/generate')
+@require_access
+def generate_page():
+    """The LLM generator tool (password-protected: it spends API credits)."""
+    return send_from_directory('templates', 'index.html')
 
 
 @app.route('/app')
 def index():
-    """Serve main tool page"""
-    return send_from_directory('templates', 'index.html')
+    """Legacy URL of the generator."""
+    return redirect(url_for('generate_page'))
 
 
 @app.route('/api/status')
@@ -122,6 +149,7 @@ def api_tools():
 
 
 @app.route('/api/generate', methods=['POST'])
+@require_access
 def api_generate():
     """Generate MVL ALU code"""
     try:
@@ -209,6 +237,7 @@ def api_generate():
 
 
 @app.route('/api/generate-stream', methods=['POST'])
+@require_access
 def api_generate_stream():
     """Generate MVL ALU code with streaming output (SSE)"""
     import json

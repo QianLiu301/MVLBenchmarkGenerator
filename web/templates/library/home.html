@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% set nav = 'home' %}
+{% block title %}MVL Benchmark Library — An Online Resource for Multi-Valued Logic Benchmarks{% endblock %}
+{% block content %}
+<section class="hero">
+    <h1>An Online Resource for<br><span class="accent">Multi-Valued Logic</span> Benchmarks</h1>
+    <p>
+        Verified high-level benchmark designs for MVL research — ALUs, register files and CPUs over
+        GF(p), GF(pⁿ) and Z/kZ, in C, Python, Verilog and VHDL. Every implementation is compiled,
+        simulated and checked against an independent golden model before it is published.
+    </p>
+    <div class="hero-actions">
+        <a href="{{ url_for('library.browse') }}" class="btn btn-primary btn-lg">📚 Browse the Library</a>
+        <a href="{{ url_for('library.download_all') }}" class="btn btn-outline btn-lg">⬇ Download all benchmarks</a>
+    </div>
+</section>
+
+<div class="stats-row">
+    <div class="stat"><div class="stat-value">{{ stats.benchmarks }}</div><div class="stat-label">Benchmarks</div></div>
+    <div class="stat"><div class="stat-value">{{ stats.implementations }}</div><div class="stat-label">Implementations</div></div>
+    <div class="stat"><div class="stat-value">{{ stats.verified }}</div><div class="stat-label">Golden-model verified</div></div>
+    <div class="stat"><div class="stat-value">{{ stats.models }}</div><div class="stat-label">LLM models</div></div>
+</div>
+
+<div class="home-grid">
+    <div>
+        <div class="card" style="margin-bottom:20px">
+            <div class="section-title">📂 Benchmarks by module type</div>
+            <ul class="cat-list">
+                {% for value, n in facets.module_type %}
+                <li><a href="{{ url_for('library.browse', module_type=value) }}">{{ module_labels.get(value, value) }}</a><span class="n">{{ n }} spec{{ '' if n == 1 else 's' }}</span></li>
+                {% else %}
+                <li class="muted">No benchmarks published yet.</li>
+                {% endfor %}
+            </ul>
+        </div>
+        <div class="card" style="margin-bottom:20px">
+            <div class="section-title">🔢 By radix (k logic values per digit)</div>
+            <div class="pill-row">
+                {% for value, n in facets.k_value %}
+                <a class="pill" href="{{ url_for('library.browse', k_value=value) }}">k = {{ value }} <em class="muted">{{ radix_names.get(value, '') }}</em> <span class="n">{{ n }}</span></a>
+                {% endfor %}
+            </div>
+        </div>
+        <div class="card">
+            <div class="section-title">∑ By algebraic structure</div>
+            <div class="pill-row">
+                {% for value, n in facets.logic_family %}
+                <a class="pill" href="{{ url_for('library.browse', logic_family=value) }}">{{ family_labels.get(value, value) }} <span class="n">{{ n }}</span></a>
+                {% endfor %}
+            </div>
+            <div class="section-title" style="margin-top:20px">⌨ By implementation language</div>
+            <div class="pill-row">
+                {% for value, n in facets.language %}
+                <a class="pill" href="{{ url_for('library.browse', language=value) }}">{{ language_labels.get(value, value) }} <span class="n">{{ n }}</span></a>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+    <div class="side-cards">
+        <div class="card side-card">
+            <h3>✅ Verified, not just generated</h3>
+            <p>Each implementation carries its own verification record: compilation, simulation, and a digit-wise comparison against a deterministic Galois-field golden model. Filter the library to verified implementations only.</p>
+            <a href="{{ url_for('library.browse', verified=1) }}" class="btn btn-outline btn-sm">Show verified only →</a>
+        </div>
+        <div class="card side-card">
+            <h3>🤖 Generate new benchmarks</h3>
+            <p>The library grows from an LLM-based generation pipeline. Generate a design with your own parameters, simulate it and validate it against the golden model.</p>
+            <a href="{{ url_for('generate_page') }}" class="btn btn-outline btn-sm">Open the generator →</a>
+        </div>
+        <div class="card side-card">
+            <h3>📄 Cite</h3>
+            <p>All files are CC BY 4.0. If you use them, please cite the ISMVL 2026 paper.</p>
+            <a href="{{ url_for('library.cite') }}" class="btn btn-outline btn-sm">BibTeX →</a>
+        </div>
+        <div class="card side-card">
+            <h3>📤 Submit</h3>
+            <p>Public submission with automated checks and human review is coming next. Until then, contact us to contribute a benchmark.</p>
+            <a href="mailto:treebush302@gmail.com" class="btn btn-outline btn-sm">Contact →</a>
+        </div>
+    </div>
+</div>
+{% endblock %}

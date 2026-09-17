@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% set nav = 'library' %}
+{% block title %}{{ b.slug }} — {{ b.title }} — MVL Benchmark Library{% endblock %}
+{% block meta_description %}{{ b.description }}{% endblock %}
+{% block content %}
+<div class="small muted" style="margin-bottom:10px"><a href="{{ url_for('library.browse') }}">Library</a> › <a href="{{ url_for('library.browse', module_type=b.module_type) }}">{{ b.module_label }}</a> › {{ b.slug }}</div>
+
+<div class="detail-head">
+    <div>
+        <h1>{{ b.title }} <span class="slug" style="font-size:1rem">({{ b.slug }})</span></h1>
+        <div class="muted">{{ b.module_label }} · {{ b.logic_type }} · {{ impls|length }} implementation{{ '' if impls|length == 1 else 's' }} · {{ verified_n }} verified</div>
+    </div>
+    <div class="detail-actions">
+        <a href="{{ url_for('library.download_benchmark', slug=b.slug) }}" class="btn btn-primary">⬇ Download all files (.zip)</a>
+        <a href="{{ url_for('library.spec_json', slug=b.slug) }}" class="btn btn-outline">spec.json</a>
+        <a href="{{ url_for('generate_page') }}?module_type={{ b.module_type }}&k={{ b.k_value }}&bits={{ b.bitwidth }}" class="btn btn-outline">🤖 Generate a similar one</a>
+    </div>
+</div>
+
+<div class="card" style="margin-bottom:20px">
+    <div class="section-title">Specification</div>
+    <p class="muted">{{ b.description }}</p>
+    <div class="spec-grid">
+        <div class="spec-item"><div class="k">Module</div><div class="v">{{ b.module_label }}</div></div>
+        <div class="spec-item"><div class="k">Radix k</div><div class="v">{{ b.k_value }} ({{ radix_names.get(b.k_value, '') }})</div></div>
+        <div class="spec-item"><div class="k">Bitwidth</div><div class="v">{{ b.bitwidth }} digits</div></div>
+        <div class="spec-item"><div class="k">Structure</div><div class="v">{{ b.logic_type }}</div></div>
+        <div class="spec-item"><div class="k">Modulus</div><div class="v mono">{{ '{:,}'.format(b.mod_value) }}</div></div>
+        <div class="spec-item"><div class="k">Operand range</div><div class="v mono">0 … {{ '{:,}'.format(b.mod_value - 1) }}</div></div>
+        {% for key, val in b.params.items() %}
+        <div class="spec-item"><div class="k">{{ key.replace('_', ' ') }}</div><div class="v">{{ val }}</div></div>
+        {% endfor %}
+    </div>
+    <div class="small muted" style="margin-bottom:6px">Operations</div>
+    <div class="ops">{% for op in b.operations %}<span>{{ op }}</span>{% endfor %}</div>
+</div>
+
+<div class="card" style="margin-bottom:20px">
+    <div class="section-title">Implementations <span class="count">{{ impls|length }}</span></div>
+    {% if impls %}
+    <div class="table-wrap">
+    <table class="bench">
+        <thead>
+            <tr>
+                <th>Lang.</th>
+                <th>Source</th>
+                <th>Model</th>
+                <th class="num">LOC</th>
+                <th class="num">Test vectors</th>
+                <th>Simulation</th>
+                <th>Golden model</th>
+                <th>File</th>
+                <th>Added</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for i in impls %}
+            <tr>
+                <td><strong>{{ i.language_label }}</strong></td>
+                <td><span class="tag">{{ i.source_label }}</span></td>
+                <td class="small">
+                    {% if i.model_responded %}<span class="mono">{{ i.model_responded }}</span>{% if i.provider %} <span class="muted">({{ i.provider }})</span>{% endif %}
+                    {% elif i.provider %}{{ i.provider }}{% else %}<span class="muted">—</span>{% endif %}
+                </td>
+                <td class="num">{{ i.loc }}</td>
+                <td class="num">{{ i.test_vectors }}</td>
+                <td>
+                    {% if i.sim_status == 'pass' %}<span class="tag ok" title="{{ i.sim_passed }} test lines parsed">✓ runs</span>
+                    {% elif i.sim_status == 'fail' %}<span class="tag bad">✗ fails</span>
+                    {% else %}<span class="tag dim">unverified</span>{% endif %}
+                </td>
+                <td>
+                    {% if i.golden_status == 'PASS' %}<span class="tag ok" title="{{ i.golden_passed }}/{{ i.golden_compared }} compared vectors match">✓ PASS {{ i.golden_passed }}/{{ i.golden_compared }}</span>
+                    {% elif i.golden_status == 'unverified' %}<span class="tag dim">unverified</span>
+                    {% else %}<span class="tag bad" title="{{ i.golden_passed }}/{{ i.golden_compared }} match">✗ {{ i.golden_status.replace('_', ' ') }}</span>{% endif %}
+                </td>
+                <td style="white-space:nowrap">
+                    <a href="{{ url_for('library.view_code', slug=b.slug, impl_id=i.id) }}" class="btn btn-outline btn-sm">View</a>
+                    <a href="{{ url_for('library.download_impl', slug=b.slug, impl_id=i.id) }}" class="btn btn-outline btn-sm">⬇ {{ i.filename.rsplit('.', 1)[-1] }}</a>
+                </td>
+                <td class="small muted">{{ i.created_at.strftime('%Y-%m-%d') }}</td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    </div>
+    <div class="legend">
+        <span><strong>Simulation</strong>: compiles and runs with gcc / python / iverilog / ghdl</span>
+        <span><strong>Golden model</strong>: every printed test vector compared digit-wise with the {{ b.logic_type }} reference; PASS = all match</span>
+        <span><strong>Model</strong>: as reported by the provider's API response</span>
+    </div>
+    {% else %}
+    <div class="empty">No implementations published for this specification yet.</div>
+    {% endif %}
+</div>
+
+<div class="card">
+    <div class="section-title">Cite this benchmark</div>
+    <p class="small muted" style="margin-bottom:10px">Files are licensed under <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a>. Please cite:</p>
+    <pre class="bibtex" id="bibtex">{{ bibtex }}</pre>
+    <button class="btn btn-outline btn-sm" style="margin-top:8px" onclick="navigator.clipboard.writeText(document.getElementById('bibtex').textContent).then(()=>{this.textContent='Copied ✓'})">Copy BibTeX</button>
+</div>
+{% endblock %}

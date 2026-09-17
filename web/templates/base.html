@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}MVL Benchmark Library{% endblock %}</title>
+    <meta name="description" content="{% block meta_description %}An online resource for Multi-Valued Logic (MVL) benchmarks: verified ALU, register-file and CPU designs in C, Python, Verilog and VHDL.{% endblock %}">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/library.css') }}">
+    {% block head %}{% endblock %}
+</head>
+<body>
+    <header class="site-header">
+        <div class="container header-inner">
+            <a href="{{ url_for('library.home') }}" class="brand">
+                <span class="brand-mark">🔢</span>
+                <span class="brand-text">MVL Benchmark <span class="brand-accent">Library</span></span>
+            </a>
+            <nav class="site-nav">
+                <a href="{{ url_for('library.browse') }}" class="{{ 'active' if nav == 'library' else '' }}">Library</a>
+                <a href="{{ url_for('generate_page') }}" class="{{ 'active' if nav == 'generate' else '' }}">Generate</a>
+                <a href="{{ url_for('library.about') }}" class="{{ 'active' if nav == 'about' else '' }}">About</a>
+                <a href="{{ url_for('library.cite') }}" class="{{ 'active' if nav == 'cite' else '' }}">Cite</a>
+                {% if is_authed %}
+                <a href="{{ url_for('auth.logout') }}" class="nav-muted" title="Sign out">Sign out</a>
+                {% endif %}
+            </nav>
+        </div>
+    </header>
+
+    <main class="container page">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% for category, msg in messages %}
+                <div class="flash flash-{{ category }}">{{ msg }}</div>
+            {% endfor %}
+        {% endwith %}
+        {% block content %}{% endblock %}
+    </main>
+
+    <footer class="site-footer">
+        <div class="container footer-inner">
+            <div>
+                <strong>University of Bremen</strong> · Group of Computer Architecture (AGRA)<br>
+                <a href="https://de.linkedin.com/in/rolf-drechsler-2304a98" target="_blank" rel="noopener">Rolf Drechsler</a> ·
+                <a href="https://www.linkedin.com/in/qian-liu-0707482bb/" target="_blank" rel="noopener">Qian Liu</a>
+            </div>
+            <div class="footer-links">
+                <a href="{{ url_for('library.cite') }}">Cite</a>
+                <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a>
+                <a href="https://github.com/QianLiu301/MVLBenchmarkGenerator" target="_blank" rel="noopener">GitHub</a>
+                <a href="#" id="legalLink">Imprint / Legal Notice</a>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Legal Modal -->
+    <div class="modal-overlay" id="legalModal">
+        <div class="modal legal-modal">
+            <div class="modal-header">
+                <h2>Imprint / Legal Notice</h2>
+                <button class="modal-close" id="legalClose" aria-label="Close">&times;</button>
+            </div>
+            <div class="legal-content">
+                <p><strong>Information provided according to §5 German Telemedia Act (TMG)</strong></p>
+                <h3>Institution</h3>
+                <p><strong>University of Bremen</strong><br>Faculty 3<br>Group of Computer Architecture (AGRA)<br>Bibliothekstr. 5<br>28359 Bremen<br>Germany</p>
+                <h3>Contact</h3>
+                <p>📧 <a href="mailto:drechsler@uni-bremen.de">drechsler@uni-bremen.de</a><br>📧 <a href="mailto:treebush302@gmail.com">treebush302@gmail.com</a></p>
+                <h3>Responsible for Content (according to §55(2) RStV)</h3>
+                <p>Prof. Dr. Rolf Drechsler<br>Qian Liu</p>
+                <h3>Research Disclaimer</h3>
+                <p>This website and the associated tools are provided exclusively for academic research and educational purposes. The benchmark specifications, generated source code and verification artifacts are experimental in nature and are provided without any warranty. They must not be used in safety-critical or production environments without independent verification and validation.</p>
+                <h3>Licensing</h3>
+                <p>Unless stated otherwise, all benchmark files in the library are published under the <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">Creative Commons Attribution 4.0 International (CC BY 4.0)</a> license. Attribution is given by citing the associated publication.</p>
+                <h3>Liability for Content</h3>
+                <p>As a service provider, we are responsible for our own content on these pages in accordance with general laws (§7(1) TMG). However, according to §§8–10 TMG, we are not obliged to monitor transmitted or stored third-party information or to investigate circumstances that indicate illegal activity. Liability is only possible from the time of knowledge of a concrete infringement. Upon becoming aware of such violations, we will remove the affected content immediately.</p>
+                <h3>Liability for Links</h3>
+                <p>This website contains links to external third-party platforms (GitHub, arXiv, publisher pages), over whose content we have no control. The respective platform operators are solely responsible for the content of the linked pages.</p>
+                <h3>Privacy</h3>
+                <p>Browsing and downloading from this website does not require an account and no tracking or analytics services are employed. A technically necessary session cookie is set only when signing in to protected areas (generator, administration). External fonts are loaded from Google Fonts.</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        (function () {
+            const modal = document.getElementById('legalModal');
+            document.getElementById('legalLink').addEventListener('click', e => { e.preventDefault(); modal.classList.add('active'); });
+            document.getElementById('legalClose').addEventListener('click', () => modal.classList.remove('active'));
+            modal.addEventListener('click', e => { if (e.target === modal) modal.classList.remove('active'); });
+        })();
+    </script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

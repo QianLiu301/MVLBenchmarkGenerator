@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% set nav = 'about' %}
+{% block title %}About — MVL Benchmark Library{% endblock %}
+{% block content %}
+<div class="prose">
+    <h1>About the MVL Benchmark Library</h1>
+    <p>
+        The MVL Benchmark Library is an online resource for benchmarks within the domain of
+        Multi-Valued Logic (MVL) design. It provides a database of benchmark <em>specifications</em>
+        (module type, radix <em>k</em>, bitwidth, algebraic structure, operation set) together with
+        <em>implementations</em> in C, Python, Verilog and VHDL, each carrying a machine-checked
+        verification record.
+    </p>
+
+    <h2>What makes an entry</h2>
+    <ul>
+        <li><strong>Specification</strong> — identified by a stable name such as <code>alu_k3_8t</code>
+            (module, radix, digits). It fixes the algebraic structure: GF(p) for prime <em>k</em>,
+            GF(pⁿ) for prime powers, and the integer ring Z/kZ otherwise.</li>
+        <li><strong>Implementation</strong> — one source file realising the specification. Several
+            implementations may exist per language, e.g. produced by different LLMs, so that models
+            can be compared on identical specifications.</li>
+        <li><strong>Verification record</strong> — the implementation is compiled and simulated
+            (gcc, CPython, Icarus Verilog, GHDL); every test vector it prints is compared digit-wise
+            with an independent, deterministic golden model. Only the result is stored; nothing is
+            hand-edited.</li>
+    </ul>
+
+    <h2>How the library grows</h2>
+    <p>
+        Entries originate from an LLM-based generation pipeline described in the associated
+        ISMVL 2026 paper: a natural-language or parametric specification is turned into code by a
+        large language model, then simulated and validated. The generator is available on this site
+        (<a href="{{ url_for('generate_page') }}">Generate</a>). Public submission of externally
+        authored benchmarks, with automated checks followed by human review, is planned as the next step.
+    </p>
+
+    <h2>License and citation</h2>
+    <p>
+        All benchmark files are published under
+        <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a>.
+        You may use, modify and redistribute them, provided you give credit by citing the
+        <a href="{{ url_for('library.cite') }}">associated publication</a>.
+    </p>
+
+    <h2>Authors</h2>
+    <p>
+        <a href="https://de.linkedin.com/in/rolf-drechsler-2304a98" target="_blank" rel="noopener">Prof. Dr. Rolf Drechsler</a> and
+        <a href="https://www.linkedin.com/in/qian-liu-0707482bb/" target="_blank" rel="noopener">Qian Liu</a>,
+        Group of Computer Architecture (AGRA), University of Bremen.
+    </p>
+</div>
+{% endblock %}
