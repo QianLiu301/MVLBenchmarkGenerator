@@ -7,25 +7,32 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
         :root {
-            --primary: #d97707;
-            --primary-light: #f59e0b;
-            --primary-dark: #b45309;
-            --success: #10b981;
-            --warning: #f59e0b;
-            --error: #ef4444;
-            --bg-page: #fffbeb;
-            --bg-white: #ffffff;
-            --bg-gray: #fef3c7;
-            --border: #fde68a;
-            --border-focus: #f59e0b;
-            --text-primary: #1e293b;
-            --text-secondary: #64748b;
-            --text-muted: #94a3b8;
-            --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
-            --shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
-            --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
-            --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
-            --radius: 8px;
+            /* design tokens — shared with static/css/library.css */
+            --bg: #FFFBEB; --surface: #FFFFFF; --border: #F3E8C8;
+            --text: #1F2937; --text-muted: #6B7280;
+            --primary-from: #D97706; --primary-to: #F59E0B;
+            --link: #198C8A; --link-hover: #0F766E;
+            --ok-bg: #E6F4F3; --ok-fg: #0F766E;
+            --warn-bg: #FEF3C7; --warn-fg: #92400E;
+            --err-bg: #FEE2E2; --err-fg: #B91C1C;
+            /* aliases used throughout this page */
+            --primary: var(--primary-from);
+            --primary-light: var(--primary-to);
+            --primary-dark: var(--primary-from);
+            --success: var(--ok-fg);
+            --warning: var(--warn-fg);
+            --error: var(--err-fg);
+            --bg-page: var(--bg);
+            --bg-white: var(--surface);
+            --bg-gray: var(--bg);
+            --border-focus: var(--link);
+            --text-primary: var(--text);
+            --text-secondary: var(--text-muted);
+            --shadow-sm: 0 1px 2px 0 rgb(31 41 55 / 0.05);
+            --shadow: 0 1px 3px 0 rgb(31 41 55 / 0.08), 0 1px 2px -1px rgb(31 41 55 / 0.08);
+            --shadow-md: 0 4px 6px -1px rgb(31 41 55 / 0.08), 0 2px 4px -2px rgb(31 41 55 / 0.08);
+            --shadow-lg: 0 10px 15px -3px rgb(31 41 55 / 0.10), 0 4px 6px -4px rgb(31 41 55 / 0.10);
+            --radius: 12px;
             --radius-lg: 12px;
         }
 
@@ -46,7 +53,7 @@
         /* Header */
         .header {
             background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%);
-            color: white;
+            color: var(--surface);
             padding: 32px 24px;
             text-align: center;
         }
@@ -194,7 +201,7 @@
         select:focus {
             outline: none;
             border-color: var(--primary);
-            box-shadow: 0 0 0 3px rgba(217, 119, 6, 0.15);
+            box-shadow: 0 0 0 3px rgb(25 140 138 / 0.18);
         }
 
         /* Custom input row (shown when "Custom..." is selected) */
@@ -217,12 +224,12 @@
         .custom-input-row input[type="number"]:focus {
             outline: none;
             border-color: var(--primary);
-            box-shadow: 0 0 0 3px rgba(217, 119, 6, 0.15);
+            box-shadow: 0 0 0 3px rgb(25 140 138 / 0.18);
         }
 
         .custom-input-row input[type="number"].input-error {
-            border-color: #ef4444;
-            box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.15);
+            border-color: var(--err-fg);
+            box-shadow: 0 0 0 3px rgb(185 28 28 / 0.15);
         }
 
         .custom-input-row .validation-hint {
@@ -232,7 +239,7 @@
         }
 
         .custom-input-row .validation-hint.error {
-            color: #ef4444;
+            color: var(--err-fg);
         }
 
         /* Input */
@@ -255,7 +262,7 @@
         input[type="text"]:focus, textarea:focus {
             outline: none;
             border-color: var(--primary);
-            box-shadow: 0 0 0 3px rgba(217, 119, 6, 0.15);
+            box-shadow: 0 0 0 3px rgb(25 140 138 / 0.18);
         }
 
         input[type="text"]::placeholder, textarea::placeholder {
@@ -348,7 +355,7 @@
             left: 0;
             right: 0;
             bottom: 0;
-            background-color: #cbd5e1;
+            background-color: var(--border);
             transition: 0.3s;
             border-radius: 26px;
         }
@@ -360,7 +367,7 @@
             width: 20px;
             left: 3px;
             bottom: 3px;
-            background-color: white;
+            background-color: var(--surface);
             transition: 0.3s;
             border-radius: 50%;
             box-shadow: var(--shadow-sm);
@@ -406,7 +413,7 @@
         .checkbox-item.selected {
             background: var(--primary);
             border-color: var(--primary);
-            color: white;
+            color: var(--surface);
         }
 
         .checkbox-item input {
@@ -492,8 +499,8 @@
         }
 
         .btn-primary {
-            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%);
-            color: white;
+            background: linear-gradient(90deg, var(--primary-from), var(--primary-to));
+            color: var(--surface);
             box-shadow: var(--shadow-md);
         }
 
@@ -529,7 +536,7 @@
 
         .btn-success {
             background: var(--success);
-            color: white;
+            color: var(--surface);
         }
 
         .btn-sm {
@@ -555,13 +562,13 @@
         }
 
         .tool-badge.available {
-            background: #d1fae5;
-            color: #065f46;
+            background: var(--ok-bg);
+            color: var(--ok-fg);
         }
 
         .tool-badge.unavailable {
-            background: #fee2e2;
-            color: #991b1b;
+            background: var(--err-bg);
+            color: var(--err-fg);
         }
 
         /* Result Card */
@@ -590,21 +597,21 @@
             align-items: center;
             gap: 16px;
             padding: 16px;
-            background: #f0fdf4;
+            background: var(--ok-bg);
             border-radius: var(--radius);
             margin-bottom: 20px;
         }
 
         .result-header.error {
-            background: #fef2f2;
+            background: var(--err-bg);
         }
 
         .result-header.warning {
-            background: #fffbeb;
+            background: var(--bg);
         }
 
         .result-header.warning .result-icon {
-            background: #f59e0b;
+            background: var(--primary-to);
         }
 
         .result-icon {
@@ -616,7 +623,7 @@
             align-items: center;
             justify-content: center;
             font-size: 1.5rem;
-            color: white;
+            color: var(--surface);
         }
 
         .result-header.error .result-icon {
@@ -671,17 +678,17 @@
             font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
             font-size: 0.78rem;
             color: var(--text-primary);
-            background: #fff;
+            background: var(--surface);
             padding: 1px 6px;
             border-radius: 4px;
         }
         .model-info-badge { font-size: 0.7rem; }
-        .model-info.match .model-info-badge { color: #16a34a; }
-        .model-info.mismatch { background: #fffbeb; border: 1px solid #fde68a; }
-        .model-info.mismatch .model-info-badge { color: #d97706; }
-        .model-info.unknown .model-info-badge { color: #9ca3af; }
-        .model-info-sep { color: #9ca3af; }
-        .model-info-note { font-size: 0.75rem; color: #92400e; margin-left: auto; }
+        .model-info.match .model-info-badge { color: var(--ok-fg); }
+        .model-info.mismatch { background: var(--bg); border: 1px solid var(--border); }
+        .model-info.mismatch .model-info-badge { color: var(--primary-from); }
+        .model-info.unknown .model-info-badge { color: var(--text-muted); }
+        .model-info-sep { color: var(--text-muted); }
+        .model-info-note { font-size: 0.75rem; color: var(--warn-fg); margin-left: auto; }
 
         .stat-value {
             font-size: 1.5rem;
@@ -699,9 +706,9 @@
 
         /* Code Preview */
         .code-preview {
-            background: #ffffff;
-            color: #1e293b;
-            border: 1px solid #e2e8f0;
+            background: var(--surface);
+            color: var(--text);
+            border: 1px solid var(--border);
             border-radius: var(--radius);
             padding: 16px;
             font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
@@ -715,8 +722,8 @@
 
         /* Simulation Output */
         .sim-output {
-            background: #0f172a;
-            color: #4ade80;
+            background: var(--text);
+            color: var(--ok-fg);
             border-radius: var(--radius);
             padding: 16px;
             font-family: 'JetBrains Mono', monospace;
@@ -739,9 +746,9 @@
 
         /* Error Message */
         .error-message {
-            background: #fef2f2;
-            border: 1px solid #fecaca;
-            color: #991b1b;
+            background: var(--err-bg);
+            border: 1px solid var(--err-bg);
+            color: var(--err-fg);
             padding: 12px 16px;
             border-radius: var(--radius);
             font-size: 0.875rem;
@@ -759,8 +766,8 @@
         .spinner {
             width: 18px;
             height: 18px;
-            border: 2px solid rgba(255,255,255,0.3);
-            border-top-color: white;
+            border: 2px solid rgb(255 255 255 / 0.3);
+            border-top-color: var(--surface);
             border-radius: 50%;
             animation: spin 0.8s linear infinite;
         }
@@ -802,7 +809,7 @@
             left: 0;
             width: 100%;
             height: 100%;
-            background: rgba(0, 0, 0, 0.5);
+            background: rgb(31 41 55 / 0.5);
             z-index: 1000;
             justify-content: center;
             align-items: center;
@@ -906,7 +913,7 @@
         }
 
         .authors-section a {
-            color: #10b981;
+            color: var(--ok-fg);
             text-decoration: none;
             font-weight: 500;
         }
@@ -916,7 +923,7 @@
         }
 
         .legal-link {
-            color: #10b981;
+            color: var(--ok-fg);
             cursor: pointer;
             font-size: 0.85rem;
         }
@@ -926,35 +933,53 @@
         }
 
         /* Top navigation shared with the library site */
-        .topnav { background: #fff; border-bottom: 1px solid var(--border); }
-        .topnav-inner { max-width: 1180px; margin: 0 auto; padding: 0 24px; height: 52px; display: flex; align-items: center; justify-content: space-between; }
-        .topnav a { color: var(--text-secondary); font-weight: 500; font-size: .9rem; text-decoration: none; padding: 6px 12px; border-radius: 6px; }
-        .topnav a:hover { background: var(--bg-gray); color: var(--text-primary); }
-        .topnav a.active { color: var(--primary-dark); background: var(--bg-gray); }
-        .topnav .brand { font-weight: 700; color: var(--text-primary); font-size: 1rem; padding-left: 0; }
-        .topnav .brand:hover { background: none; }
-        .topnav .brand span { color: var(--primary); }
-        .topnav nav { display: flex; gap: 2px; }
+        .topnav { background: var(--surface); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 30; }
+        .topnav-inner { max-width: 1180px; margin: 0 auto; padding: 0 24px; height: 60px; display: flex; align-items: center; justify-content: space-between; }
+        .topnav nav { display: flex; align-items: center; gap: 2px; }
+        .topnav nav > a { position: relative; padding: 22px 12px; color: var(--text-muted); font-weight: 500; font-size: .92rem; line-height: 1; text-decoration: none; }
+        .topnav nav > a:hover { color: var(--text); }
+        .topnav nav > a.active { color: var(--text); }
+        .topnav nav > a.active::after { content: ''; position: absolute; left: 12px; right: 12px; bottom: 0; height: 2px; background: var(--link); }
+        .topnav .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; color: var(--text); font-size: 1.05rem; text-decoration: none; }
+        .topnav .brand-mark { display: inline-flex; width: 32px; height: 32px; border-radius: 8px; background: linear-gradient(90deg, var(--primary-from), var(--primary-to)); color: var(--surface); align-items: center; justify-content: center; }
+        .topnav .brand-accent { color: var(--link); }
+        .topnav .lucide { width: 18px; height: 18px; }
+        .user-menu { position: relative; margin-left: 6px; }
+        .user-menu > button { display: inline-flex; align-items: center; gap: 6px; background: var(--surface); border: 1px solid var(--border); border-radius: 999px; padding: 6px 10px 6px 8px; cursor: pointer; font: inherit; font-size: .85rem; color: var(--text-muted); }
+        .user-menu .menu { display: none; position: absolute; right: 0; top: calc(100% + 6px); min-width: 180px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow-lg); padding: 6px; z-index: 40; }
+        .user-menu.open .menu { display: block; }
+        .user-menu .menu a { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 8px; font-size: .88rem; color: var(--text); text-decoration: none; }
+        .user-menu .menu a:hover { background: var(--bg); }
+        .user-menu .menu .lucide { width: 15px; height: 15px; }
+        .card-icon .lucide { width: 22px; height: 22px; color: var(--surface); }
     </style>
+    <script src="https://cdn.jsdelivr.net/npm/lucide@0.460.0/dist/umd/lucide.min.js"></script>
 </head>
 <body>
     <!-- Access is enforced server-side (see blueprints/auth.py); this page is only served after login -->
     <div class="topnav">
         <div class="topnav-inner">
-            <a href="/" class="brand">🔢 MVL Benchmark <span>Library</span></a>
+            <a href="/" class="brand"><span class="brand-mark"><i data-lucide="layers"></i></span><span>MVL Benchmark <span class="brand-accent">Library</span></span></a>
             <nav>
                 <a href="/library">Library</a>
+                <a href="/submit">Submit</a>
                 <a href="/generate" class="active">Generate</a>
                 <a href="/about">About</a>
                 <a href="/cite">Cite</a>
-                <a href="/logout" style="color:#94a3b8;font-size:.82rem">Sign out</a>
+                <div class="user-menu" id="userMenu">
+                    <button type="button" aria-haspopup="true" aria-expanded="false"><i data-lucide="user-check" class="lucide"></i> Maintainer <i data-lucide="chevron-down" class="lucide"></i></button>
+                    <div class="menu">
+                        <a href="/admin/"><i data-lucide="inbox"></i> Review queue</a>
+                        <a href="/logout"><i data-lucide="log-out"></i> Sign out</a>
+                    </div>
+                </div>
             </nav>
         </div>
     </div>
 
     <!-- Header -->
     <div class="header">
-        <h1>🔢 MVL Benchmark Generator</h1>
+        <h1>MVL Benchmark Generator</h1>
         <p>Generate Multi-Valued Logic ALU Benchmarks using Large Language Models</p>
     </div>
 
@@ -962,7 +987,7 @@
         <!-- Tools Status -->
         <div class="card">
             <div class="card-header">
-                <div class="card-icon">🔧</div>
+                <div class="card-icon"><i data-lucide="activity"></i></div>
                 <div>
                     <div class="card-title">System Status</div>
                     <div class="card-subtitle">Available simulation tools</div>
@@ -976,7 +1001,7 @@
         <!-- Configuration -->
         <div class="card">
             <div class="card-header">
-                <div class="card-icon">⚙️</div>
+                <div class="card-icon"><i data-lucide="settings-2"></i></div>
                 <div>
                     <div class="card-title">Configuration</div>
                     <div class="card-subtitle">Set parameters for benchmark generation</div>
@@ -1181,7 +1206,7 @@
             <!-- Stream Output Toggle -->
             <div class="toggle-row">
                 <div class="toggle-label">
-                    <span class="icon">⚡</span>
+                    <span class="icon"></span>
                     <span>Stream output</span>
                 </div>
                 <label class="toggle-switch">
@@ -1193,13 +1218,13 @@
 
         <!-- Error Message -->
         <div class="error-message" id="error-message">
-            <span>⚠️</span>
+            <span></span>
             <span id="error-text"></span>
         </div>
 
         <!-- Generate Button -->
         <button class="btn btn-primary btn-block" id="generate-btn" onclick="generate()">
-            <span id="generate-btn-text">🚀 Generate Benchmark</span>
+            <span id="generate-btn-text">Generate Benchmark</span>
             <div class="spinner" id="generate-spinner" style="display: none;"></div>
         </button>
 
@@ -1245,12 +1270,12 @@
                 <span class="model-info-note" id="model-info-note"></span>
             </div>
 
-            <div id="validation-warnings" style="display: none; background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 12px 16px; margin-bottom: 16px;">
+            <div id="validation-warnings" style="display: none; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; margin-bottom: 16px;">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                    <div id="validation-warnings-title" style="font-size: 0.8rem; font-weight: 600; color: #92400e;">⚠️ Validation Warnings</div>
-                    <button onclick="generate()" style="font-size: 0.72rem; padding: 3px 10px; background: #f59e0b; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500;">🔄 Re-generate</button>
+                    <div id="validation-warnings-title" style="font-size: 0.8rem; font-weight: 600; color: var(--warn-fg);">Validation Warnings</div>
+                    <button onclick="generate()" style="font-size: 0.72rem; padding: 3px 10px; background: var(--primary-to); color: var(--surface); border: none; border-radius: 4px; cursor: pointer; font-weight: 500;">Re-generate</button>
                 </div>
-                <div id="validation-warnings-list" style="font-size: 0.78rem; color: #78350f; margin: 0; line-height: 1.8;"></div>
+                <div id="validation-warnings-list" style="font-size: 0.78rem; color: var(--warn-fg); margin: 0; line-height: 1.8;"></div>
             </div>
 
             <div class="section-label">Generated Code Preview</div>
@@ -1258,10 +1283,10 @@
             <div class="code-preview" id="code-preview">// Loading...</div>
 
             <div class="action-buttons">
-                <button class="btn btn-secondary btn-sm" id="download-code-btn" onclick="downloadCode()">📥 Download Code</button>
-                <button class="btn btn-secondary btn-sm" id="download-all-btn" onclick="downloadAll()" style="display: none;">📦 Download All (.zip)</button>
-                <button class="btn btn-secondary btn-sm" onclick="viewFullCode()">👁️ View Full</button>
-                <button class="btn btn-success btn-sm" onclick="runSimulation()" id="run-sim-btn">▶️ Run Simulation</button>
+                <button class="btn btn-secondary btn-sm" id="download-code-btn" onclick="downloadCode()">Download Code</button>
+                <button class="btn btn-secondary btn-sm" id="download-all-btn" onclick="downloadAll()" style="display: none;">Download All (.zip)</button>
+                <button class="btn btn-secondary btn-sm" onclick="viewFullCode()">View Full</button>
+                <button class="btn btn-success btn-sm" onclick="runSimulation()" id="run-sim-btn">▶Run Simulation</button>
             </div>
         </div>
 
@@ -1285,11 +1310,11 @@
                         <div class="stat-label">Total Tests</div>
                     </div>
                     <div class="stat-card">
-                        <div class="stat-value" style="color: #10b981;" id="sim-passed">20</div>
+                        <div class="stat-value" style="color: var(--ok-fg);" id="sim-passed">20</div>
                         <div class="stat-label">Passed</div>
                     </div>
                     <div class="stat-card">
-                        <div class="stat-value" style="color: #ef4444;" id="sim-failed">0</div>
+                        <div class="stat-value" style="color: var(--err-fg);" id="sim-failed">0</div>
                         <div class="stat-label">Failed</div>
                     </div>
                     <div class="stat-card">
@@ -1299,14 +1324,14 @@
                 </div>
 
                 <!-- Error box (compile/run errors) -->
-                <div id="sim-error-box" style="display: none; background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 12px 16px; margin-bottom: 12px;">
-                    <div style="font-size: 0.8rem; font-weight: 600; color: #991b1b; margin-bottom: 4px;">Errors</div>
-                    <div id="sim-error-text" style="font-size: 0.75rem; color: #7f1d1d; white-space: pre-wrap; font-family: monospace;"></div>
+                <div id="sim-error-box" style="display: none; background: var(--err-bg); border: 1px solid var(--err-bg); border-radius: 8px; padding: 12px 16px; margin-bottom: 12px;">
+                    <div style="font-size: 0.8rem; font-weight: 600; color: var(--err-fg); margin-bottom: 4px;">Errors</div>
+                    <div id="sim-error-text" style="font-size: 0.75rem; color: var(--err-fg); white-space: pre-wrap; font-family: monospace;"></div>
                     <button class="btn btn-secondary btn-sm" onclick="refreshTools()" id="refresh-tools-btn"
                             style="margin-top: 8px; font-size: 0.72rem; padding: 4px 10px;">
-                        🔄 Re-detect Tools
+                        Re-detect Tools
                     </button>
-                    <div id="tools-status-text" style="font-size: 0.72rem; color: #6b7280; margin-top: 6px; display: none;"></div>
+                    <div id="tools-status-text" style="font-size: 0.72rem; color: var(--text-muted); margin-top: 6px; display: none;"></div>
                 </div>
 
                 <div class="section-label">Simulation Output</div>
@@ -1314,8 +1339,8 @@
             </div>
 
             <div class="action-buttons">
-                <button class="btn btn-secondary btn-sm" onclick="downloadLog()">📥 Download Log</button>
-                <button class="btn btn-secondary btn-sm" onclick="resetAll()">🔄 New Generation</button>
+                <button class="btn btn-secondary btn-sm" onclick="downloadLog()">Download Log</button>
+                <button class="btn btn-secondary btn-sm" onclick="resetAll()">New Generation</button>
             </div>
         </div>
 
@@ -1325,7 +1350,7 @@
         <div class="card result-card" id="validation-panel" style="display: none;">
             <div style="padding: 20px 24px 0;">
                 <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 6px;">
-                    <span style="font-size: 1.3rem;">🔬</span>
+                    <span style="font-size: 1.3rem;"></span>
                     <h3 style="font-weight: 700; font-size: 1rem; color: var(--text-primary);">Golden-Model Validation</h3>
                 </div>
                 <p style="font-size: 0.78rem; color: var(--text-secondary); margin-bottom: 16px;">
@@ -1335,15 +1360,15 @@
                 <!-- Three entry-point buttons -->
                 <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 20px;">
                     <button class="btn btn-secondary btn-sm" id="val-btn-a" onclick="runValidateA()" style="flex: 1; min-width: 140px;">
-                        <span id="val-btn-a-text">🅰️ Strategy A<br><span style="font-size:0.68rem;opacity:0.7">LLM Self-Test</span></span>
+                        <span id="val-btn-a-text">🅰Strategy A<br><span style="font-size:0.68rem;opacity:0.7">LLM Self-Test</span></span>
                         <div class="spinner" id="val-spinner-a" style="display:none;"></div>
                     </button>
                     <button class="btn btn-secondary btn-sm" id="val-btn-b" onclick="runValidateB()" style="flex: 1; min-width: 140px;">
-                        <span id="val-btn-b-text">🅱️ Strategy B<br><span style="font-size:0.68rem;opacity:0.7">Golden Injection</span></span>
+                        <span id="val-btn-b-text">🅱Strategy B<br><span style="font-size:0.68rem;opacity:0.7">Golden Injection</span></span>
                         <div class="spinner" id="val-spinner-b" style="display:none;"></div>
                     </button>
                     <button class="btn btn-primary btn-sm" id="val-btn-both" onclick="runValidateBoth()" style="flex: 1.2; min-width: 160px; font-weight: 600;">
-                        <span id="val-btn-both-text">⚡ Run Both (A+B)</span>
+                        <span id="val-btn-both-text">Run Both (A+B)</span>
                         <div class="spinner" id="val-spinner-both" style="display:none;"></div>
                     </button>
                 </div>
@@ -1356,21 +1381,21 @@
                 <div id="val-summary-bar" style="display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px;"></div>
 
                 <!-- Strategy comparison (only for "Both") -->
-                <div id="val-comparison" style="display: none; background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 8px; padding: 14px 16px; margin-bottom: 16px;">
-                    <div style="font-size: 0.82rem; font-weight: 600; color: #0369a1; margin-bottom: 8px;">📊 Strategy Comparison (A vs B)</div>
-                    <div id="val-comparison-body" style="font-size: 0.78rem; color: #0c4a6e; line-height: 1.8;"></div>
+                <div id="val-comparison" style="display: none; background: var(--ok-bg); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; margin-bottom: 16px;">
+                    <div style="font-size: 0.82rem; font-weight: 600; color: var(--link-hover); margin-bottom: 8px;">Strategy Comparison (A vs B)</div>
+                    <div id="val-comparison-body" style="font-size: 0.78rem; color: var(--link-hover); line-height: 1.8;"></div>
                 </div>
 
                 <!-- Error pattern groups -->
                 <div id="val-patterns" style="margin-bottom: 16px;"></div>
 
                 <!-- Cross-language comparison (only when multiple languages validated) -->
-                <div id="val-cross-lang" style="display: none; background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 8px; padding: 14px 16px; margin-bottom: 16px;"></div>
+                <div id="val-cross-lang" style="display: none; background: var(--ok-bg); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; margin-bottom: 16px;"></div>
 
                 <!-- Download buttons -->
                 <div class="action-buttons" id="val-download-btns" style="display: none;">
-                    <button class="btn btn-secondary btn-sm" onclick="downloadValReport('json')">📥 Download JSON Report</button>
-                    <button class="btn btn-secondary btn-sm" onclick="downloadValReport('csv')">📥 Download CSV Report</button>
+                    <button class="btn btn-secondary btn-sm" onclick="downloadValReport('json')">Download JSON Report</button>
+                    <button class="btn btn-secondary btn-sm" onclick="downloadValReport('csv')">Download CSV Report</button>
                 </div>
             </div>
         </div>
@@ -1383,7 +1408,7 @@
 <!--    </div>-->
     <!-- Footer -->
 <div class="footer" style="text-align: center; padding: 24px 0; font-size: 0.95rem;">
-    <p style="margin-bottom: 12px; color: #444;">
+    <p style="margin-bottom: 12px; color: var(--text);">
         Authors:
         <a href="https://de.linkedin.com/in/rolf-drechsler-2304a98"
            target="_blank" rel="noopener noreferrer"
@@ -1421,11 +1446,11 @@
             </div>
             <div class="lang-tabs" id="modal-lang-tabs" style="display: none; padding: 0 24px;"></div>
             <div class="modal-body" style="padding: 0;">
-                <pre style="margin:0; padding:20px; font-family:'JetBrains Mono','Fira Code','Consolas',monospace; font-size:13px; line-height:1.6; white-space:pre-wrap; word-break:break-all; color:#1e293b; background:#ffffff;" id="code-modal-content"></pre>
+                <pre style="margin:0; padding:20px; font-family:'JetBrains Mono','Fira Code','Consolas',monospace; font-size:13px; line-height:1.6; white-space:pre-wrap; word-break:break-all; color:var(--text); background:var(--surface);" id="code-modal-content"></pre>
             </div>
             <div class="modal-footer" id="code-modal-footer">
-                <button class="btn btn-secondary btn-sm" onclick="copyCurrentCode()" id="copy-code-btn">📋 Copy Code</button>
-                <button class="btn btn-secondary btn-sm" onclick="downloadCurrentFile()" style="margin-left: 8px;">📥 Download This File</button>
+                <button class="btn btn-secondary btn-sm" onclick="copyCurrentCode()" id="copy-code-btn">Copy Code</button>
+                <button class="btn btn-secondary btn-sm" onclick="downloadCurrentFile()" style="margin-left: 8px;">Download This File</button>
             </div>
         </div>
     </div>
@@ -1434,7 +1459,7 @@
     <div class="modal-overlay" id="legal-modal">
         <div class="modal-content">
             <div class="modal-header">
-                <h2>📜 Imprint / Legal Notice</h2>
+                <h2>Imprint / Legal Notice</h2>
                 <button class="modal-close" onclick="closeLegalModal()">✕</button>
             </div>
             <div class="modal-body">
@@ -1454,8 +1479,8 @@
 
                     <h3>Contact</h3>
                     <p>
-                        📧 Email: <a href="mailto:drechsler@uni-bremen.de">drechsler@uni-bremen.de</a><br>
-                        📧 Email: <a href="mailto:treebush302@gmail.com">treebush302@gmail.com</a><br>
+                        Email: <a href="mailto:drechsler@uni-bremen.de">drechsler@uni-bremen.de</a><br>
+                        Email: <a href="mailto:qialiu@uni-bremen.de">qialiu@uni-bremen.de</a><br>
                     </p>
 
                     <h3>Responsible for Content (according to §55(2) RStV)</h3>
@@ -1507,7 +1532,7 @@
 
                     <hr>
 
-                    <h2>🔒 Privacy Policy (Datenschutzerklärung)</h2>
+                    <h2>Privacy Policy (Datenschutzerklärung)</h2>
 
                     <h3>General Information</h3>
                     <p>
@@ -1557,7 +1582,7 @@
                     <h3>Contact for Data Protection</h3>
                     <p>
                         For any questions regarding data protection, please contact:<br>
-                        📧 <a href="mailto:treebush302@gmail.com">treebush302@gmail.com</a>
+                        <a href="mailto:qialiu@uni-bremen.de">qialiu@uni-bremen.de</a>
                     </p>
                 </div>
             </div>
@@ -1726,7 +1751,7 @@
             } catch (error) {
                 console.error('Failed to check tools:', error);
                 document.getElementById('tools-status').innerHTML =
-                    '<span class="tool-badge unavailable">⚠️ Failed to check tools</span>';
+                    '<span class="tool-badge unavailable">Failed to check tools</span>';
             }
         }
 
@@ -1814,7 +1839,7 @@
                 display.style.color = 'var(--text-primary)';
             } else {
                 display.value = `mod ${k} — no Galois Field`;
-                display.style.color = '#b45309';
+                display.style.color = 'var(--primary-from)';
             }
         }
 
@@ -2333,14 +2358,14 @@
                     (first.response_model ? ` • ${first.response_model}` : '');
 
                 document.getElementById('download-all-btn').style.display = '';
-                document.getElementById('download-code-btn').textContent = '📥 Download This File';
+                document.getElementById('download-code-btn').textContent = 'Download This File';
             } else {
                 const data = currentResults[languages[0]];
                 document.getElementById('gen-result-subtitle').textContent =
                     `${data.filename} • ${data.llm.toUpperCase()}` +
                     (data.response_model ? ` • ${data.response_model}` : '');
                 document.getElementById('download-all-btn').style.display = 'none';
-                document.getElementById('download-code-btn').textContent = '📥 Download Code';
+                document.getElementById('download-code-btn').textContent = 'Download Code';
             }
 
             // Update tabs with final status
@@ -2413,22 +2438,22 @@
             };
 
             if (data.validation_warnings && data.validation_warnings.length > 0) {
-                warningsTitle.textContent = `⚠️ Validation Warnings (${data.validation_warnings.length})`;
+                warningsTitle.textContent = `Validation Warnings (${data.validation_warnings.length})`;
                 warningsList.innerHTML = data.validation_warnings
                     .map(w => {
                         const escaped = escapeHtml(w);
                         const type = w.split(':')[0].trim();
                         const suggestion = suggestionMap[type] || 'Try re-generating with a different AI provider.';
-                        return `<div style="margin-bottom: 8px; padding: 6px 10px; background: #fef3c7; border-radius: 4px;">
-                            <div style="font-weight: 500;">⚠ ${escaped}</div>
-                            <div style="font-size: 0.72rem; color: #92400e; margin-top: 2px;">💡 ${escapeHtml(suggestion)}</div>
+                        return `<div style="margin-bottom: 8px; padding: 6px 10px; background: var(--warn-bg); border-radius: 4px;">
+                            <div style="font-weight: 500;">${escaped}</div>
+                            <div style="font-size: 0.72rem; color: var(--warn-fg); margin-top: 2px;">${escapeHtml(suggestion)}</div>
                         </div>`;
                     })
                     .join('');
                 warningsBox.style.display = 'block';
                 // Change header to amber/warning state
                 resultHeader.className = 'result-header warning';
-                resultIcon.textContent = '⚠';
+                resultIcon.textContent = '';
                 resultTitle.textContent = 'Generation Complete (with warnings)';
             } else {
                 warningsBox.style.display = 'none';
@@ -2523,7 +2548,7 @@
 
             document.getElementById('sim-result-icon').innerHTML = '';
             if (anyFailed) {
-                document.getElementById('sim-result-icon').textContent = '⚠';
+                document.getElementById('sim-result-icon').textContent = '';
                 document.getElementById('sim-result-header').className = 'result-header warning';
             } else {
                 document.getElementById('sim-result-icon').textContent = '✓';
@@ -2546,7 +2571,7 @@
             updateValPanelTitle();
 
             btn.disabled = false;
-            btn.innerHTML = '▶️ Run Simulation';
+            btn.innerHTML = '▶Run Simulation';
         }
 
         function renderSimTabs(langs) {
@@ -2561,11 +2586,11 @@
                 const isActive = l === activeSimLang;
                 let icon, color;
                 if (!data) {
-                    icon = '⏳'; color = '#94a3b8'; // pending
+                    icon = '⏳'; color = 'var(--text-muted)'; // pending
                 } else if (data.success && !(data.errors && data.errors.length > 0)) {
-                    icon = '✓'; color = '#10b981';
+                    icon = '✓'; color = 'var(--ok-fg)';
                 } else {
-                    icon = '✗'; color = '#ef4444';
+                    icon = '✗'; color = 'var(--err-fg)';
                 }
                 return `<button class="lang-tab ${isActive ? 'active' : ''}"
                     onclick="switchSimTab('${l}')"
@@ -2621,7 +2646,7 @@
             const btn = document.getElementById('refresh-tools-btn');
             const statusEl = document.getElementById('tools-status-text');
             btn.disabled = true;
-            btn.textContent = '🔄 Detecting...';
+            btn.textContent = 'Detecting...';
             statusEl.style.display = '';
             statusEl.textContent = 'Scanning for installed tools...';
             try {
@@ -2636,13 +2661,13 @@
                     statusEl.textContent = 'No simulation tools detected.';
                 } else {
                     statusEl.textContent = 'Detected: ' + items.join(', ') + '. Click "Run Simulation" to retry.';
-                    statusEl.style.color = '#065f46';
+                    statusEl.style.color = 'var(--ok-fg)';
                 }
             } catch (e) {
                 statusEl.textContent = 'Detection failed: ' + e.message;
             }
             btn.disabled = false;
-            btn.textContent = '🔄 Re-detect Tools';
+            btn.textContent = 'Re-detect Tools';
         }
 
         // Legacy compat
@@ -2809,7 +2834,7 @@
             if (loading) {
                 btn.innerHTML = '<div class="spinner"></div> Generating...';
             } else {
-                btn.innerHTML = '<span id="generate-btn-text">🚀 Generate Benchmark</span>';
+                btn.innerHTML = '<span id="generate-btn-text">Generate Benchmark</span>';
             }
         }
 
@@ -2961,15 +2986,15 @@
             strategies.forEach(({ label, d }) => {
                 const pass = d.passed || 0, fail = d.failed || 0, total = pass + fail;
                 const pct = total > 0 ? Math.round(100 * pass / total) : 0;
-                const color = fail === 0 ? '#10b981' : (pct >= 80 ? '#f59e0b' : '#ef4444');
+                const color = fail === 0 ? 'var(--ok-fg)' : (pct >= 80 ? 'var(--primary-to)' : 'var(--err-fg)');
                 bar.innerHTML += `
-                    <div style="flex:1; min-width:200px; background:white; border:1px solid #e2e8f0; border-radius:8px; padding:14px 16px;">
+                    <div style="flex:1; min-width:200px; background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:14px 16px;">
                         <div style="font-size:0.75rem; font-weight:600; color:var(--text-secondary); margin-bottom:6px;">${label}</div>
                         <div style="display:flex; align-items:baseline; gap:8px;">
                             <span style="font-size:1.5rem; font-weight:700; color:${color}">${pct}%</span>
                             <span style="font-size:0.75rem; color:var(--text-muted);">${pass}/${total} passed</span>
                         </div>
-                        <div style="margin-top:8px; height:6px; background:#f1f5f9; border-radius:3px; overflow:hidden;">
+                        <div style="margin-top:8px; height:6px; background:var(--bg); border-radius:3px; overflow:hidden;">
                             <div style="height:100%; width:${pct}%; background:${color}; border-radius:3px; transition:width 0.5s;"></div>
                         </div>
                         <div style="font-size:0.7rem; color:var(--text-muted); margin-top:4px;">
@@ -2987,27 +3012,27 @@
                 compDiv.style.display = '';
                 let html = `
                     <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:8px; margin-bottom:10px;">
-                        <div style="text-align:center; padding:8px; background:white; border-radius:6px;">
-                            <div style="font-size:1.1rem; font-weight:700; color:#10b981;">${c.both_pass}</div>
+                        <div style="text-align:center; padding:8px; background:var(--surface); border-radius:6px;">
+                            <div style="font-size:1.1rem; font-weight:700; color:var(--ok-fg);">${c.both_pass}</div>
                             <div style="font-size:0.68rem;">Both Pass</div>
                         </div>
-                        <div style="text-align:center; padding:8px; background:white; border-radius:6px;">
-                            <div style="font-size:1.1rem; font-weight:700; color:#ef4444;">${c.both_fail}</div>
+                        <div style="text-align:center; padding:8px; background:var(--surface); border-radius:6px;">
+                            <div style="font-size:1.1rem; font-weight:700; color:var(--err-fg);">${c.both_fail}</div>
                             <div style="font-size:0.68rem;">Both Fail</div>
                         </div>
-                        <div style="text-align:center; padding:8px; background:white; border-radius:6px;">
-                            <div style="font-size:1.1rem; font-weight:700; color:#f59e0b;">${c.a_only_pass}</div>
+                        <div style="text-align:center; padding:8px; background:var(--surface); border-radius:6px;">
+                            <div style="font-size:1.1rem; font-weight:700; color:var(--primary-to);">${c.a_only_pass}</div>
                             <div style="font-size:0.68rem;">A pass, B fail</div>
                         </div>
-                        <div style="text-align:center; padding:8px; background:white; border-radius:6px;">
-                            <div style="font-size:1.1rem; font-weight:700; color:#8b5cf6;">${c.b_only_pass}</div>
+                        <div style="text-align:center; padding:8px; background:var(--surface); border-radius:6px;">
+                            <div style="font-size:1.1rem; font-weight:700; color:var(--link);">${c.b_only_pass}</div>
                             <div style="font-size:0.68rem;">B pass, A fail</div>
                         </div>
                     </div>`;
                 if (c.selective_testing_examples && c.selective_testing_examples.length > 0) {
                     html += `<div style="font-size:0.72rem; font-weight:600; margin-bottom:4px;">Selective self-testing examples:</div>`;
                     c.selective_testing_examples.forEach(ex => {
-                        html += `<div style="font-size:0.72rem; padding:4px 8px; background:#e0f2fe; border-radius:4px; margin-bottom:3px;">
+                        html += `<div style="font-size:0.72rem; padding:4px 8px; background:var(--ok-bg); border-radius:4px; margin-bottom:3px;">
                             ${escapeHtml(ex.op)}(${ex.a}, ${ex.b}) — ${escapeHtml(ex.note)}</div>`;
                     });
                 }
@@ -3021,13 +3046,13 @@
             patternsDiv.innerHTML = '';
 
             const patternColors = {
-                'standard_mod_on_gf': '#dc2626',
-                'missing_mod_wrap': '#ea580c',
-                'off_by_one': '#d97706',
-                'flag_only': '#ca8a04',
-                'op_confused': '#7c3aed',
-                'systematic': '#be185d',
-                'unknown': '#64748b',
+                'standard_mod_on_gf': 'var(--err-fg)',
+                'missing_mod_wrap': 'var(--primary-from)',
+                'off_by_one': 'var(--primary-from)',
+                'flag_only': 'var(--warn-fg)',
+                'op_confused': 'var(--link)',
+                'systematic': 'var(--err-fg)',
+                'unknown': 'var(--text-muted)',
             };
 
             strategies.forEach(({ label, d }) => {
@@ -3037,9 +3062,9 @@
                 let html = `<div style="font-size:0.82rem; font-weight:600; color:var(--text-primary); margin-bottom:8px;">${label} — Error Patterns</div>`;
 
                 cex.by_pattern.forEach(group => {
-                    const c = patternColors[group.pattern] || '#64748b';
+                    const c = patternColors[group.pattern] || 'var(--text-muted)';
                     html += `
-                        <div style="border:1px solid #e2e8f0; border-left:3px solid ${c}; border-radius:6px; padding:12px 14px; margin-bottom:10px; background:white;">
+                        <div style="border:1px solid var(--border); border-left:3px solid ${c}; border-radius:6px; padding:12px 14px; margin-bottom:10px; background:var(--surface);">
                             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
                                 <span style="font-size:0.78rem; font-weight:600; color:${c};">${escapeHtml(group.label)}</span>
                                 <span style="font-size:0.7rem; background:${c}15; color:${c}; padding:2px 8px; border-radius:10px; font-weight:500;">${group.count} failures</span>
@@ -3048,25 +3073,25 @@
 
                     if (group.examples && group.examples.length > 0) {
                         html += `<table style="width:100%; font-size:0.72rem; border-collapse:collapse;">
-                            <tr style="background:#f8fafc; font-weight:600; color:var(--text-secondary);">
-                                <td style="padding:4px 8px; border-bottom:1px solid #e2e8f0;">Op</td>
-                                <td style="padding:4px 8px; border-bottom:1px solid #e2e8f0;">A</td>
-                                <td style="padding:4px 8px; border-bottom:1px solid #e2e8f0;">B</td>
-                                <td style="padding:4px 8px; border-bottom:1px solid #e2e8f0;">Got</td>
-                                <td style="padding:4px 8px; border-bottom:1px solid #e2e8f0;">Expected</td>
-                                <td style="padding:4px 8px; border-bottom:1px solid #e2e8f0;">Note</td>
+                            <tr style="background:var(--bg); font-weight:600; color:var(--text-secondary);">
+                                <td style="padding:4px 8px; border-bottom:1px solid var(--border);">Op</td>
+                                <td style="padding:4px 8px; border-bottom:1px solid var(--border);">A</td>
+                                <td style="padding:4px 8px; border-bottom:1px solid var(--border);">B</td>
+                                <td style="padding:4px 8px; border-bottom:1px solid var(--border);">Got</td>
+                                <td style="padding:4px 8px; border-bottom:1px solid var(--border);">Expected</td>
+                                <td style="padding:4px 8px; border-bottom:1px solid var(--border);">Note</td>
                             </tr>`;
                         group.examples.forEach(ex => {
                             let note = '';
                             if (ex.naive_mod !== undefined && ex.naive_mod !== '') note = 'Naive mod=' + ex.naive_mod;
                             if (ex.confused_with) note = 'Matches ' + ex.confused_with;
                             html += `<tr>
-                                <td style="padding:4px 8px; border-bottom:1px solid #f1f5f9; font-weight:500;">${escapeHtml(ex.op)}</td>
-                                <td style="padding:4px 8px; border-bottom:1px solid #f1f5f9;">${ex.a}</td>
-                                <td style="padding:4px 8px; border-bottom:1px solid #f1f5f9;">${ex.b}</td>
-                                <td style="padding:4px 8px; border-bottom:1px solid #f1f5f9; color:#ef4444; font-weight:500;">${ex.got}</td>
-                                <td style="padding:4px 8px; border-bottom:1px solid #f1f5f9; color:#10b981; font-weight:500;">${ex.expected}</td>
-                                <td style="padding:4px 8px; border-bottom:1px solid #f1f5f9; color:var(--text-muted);">${escapeHtml(note)}</td>
+                                <td style="padding:4px 8px; border-bottom:1px solid var(--bg); font-weight:500;">${escapeHtml(ex.op)}</td>
+                                <td style="padding:4px 8px; border-bottom:1px solid var(--bg);">${ex.a}</td>
+                                <td style="padding:4px 8px; border-bottom:1px solid var(--bg);">${ex.b}</td>
+                                <td style="padding:4px 8px; border-bottom:1px solid var(--bg); color:var(--err-fg); font-weight:500;">${ex.got}</td>
+                                <td style="padding:4px 8px; border-bottom:1px solid var(--bg); color:var(--ok-fg); font-weight:500;">${ex.expected}</td>
+                                <td style="padding:4px 8px; border-bottom:1px solid var(--bg); color:var(--text-muted);">${escapeHtml(note)}</td>
                             </tr>`;
                         });
                         html += `</table>`;
@@ -3079,7 +3104,7 @@
                     html += `<div style="font-size:0.72rem; color:var(--text-secondary); margin-bottom:12px;">`;
                     Object.entries(cex.by_op).forEach(([op, info]) => {
                         if (info.total > 0) {
-                            const opColor = info.failed === 0 ? '#10b981' : '#ef4444';
+                            const opColor = info.failed === 0 ? 'var(--ok-fg)' : 'var(--err-fg)';
                             html += `<span style="display:inline-block; margin-right:10px; margin-bottom:4px; padding:2px 8px; background:${opColor}10; color:${opColor}; border-radius:4px; font-weight:500;">${op}: ${info.total - info.failed}/${info.total}</span>`;
                         }
                     });
@@ -3121,9 +3146,9 @@
                 const total = pass + fail;
                 const pct = total > 0 ? Math.round(100 * pass / total) : 0;
                 const status = strat.status || 'N/A';
-                const color = fail === 0 ? '#10b981' : (pct >= 80 ? '#f59e0b' : '#ef4444');
+                const color = fail === 0 ? 'var(--ok-fg)' : (pct >= 80 ? 'var(--primary-to)' : 'var(--err-fg)');
                 html += `
-                    <div style="flex:1; min-width:120px; text-align:center; padding:10px 12px; background:white; border:1px solid #e2e8f0; border-radius:6px;">
+                    <div style="flex:1; min-width:120px; text-align:center; padding:10px 12px; background:var(--surface); border:1px solid var(--border); border-radius:6px;">
                         <div style="font-size:0.72rem; font-weight:600; color:var(--text-secondary); margin-bottom:4px;">${lang.toUpperCase()}</div>
                         <div style="font-size:1.3rem; font-weight:700; color:${color};">${pct}%</div>
                         <div style="font-size:0.68rem; color:var(--text-muted);">${pass}/${total} &middot; ${status}</div>
@@ -3131,7 +3156,7 @@
             });
 
             crossDiv.innerHTML = `
-                <div style="font-size:0.82rem; font-weight:600; color:#0369a1; margin-bottom:8px;">📊 Cross-Language Comparison</div>
+                <div style="font-size:0.82rem; font-weight:600; color:var(--link-hover); margin-bottom:8px;">Cross-Language Comparison</div>
                 <div style="display:flex; gap:10px; flex-wrap:wrap;">${html}</div>`;
         }
 
@@ -3151,6 +3176,14 @@
                 closeCodeModal();
             }
         });
+    </script>
+    <script>
+        (function () {
+            if (window.lucide) lucide.createIcons();
+            const menu = document.getElementById('userMenu'); const btn = menu.querySelector('button');
+            btn.addEventListener('click', e => { e.stopPropagation(); btn.setAttribute('aria-expanded', menu.classList.toggle('open')); });
+            document.addEventListener('click', () => menu.classList.remove('open'));
+        })();
     </script>
 </body>
 </html>

@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% set nav = 'admin' %}
+{% block title %}Review queue — MVL Benchmark Library{% endblock %}
+{% block content %}
+<div class="detail-head">
+    <div>
+        <h1 style="font-size:1.5rem">Review queue</h1>
+        <div class="muted small">Submissions that passed the automated pipeline wait here for a maintainer decision.</div>
+    </div>
+</div>
+
+<div class="status-tabs">
+    {% for st, label in [('awaiting_review', 'Awaiting review'), ('running', 'Running'), ('queued', 'Queued'), ('failed', 'Failed'), ('approved', 'Approved'), ('rejected', 'Rejected'), ('all', 'All')] %}
+    <a href="{{ url_for('admin.queue', status=st) }}" class="{{ 'active' if status == st }}">{{ label }}{% if st != 'all' %} <span class="num">{{ counts.get(st, 0) }}</span>{% endif %}</a>
+    {% endfor %}
+</div>
+
+{% if subs %}
+<div class="table-wrap">
+<table class="bench">
+    <thead><tr><th>#</th><th>Benchmark</th><th>Files</th><th>Submitter</th><th>Pipeline</th><th>Golden model</th><th>Submitted</th><th></th></tr></thead>
+    <tbody>
+    {% for s in subs %}
+    <tr>
+        <td class="num">{{ s.id }}</td>
+        <td><span class="slug">{{ s.slug }}</span><div class="small muted">{{ (s.manifest.get('source') or '') }}{% if s.manifest.get('generator', {}).get('model') %} · {{ s.manifest.generator.model }}{% endif %}</div></td>
+        <td class="mono small">{{ s.files_summary }}</td>
+        <td>{{ s.submitter_name }}<div class="small muted">{{ s.submitter_affiliation or '' }}</div></td>
+        <td>
+            <span class="mini-steps" title="{% for key, label in steps %}{{ label }}: {{ (s.steps.get(key) or {}).get('status', 'pending') }}{{ ' · ' if not loop.last }}{% endfor %}">
+                {% for key, label in steps %}<i class="{{ (s.steps.get(key) or {}).get('status', 'pending') }}"></i>{% endfor %}
+            </span>
+            <div class="small muted">{{ s.status.replace('_', ' ') }}</div>
+        </td>
+        <td>
+            {% if s.results %}
+                {% set ok = s.results.values()|selectattr('golden_status', 'equalto', 'PASS')|list|length %}
+                <span class="tag {{ 'ok' if ok == s.results|length else 'err' }}">{{ ok }}/{{ s.results|length }} PASS</span>
+            {% else %}<span class="tag">—</span>{% endif %}
+        </td>
+        <td class="num small">{{ s.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+        <td><a href="{{ url_for('admin.review', sub_id=s.id) }}" class="btn btn-outline btn-sm">Review</a></td>
+    </tr>
+    {% endfor %}
+    </tbody>
+</table>
+</div>
+{% else %}
+<div class="empty">Nothing in this list.</div>
+{% endif %}
+{% endblock %}

@@ -27,10 +27,10 @@ def is_authed() -> bool:
 def _safe_next(target: str) -> str:
     """Only allow redirects within this site."""
     if not target:
-        return url_for('generate_page')
+        return url_for('library.home')
     parsed = urlparse(target)
     if parsed.netloc or parsed.scheme or not target.startswith('/'):
-        return url_for('generate_page')
+        return url_for('library.home')
     return target
 
 

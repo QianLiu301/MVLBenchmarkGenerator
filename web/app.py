@@ -82,6 +82,8 @@ sys.path.insert(0, str(Path(__file__).parent))          # web/ — for blueprint
 from library.db import init_db
 from blueprints.auth import bp as auth_bp, is_authed, require_access
 from blueprints.library import bp as library_bp
+from blueprints.submit import bp as submit_bp
+from blueprints.admin import bp as admin_bp
 
 app = Flask(__name__, static_folder='static', template_folder='templates')
 CORS(app)
@@ -91,12 +93,16 @@ app.secret_key = os.environ.get('SECRET_KEY') or os.urandom(32)
 app.permanent_session_lifetime = timedelta(days=30)
 app.register_blueprint(auth_bp)
 app.register_blueprint(library_bp)
+app.register_blueprint(submit_bp)
+app.register_blueprint(admin_bp)
 init_db()
 
 
 @app.context_processor
 def _inject_globals():
-    return {'is_authed': is_authed()}
+    css = Path(__file__).parent / 'static' / 'css' / 'library.css'
+    return {'is_authed': is_authed(),
+            'asset_version': int(css.stat().st_mtime) if css.exists() else 0}   # cache-busting
 
 
 # Global instances

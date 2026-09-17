@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% set nav = 'admin' %}
+{% block title %}Review #{{ sub.id }} — MVL Benchmark Library{% endblock %}
+{% block head %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/verilog.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/vhdl.min.js"></script>
+{% endblock %}
+{% block content %}
+{% set pill = {'queued': 'warn', 'running': 'warn', 'awaiting_review': 'warn', 'approved': 'ok', 'rejected': 'err', 'failed': 'err'} %}
+<div class="crumbs"><a href="{{ url_for('admin.queue') }}">Review queue</a> <i data-lucide="chevron-right" class="icon-sm icon"></i> #{{ sub.id }}</div>
+<div class="detail-head">
+    <div>
+        <h1 style="font-size:1.5rem">Submission #{{ sub.id }} · <span class="mono">{{ sub.slug }}</span></h1>
+        <div class="muted small">{{ sub.submitter_name }} &lt;{{ sub.submitter_email }}&gt;{% if sub.submitter_affiliation %} · {{ sub.submitter_affiliation }}{% endif %} · {{ sub.created_at.strftime('%Y-%m-%d %H:%M UTC') }} · <a href="{{ url_for('submit.status', token=sub.token) }}" target="_blank" rel="noopener">public status page</a></div>
+    </div>
+    <span class="pill {{ pill.get(sub.status, '') }}" style="font-size:.85rem">{{ sub.status.replace('_', ' ') }}</span>
+</div>
+
+<div class="stack">
+<section class="card">
+    <div class="section-title"><i data-lucide="list-checks" class="icon"></i> Automated report</div>
+    {% include "submit/_steps.html" %}
+    {% if sub.results %}
+    <div class="table-wrap" style="margin-top:10px"><table class="bench" style="min-width:0">
+        <thead><tr><th>File</th><th>Simulation</th><th>Golden model</th><th class="num">Vectors</th><th>Strength</th><th>SHA-256</th></tr></thead>
+        <tbody>
+        {% for name, r in sub.results.items() %}
+        <tr>
+            <td class="mono">{{ name }}</td>
+            <td><span class="tag {{ 'ok' if r.sim_status == 'pass' else 'err' }}">{{ r.sim_status }}</span></td>
+            <td><span class="tag {{ 'ok' if r.golden_status == 'PASS' else 'err' }}">{{ r.golden_status.replace('_',' ') }}</span></td>
+            <td class="num">{{ r.golden_passed }}/{{ r.golden_compared }}</td>
+            <td class="mono small">{{ r.verification_strength }}</td>
+            <td class="mono small">{{ r.sha256[:16] }}…</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table></div>
+    {% endif %}
+</section>
+
+<section class="card">
+    <div class="section-title"><i data-lucide="file-json" class="icon"></i> Manifest</div>
+    <pre class="bibtex">{{ sub.manifest|tojson(indent=2) }}</pre>
+</section>
+
+<section class="card">
+    <div class="section-title"><i data-lucide="code-2" class="icon"></i> Files</div>
+    {% for name, code in sub.files.items() %}
+    {% set lang = {'.c': 'c', '.py': 'python', '.v': 'verilog', '.vhd': 'vhdl'}.get('.' ~ name.rsplit('.', 1)[-1], 'plaintext') %}
+    <details {{ 'open' if loop.first }} style="margin-bottom:10px">
+        <summary style="cursor:pointer;font-weight:600;padding:6px 0" class="mono">{{ name }} <span class="muted small">({{ code.split('\n')|length }} lines)</span></summary>
+        <pre class="code"><code class="language-{{ lang }}">{{ code }}</code></pre>
+    </details>
+    {% endfor %}
+</section>
+
+<section class="card">
+    <div class="section-title"><i data-lucide="gavel" class="icon"></i> Decision</div>
+    {% if sub.status in ('awaiting_review', 'failed') %}
+    <form method="post" action="{{ url_for('admin.decide', sub_id=sub.id) }}" class="decision">
+        <div class="field" style="margin:0">
+            <label for="reason">Reason (required, shown to the submitter and in the review history)</label>
+            <textarea id="reason" name="reason" rows="2" required minlength="5" placeholder="e.g. All checks pass; code matches the spec."></textarea>
+        </div>
+        <button class="btn btn-ok" name="action" value="approve" {{ 'disabled' if sub.status != 'awaiting_review' }}><i data-lucide="check" class="icon"></i> Approve &amp; publish</button>
+        <button class="btn btn-danger" name="action" value="reject"><i data-lucide="x" class="icon"></i> Reject</button>
+    </form>
+    {% if sub.status == 'failed' %}<p class="small muted" style="margin-top:8px">Automated checks failed — only rejection is available; the submitter can fix and resubmit.</p>{% endif %}
+    {% else %}
+    <p class="small">Decided {{ sub.decided_at.strftime('%Y-%m-%d %H:%M UTC') if sub.decided_at else '' }}: <strong>{{ sub.status }}</strong>{% if sub.decision_reason %} — {{ sub.decision_reason }}{% endif %}</p>
+    {% endif %}
+</section>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>if (window.hljs) document.querySelectorAll('pre.code code').forEach(el => hljs.highlightElement(el));</script>
+{% endblock %}

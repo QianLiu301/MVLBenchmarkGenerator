@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% set nav = 'submit' %}
+{% block title %}Submission {{ sub.token }} — MVL Benchmark Library{% endblock %}
+{% block content %}
+{% set pill = {'queued': 'warn', 'running': 'warn', 'awaiting_review': 'warn', 'approved': 'ok', 'rejected': 'err', 'failed': 'err'} %}
+<div class="detail-head">
+    <div>
+        <h1 style="font-size:1.5rem">Submission <span class="mono">{{ sub.slug or '—' }}</span></h1>
+        <div class="muted small">Submitted {{ sub.created_at.strftime('%Y-%m-%d %H:%M UTC') }} by {{ sub.submitter_name or '—' }} · files: <span class="mono">{{ sub.files_summary }}</span></div>
+    </div>
+    <span class="pill {{ pill.get(sub.status, '') }}" id="statusPill" style="font-size:.85rem">{{ sub.status.replace('_', ' ') }}</span>
+</div>
+
+<p class="small muted" style="margin-bottom:12px">Bookmark this page — it is the only place where the status is shown (no e-mail is sent). The automated steps take from seconds to a few minutes.</p>
+
+{% include "submit/_steps.html" %}
+
+{% if sub.status == 'approved' %}
+<div class="flash flash-success">Approved and published: <a href="{{ url_for('library.detail', slug=sub.slug) }}">{{ sub.slug }}</a>{% if sub.decision_reason %} — {{ sub.decision_reason }}{% endif %}</div>
+{% elif sub.status == 'rejected' %}
+<div class="flash flash-error">Rejected{% if sub.decision_reason %}: {{ sub.decision_reason }}{% endif %}</div>
+{% elif sub.status == 'awaiting_review' %}
+<div class="flash flash-info">All automated checks passed. A maintainer will review the submission.</div>
+{% endif %}
+
+{% if sub.results %}
+<div class="card">
+    <div class="section-title"><i data-lucide="shield-check" class="icon"></i> Verification results</div>
+    <div class="table-wrap"><table class="bench" style="min-width:0">
+        <thead><tr><th>File</th><th>Simulation</th><th>Golden model</th><th class="num">Vectors</th><th>Strength</th></tr></thead>
+        <tbody>
+        {% for name, r in sub.results.items() %}
+        <tr>
+            <td class="mono">{{ name }}</td>
+            <td><span class="tag {{ 'ok' if r.sim_status == 'pass' else 'err' }}">{{ r.sim_status }}</span></td>
+            <td><span class="tag {{ 'ok' if r.golden_status == 'PASS' else 'err' }}">{{ r.golden_status.replace('_',' ') }}</span></td>
+            <td class="num">{{ r.golden_passed }}/{{ r.golden_compared }}</td>
+            <td class="mono small">{{ r.verification_strength }}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table></div>
+</div>
+{% endif %}
+{% endblock %}
+{% block scripts %}
+{% if sub.status in ('queued', 'running') %}
+<script>
+    // Poll while the pipeline runs, then reload to render the final state.
+    (function poll() {
+        setTimeout(async () => {
+            try {
+                const r = await fetch('/api/submission/{{ sub.token }}');
+                const d = await r.json();
+                if (d.status !== 'queued' && d.status !== 'running') { location.reload(); return; }
+                document.querySelectorAll('#stepBar li').forEach(li => {
+                    const st = (d.steps[li.dataset.step] || {}).status || 'pending';
+                    li.className = st; li.querySelector('.st').textContent = st;
+                });
+            } catch (e) { /* keep polling */ }
+            poll();
+        }, 3000);
+    })();
+</script>
+{% endif %}
+{% endblock %}

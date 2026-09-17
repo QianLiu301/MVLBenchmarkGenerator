@@ -2,59 +2,78 @@
 {% set nav = 'library' %}
 {% block title %}Browse — MVL Benchmark Library{% endblock %}
 {% block content %}
-{% macro filter_link(field, value, label) -%}
-    {%- set is_active = (current.get(field)|string == value|string) -%}
+{% macro qs(overrides) -%}
     {%- set args = current.copy() -%}
-    {%- if is_active %}{% set _ = args.pop(field) %}{% else %}{% set _ = args.update({field: value}) %}{% endif -%}
-    <a href="{{ url_for('library.browse', **args) }}" class="{{ 'active' if is_active else '' }}">{{ label }}<span class="n">{{ caller() }}</span></a>
+    {%- if sort != 'name' %}{% set _ = args.update({'sort': sort}) %}{% endif -%}
+    {%- for k, v in overrides.items() %}{% if v is none %}{% set _ = args.pop(k, None) %}{% else %}{% set _ = args.update({k: v}) %}{% endif %}{% endfor -%}
+    {{ url_for('library.browse', **args) }}
 {%- endmacro %}
 
+{% macro facet(field, title, rows, labels, kind='', dual=False) -%}
+    {% if rows|length > 1 or current.get(field) %}
+    <details open>
+        <summary>{{ title }} <i data-lucide="chevron-down" class="icon-sm icon"></i></summary>
+        <div class="opts">
+        {% for r in rows %}
+            {% set is_active = (current.get(field)|string == r.value|string) %}
+            <a href="{{ qs({field: (none if is_active else r.value), 'page': none}) }}" class="{{ 'active' if is_active else '' }}">
+                <span>
+                    {%- if kind == 'k' %}k = {{ r.value }} · {{ radix_names.get(r.value, '') }}
+                    {%- elif kind == 'digits' %}{{ r.value }} digits
+                    {%- elif kind == 'verified' %}Golden-model verified
+                    {%- else %}{{ labels.get(r.value, r.value) }}{% endif -%}
+                </span>
+                <span class="n" title="{{ r.specs }} specs{% if dual %} · {{ r.impls }} implementations{% endif %}">{{ r.specs }}{% if dual %} · {{ r.impls }}{% endif %}</span>
+            </a>
+        {% endfor %}
+        </div>
+    </details>
+    {% endif %}
+{%- endmacro %}
+
+<div class="toolbar">
+    <button class="btn btn-outline btn-sm filter-toggle" id="filterToggle"><i data-lucide="sliders-horizontal" class="icon"></i> Filters</button>
+    <form class="search" method="get" action="{{ url_for('library.browse') }}" role="search">
+        {% for k, v in current.items() if k != 'q' %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
+        {% if sort != 'name' %}<input type="hidden" name="sort" value="{{ sort }}">{% endif %}
+        <i data-lucide="search" class="icon"></i>
+        <input type="search" name="q" value="{{ current.get('q', '') }}" placeholder="Search name, title, structure…" aria-label="Search">
+    </form>
+    <label class="small muted" for="sortSel">Sort</label>
+    <select id="sortSel" onchange="location.href=this.value">
+        {% for key, label in [('name', 'Name'), ('k', 'k'), ('digits', 'Digits'), ('date', 'Date added')] %}
+        <option value="{{ qs({'sort': (none if key == 'name' else key), 'page': none}) }}" {{ 'selected' if sort == key }}>{{ label }}</option>
+        {% endfor %}
+    </select>
+    <a href="{{ url_for('library.download_all', **current) }}" class="btn btn-outline btn-sm"><i data-lucide="download" class="icon"></i> Download {{ 'selection' if current else 'all' }}</a>
+</div>
+
+<div class="drawer-backdrop" id="drawerBackdrop"></div>
 <div class="browse">
-    <aside class="filters">
-        <div class="filter-group">
-            <h4>Module type</h4>
-            {% for value, n in facets.module_type %}{% call filter_link('module_type', value, module_labels.get(value, value)) %}{{ n }}{% endcall %}{% endfor %}
-        </div>
-        <div class="filter-group">
-            <h4>Radix k</h4>
-            {% for value, n in facets.k_value %}{% call filter_link('k_value', value, 'k = ' ~ value ~ ' · ' ~ radix_names.get(value, '')) %}{{ n }}{% endcall %}{% endfor %}
-        </div>
-        <div class="filter-group">
-            <h4>Bitwidth (digits)</h4>
-            {% for value, n in facets.bitwidth %}{% call filter_link('bitwidth', value, value ~ ' digits') %}{{ n }}{% endcall %}{% endfor %}
-        </div>
-        <div class="filter-group">
-            <h4>Algebraic structure</h4>
-            {% for value, n in facets.logic_family %}{% call filter_link('logic_family', value, family_labels.get(value, value)) %}{{ n }}{% endcall %}{% endfor %}
-        </div>
-        <div class="filter-group">
-            <h4>Language</h4>
-            {% for value, n in facets.language %}{% call filter_link('language', value, language_labels.get(value, value)) %}{{ n }}{% endcall %}{% endfor %}
-        </div>
-        <div class="filter-group">
-            <h4>Source</h4>
-            {% for value, n in facets.source %}{% call filter_link('source', value, source_labels.get(value, value)) %}{{ n }}{% endcall %}{% endfor %}
-        </div>
-        <div class="filter-group">
-            <h4>Verification</h4>
-            {% call filter_link('verified', '1', 'Golden-model verified') %}{% endcall %}
-        </div>
+    <aside class="filters" id="filters" aria-label="Filters">
+        <div class="drawer-head">Filters <button class="btn btn-outline btn-sm" id="filterClose"><i data-lucide="x" class="icon"></i></button></div>
+        {{ facet('module_type', 'Module type', facets.module_type, module_labels) }}
+        {{ facet('k_value', 'Radix k', facets.k_value, {}, kind='k') }}
+        {{ facet('bitwidth', 'Digits', facets.bitwidth, {}, kind='digits') }}
+        {{ facet('logic_family', 'Algebraic structure', facets.logic_family, family_labels) }}
+        {{ facet('language', 'Language', facets.language, language_labels, dual=True) }}
+        {{ facet('source', 'Source', facets.source, source_labels, dual=True) }}
+        {{ facet('verified', 'Verification', facets.verified, {}, kind='verified', dual=True) }}
         {% if current %}
-        <a href="{{ url_for('library.browse') }}" class="filter-clear">✕ Clear all filters</a>
+        <a href="{{ url_for('library.browse') }}" class="filter-clear"><i data-lucide="x" class="icon-sm icon"></i> Clear all filters</a>
         {% endif %}
     </aside>
 
     <section>
-        <div class="browse-head">
-            <div class="section-title" style="margin:0">Benchmarks <span class="count">{{ benchmarks|length }} spec{{ '' if benchmarks|length == 1 else 's' }}</span></div>
-            <div style="display:flex;gap:8px;align-items:center">
-                {% if current %}
-                <div class="active-filters">
-                    {% for k, v in current.items() %}<span class="chip">{{ k }} = {{ v }}</span>{% endfor %}
-                </div>
-                {% endif %}
-                <a href="{{ url_for('library.download_all', **current) }}" class="btn btn-outline btn-sm">⬇ Download {{ 'selection' if current else 'all' }} (.zip)</a>
+        <div class="section-head">
+            <div class="section-title">Benchmarks <span class="count">{{ total }} spec{{ '' if total == 1 else 's' }}</span></div>
+            {% if current %}
+            <div class="active-filters">
+                {% for k, v in current.items() %}
+                <span class="chip">{{ k }} = {{ v }} <a href="{{ qs({k: none, 'page': none}) }}" aria-label="remove"><i data-lucide="x" class="icon-sm icon"></i></a></span>
+                {% endfor %}
             </div>
+            {% endif %}
         </div>
 
         {% if benchmarks %}
@@ -73,22 +92,27 @@
             </thead>
             <tbody>
             {% for b in benchmarks %}
-                {% set impls = b.published_implementations %}
                 <tr>
                     <td><a href="{{ url_for('library.detail', slug=b.slug) }}" class="slug">{{ b.slug }}</a></td>
                     <td>{{ b.module_label }}</td>
                     <td class="num">{{ b.k_value }}</td>
                     <td class="num">{{ b.bitwidth }}</td>
                     <td>{{ b.logic_type }}</td>
-                    <td class="small muted">{{ b.operations|join(', ') }}</td>
                     <td>
-                        <div class="lang-tags">
-                        {% for lang, label in language_labels.items() %}
+                        <div class="ops-chips">
+                            {% for op in b.operations[:4] %}<span class="chip">{{ op }}</span>{% endfor %}
+                            {% if b.operations|length > 4 %}<span class="chip more" title="{{ b.operations[4:]|join(', ') }}">+{{ b.operations|length - 4 }}</span>{% endif %}
+                        </div>
+                    </td>
+                    <td>
+                        <div class="badges">
+                        {% set impls = b.published_implementations %}
+                        {% for lang, st in b.language_status().items() %}
                             {% set of_lang = impls|selectattr('language', 'equalto', lang)|list %}
-                            {% if of_lang %}
-                                {% set ok = of_lang|selectattr('golden_status', 'equalto', 'PASS')|list|length %}
-                                <span class="tag {{ 'ok' if ok else 'dim' }}" title="{{ ok }} of {{ of_lang|length }} golden-model verified">{{ label }}{% if of_lang|length > 1 %} ×{{ of_lang|length }}{% endif %}</span>
-                            {% endif %}
+                            {% set best = (of_lang|selectattr('golden_status', 'equalto', 'PASS')|list or of_lang)|first %}
+                            <span class="badge {{ st }}" title="{{ language_labels[lang] }} — {{ st }}{% if best.verification_strength %} · {{ best.verification_strength }}{% endif %}{% if best.golden_compared %} · {{ best.golden_passed }}/{{ best.golden_compared }} vectors{% endif %}{% if of_lang|length > 1 %} · {{ of_lang|length }} implementations{% endif %}">
+                                <span class="dot"></span>{{ language_labels[lang] }}{% if of_lang|length > 1 %} ×{{ of_lang|length }}{% endif %}
+                            </span>
                         {% endfor %}
                         </div>
                     </td>
@@ -98,12 +122,38 @@
         </table>
         </div>
         <div class="legend">
-            <span><span class="tag ok">C</span> at least one golden-model verified implementation</span>
-            <span><span class="tag dim">C</span> implementation present, not verified</span>
+            <span><span class="dot full"></span>verified</span>
+            <span><span class="dot none"></span>unverified</span>
+            <span><span class="dot half"></span>pending</span>
+            <span class="muted">— hover a badge for verification strength</span>
         </div>
+        {% if pages > 1 %}
+        <nav class="pagination" aria-label="Pagination">
+            {% if page > 1 %}<a href="{{ qs({'page': page - 1}) }}">Prev</a>{% else %}<span class="disabled">Prev</span>{% endif %}
+            {% for p in range(1, pages + 1) %}
+                {% if p == page %}<span class="current">{{ p }}</span>
+                {% elif p <= 2 or p > pages - 2 or (p - page)|abs <= 1 %}<a href="{{ qs({'page': p}) }}">{{ p }}</a>
+                {% elif (p - page)|abs == 2 %}<span class="disabled">…</span>{% endif %}
+            {% endfor %}
+            {% if page < pages %}<a href="{{ qs({'page': page + 1}) }}">Next</a>{% else %}<span class="disabled">Next</span>{% endif %}
+        </nav>
+        {% endif %}
         {% else %}
         <div class="empty">No benchmarks match these filters.</div>
         {% endif %}
     </section>
 </div>
+{% endblock %}
+{% block scripts %}
+<script>
+    (function () {
+        const filters = document.getElementById('filters');
+        const backdrop = document.getElementById('drawerBackdrop');
+        const open = () => { filters.classList.add('open'); backdrop.classList.add('open'); };
+        const close = () => { filters.classList.remove('open'); backdrop.classList.remove('open'); };
+        document.getElementById('filterToggle').addEventListener('click', open);
+        document.getElementById('filterClose').addEventListener('click', close);
+        backdrop.addEventListener('click', close);
+    })();
+</script>
 {% endblock %}

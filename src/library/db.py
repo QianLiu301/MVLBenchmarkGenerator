@@ -41,7 +41,7 @@ def get_engine():
         _engine = create_engine(url, **kwargs)
         _Session = sessionmaker(bind=_engine, expire_on_commit=False, future=True)
         backend = 'postgres' if url.startswith('postgresql') else 'sqlite'
-        print(f"🗄️  Library database: {backend}")
+        print(f"[library] database: {backend}")
     return _engine
 
 

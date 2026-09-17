@@ -1,0 +1,19 @@
+{# Pipeline step bar + per-step logs. Expects `sub` and `steps`. #}
+{% set icons = {'pending': 'circle', 'running': 'loader', 'pass': 'check-circle-2', 'fail': 'x-circle', 'skipped': 'minus-circle'} %}
+<ol class="steps" id="stepBar">
+    {% for key, label in steps %}
+    {% set st = (sub.steps.get(key) or {}).get('status', 'pending') %}
+    <li class="{{ st }}" data-step="{{ key }}"><i data-lucide="{{ icons.get(st, 'circle') }}" class="icon"></i>{{ label }}<span class="st">{{ st }}</span></li>
+    {% endfor %}
+</ol>
+<div class="step-logs" id="stepLogs">
+    {% for key, label in steps %}
+    {% set s = sub.steps.get(key) or {} %}
+    {% if s.get('log') %}
+    <details {{ 'open' if s.status == 'fail' }}>
+        <summary><span class="pill {{ 'ok' if s.status == 'pass' else ('err' if s.status == 'fail' else ('warn' if s.status == 'running' else '')) }}">{{ s.status }}</span> {{ label }} <span class="muted small">{{ s.finished_at or '' }}</span></summary>
+        <pre>{{ s.log }}</pre>
+    </details>
+    {% endif %}
+    {% endfor %}
+</div>

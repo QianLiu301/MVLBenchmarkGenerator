@@ -3,12 +3,12 @@
 {% block title %}Sign in — MVL Benchmark Library{% endblock %}
 {% block content %}
 <div class="card login-box">
-    <h1>🔒 Restricted area</h1>
-    <p class="small muted">The generator calls paid LLM APIs and is limited to project members. Browsing and downloading the library does not require a password.</p>
+    <h1><i data-lucide="lock" class="icon"></i> Restricted area</h1>
+    <p class="small muted">The generator and the review queue are limited to project members. Browsing, downloading and submitting do not require a password.</p>
     <form method="post" action="{{ url_for('auth.login') }}">
         <input type="hidden" name="next" value="{{ next_url }}">
         <input type="password" name="password" placeholder="Password" autocomplete="current-password" autofocus required>
-        <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center">Enter</button>
+        <button type="submit" class="btn btn-primary" style="width:100%">Enter</button>
     </form>
 </div>
 {% endblock %}

@@ -31,8 +31,10 @@
         Entries originate from an LLM-based generation pipeline described in the associated
         ISMVL 2026 paper: a natural-language or parametric specification is turned into code by a
         large language model, then simulated and validated. The generator is available on this site
-        (<a href="{{ url_for('generate_page') }}">Generate</a>). Public submission of externally
-        authored benchmarks, with automated checks followed by human review, is planned as the next step.
+        (<a href="{{ url_for('generate_page') }}">Generate</a>). Externally authored benchmarks can be
+        <a href="{{ url_for('submit.form') }}">submitted</a>; they pass the same automated checks
+        (schema, lint, simulation against the golden model, duplicate detection) and a maintainer review
+        before publication.
     </p>
 
     <h2>License and citation</h2>

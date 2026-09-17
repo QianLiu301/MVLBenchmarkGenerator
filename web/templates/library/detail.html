@@ -2,102 +2,177 @@
 {% set nav = 'library' %}
 {% block title %}{{ b.slug }} — {{ b.title }} — MVL Benchmark Library{% endblock %}
 {% block meta_description %}{{ b.description }}{% endblock %}
+{% block head %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/verilog.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/vhdl.min.js"></script>
+{% endblock %}
 {% block content %}
-<div class="small muted" style="margin-bottom:10px"><a href="{{ url_for('library.browse') }}">Library</a> › <a href="{{ url_for('library.browse', module_type=b.module_type) }}">{{ b.module_label }}</a> › {{ b.slug }}</div>
+<div class="crumbs">
+    <a href="{{ url_for('library.browse') }}">Library</a> <i data-lucide="chevron-right" class="icon-sm icon"></i>
+    <a href="{{ url_for('library.browse', module_type=b.module_type) }}">{{ b.module_label }}</a> <i data-lucide="chevron-right" class="icon-sm icon"></i>
+    <span class="mono">{{ b.slug }}</span>
+</div>
 
 <div class="detail-head">
     <div>
-        <h1>{{ b.title }} <span class="slug" style="font-size:1rem">({{ b.slug }})</span></h1>
-        <div class="muted">{{ b.module_label }} · {{ b.logic_type }} · {{ impls|length }} implementation{{ '' if impls|length == 1 else 's' }} · {{ verified_n }} verified</div>
+        <h1>{{ b.title }} <span class="slug" style="font-size:1rem">{{ b.slug }}</span></h1>
+        <div class="muted small">{{ b.module_label }} · {{ b.logic_type }} · {{ impls|length }} implementation{{ '' if impls|length == 1 else 's' }} · {{ verified_n }} verified · added {{ b.created_at.strftime('%Y-%m-%d') }}</div>
     </div>
     <div class="detail-actions">
-        <a href="{{ url_for('library.download_benchmark', slug=b.slug) }}" class="btn btn-primary">⬇ Download all files (.zip)</a>
-        <a href="{{ url_for('library.spec_json', slug=b.slug) }}" class="btn btn-outline">spec.json</a>
-        <a href="{{ url_for('generate_page') }}?module_type={{ b.module_type }}&k={{ b.k_value }}&bits={{ b.bitwidth }}" class="btn btn-outline">🤖 Generate a similar one</a>
+        <a href="{{ url_for('library.download_benchmark', slug=b.slug) }}" class="btn btn-primary"><i data-lucide="download" class="icon"></i> Download all files</a>
+        <a href="{{ url_for('library.spec_json', slug=b.slug) }}" class="btn btn-outline"><i data-lucide="file-json" class="icon"></i> spec.json</a>
+        <a href="{{ url_for('generate_page') }}?module_type={{ b.module_type }}&k={{ b.k_value }}&bits={{ b.bitwidth }}" class="btn btn-outline"><i data-lucide="sparkles" class="icon"></i> Generate similar</a>
     </div>
 </div>
 
-<div class="card" style="margin-bottom:20px">
-    <div class="section-title">Specification</div>
-    <p class="muted">{{ b.description }}</p>
+<div class="stack">
+<section class="card" id="spec">
+    <div class="section-title"><i data-lucide="file-text" class="icon"></i> Spec</div>
+    <p class="muted small">{{ b.description }}</p>
     <div class="spec-grid">
         <div class="spec-item"><div class="k">Module</div><div class="v">{{ b.module_label }}</div></div>
-        <div class="spec-item"><div class="k">Radix k</div><div class="v">{{ b.k_value }} ({{ radix_names.get(b.k_value, '') }})</div></div>
-        <div class="spec-item"><div class="k">Bitwidth</div><div class="v">{{ b.bitwidth }} digits</div></div>
-        <div class="spec-item"><div class="k">Structure</div><div class="v">{{ b.logic_type }}</div></div>
+        <div class="spec-item"><div class="k">Radix k</div><div class="v">{{ b.k_value }} <span class="muted">({{ radix_names.get(b.k_value, '') }})</span></div></div>
+        <div class="spec-item"><div class="k">Digits</div><div class="v">{{ b.bitwidth }}</div></div>
+        <div class="spec-item"><div class="k">Structure</div><div class="v">{{ b.logic_type }} <span class="muted small">{{ family_labels.get(b.logic_family, '') }}</span></div></div>
         <div class="spec-item"><div class="k">Modulus</div><div class="v mono">{{ '{:,}'.format(b.mod_value) }}</div></div>
         <div class="spec-item"><div class="k">Operand range</div><div class="v mono">0 … {{ '{:,}'.format(b.mod_value - 1) }}</div></div>
         {% for key, val in b.params.items() %}
         <div class="spec-item"><div class="k">{{ key.replace('_', ' ') }}</div><div class="v">{{ val }}</div></div>
         {% endfor %}
     </div>
-    <div class="small muted" style="margin-bottom:6px">Operations</div>
-    <div class="ops">{% for op in b.operations %}<span>{{ op }}</span>{% endfor %}</div>
-</div>
+    <table class="defs">
+        <tbody>
+        {% for d in ops %}
+            <tr><td>{{ d.op }}</td><td class="mono">{{ d.formula }}</td><td>{{ d.flag }}</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</section>
 
-<div class="card" style="margin-bottom:20px">
-    <div class="section-title">Implementations <span class="count">{{ impls|length }}</span></div>
+<section class="card" id="implementations">
+    <div class="section-title"><i data-lucide="code-2" class="icon"></i> Implementations <span class="count">{{ impls|length }}</span></div>
     {% if impls %}
+    {% set langs = [] %}
+    {% for i in impls %}{% if i.language not in langs %}{% set _ = langs.append(i.language) %}{% endif %}{% endfor %}
+    <div class="tabs" role="tablist">
+        {% for lang in langs %}
+        {% set of_lang = impls|selectattr('language', 'equalto', lang)|list %}
+        <button role="tab" data-tab="{{ lang }}" class="{{ 'active' if loop.first }}">
+            {{ language_labels[lang] }}{% if of_lang|length > 1 %} <span class="muted">×{{ of_lang|length }}</span>{% endif %}
+            {% set ok = of_lang|selectattr('golden_status', 'equalto', 'PASS')|list|length %}
+            <span class="badge {{ 'verified' if ok else ('pending' if of_lang[0].golden_status == 'unverified' else 'unverified') }}"><span class="dot"></span>{{ ok }}/{{ of_lang|length }}</span>
+        </button>
+        {% endfor %}
+    </div>
+    {% for lang in langs %}
+    <div class="tab-panel {{ 'active' if loop.first }}" data-panel="{{ lang }}" role="tabpanel">
+        {% for i in impls if i.language == lang %}
+        <div class="impl-head">
+            <div>
+                <span class="mono">{{ i.filename }}</span> · {{ i.source_label }}{% if i.model_responded %} · <span class="mono">{{ i.model_responded }}</span>{% endif %}
+                · {{ i.loc }} lines · {{ i.test_vectors }} test vectors
+                {% if i.golden_status == 'PASS' %}<span class="tag ok"><i data-lucide="check" class="icon-sm icon"></i> PASS {{ i.golden_passed }}/{{ i.golden_compared }}</span>
+                {% elif i.golden_status == 'unverified' %}<span class="tag">unverified</span>
+                {% else %}<span class="tag err"><i data-lucide="x" class="icon-sm icon"></i> {{ i.golden_status.replace('_', ' ') }}</span>{% endif %}
+            </div>
+            <div class="detail-actions">
+                <button class="btn btn-outline btn-sm" onclick="copyCode(this, 'code-{{ i.id }}')"><i data-lucide="copy" class="icon"></i> Copy</button>
+                <a href="{{ url_for('library.download_impl', slug=b.slug, impl_id=i.id) }}" class="btn btn-outline btn-sm"><i data-lucide="download" class="icon"></i> {{ i.filename }}</a>
+            </div>
+        </div>
+        <pre class="code"><code id="code-{{ i.id }}" class="language-{{ {'c': 'c', 'python': 'python', 'verilog': 'verilog', 'vhdl': 'vhdl'}[i.language] }}">{{ i.code }}</code></pre>
+        {% if not loop.last %}<hr style="border:0;border-top:1px solid var(--border);margin:18px 0">{% endif %}
+        {% endfor %}
+    </div>
+    {% endfor %}
+    {% else %}
+    <div class="empty">No implementations published for this specification yet.</div>
+    {% endif %}
+</section>
+
+<section class="card" id="verification">
+    <div class="section-title"><i data-lucide="shield-check" class="icon"></i> Verification record</div>
+    {% for i in impls %}
+    {% set meta = i.verification_meta or {} %}
+    <details {{ 'open' if loop.first }} style="margin-bottom:8px">
+        <summary style="cursor:pointer;font-weight:600;display:flex;gap:10px;align-items:center;padding:6px 0">
+            <span class="mono">{{ i.filename }}</span>
+            {% if i.golden_status == 'PASS' %}<span class="tag ok">PASS</span>{% elif i.golden_status == 'unverified' %}<span class="tag">unverified</span>{% else %}<span class="tag err">{{ i.golden_status.replace('_',' ') }}</span>{% endif %}
+        </summary>
+        <dl class="record" style="padding:8px 0 12px">
+            <dt>Strength</dt><dd class="mono">{{ i.verification_strength or 'self-reported' }}</dd>
+            <dt>Result</dt><dd>{{ i.golden_passed }}/{{ i.golden_compared }} vectors match the golden model
+                {% if meta.strategy_a %}<span class="muted small">· self-reported {{ meta.strategy_a.passed }}/{{ meta.strategy_a.compared }}{% if meta.strategy_b and meta.strategy_b.compared %} · injected {{ meta.strategy_b.passed }}/{{ meta.strategy_b.compared }}{% endif %}</span>{% endif %}</dd>
+            <dt>Simulation</dt><dd>{{ 'compiles and runs' if i.sim_status == 'pass' else i.sim_status }}</dd>
+            <dt>Tools</dt><dd class="mono">{% for t, v in (meta.tools or {}).items() %}{{ t }} {{ v }}{{ ', ' if not loop.last }}{% else %}—{% endfor %}</dd>
+            <dt>Golden model</dt><dd class="mono">v{{ meta.golden_model or '1.0' }} ({{ b.logic_type }}, k={{ b.k_value }}, n={{ b.bitwidth }})</dd>
+            <dt>SHA-256</dt><dd class="mono small">{{ i.sha256 }}</dd>
+            <dt>Verified at</dt><dd>{{ i.verified_at.strftime('%Y-%m-%d %H:%M UTC') if i.verified_at else '—' }}</dd>
+            <dt>Log</dt><dd><a href="{{ url_for('library.view_log', slug=b.slug, impl_id=i.id) }}" target="_blank" rel="noopener">simulation log</a> · <a href="{{ url_for('library.view_code', slug=b.slug, impl_id=i.id) }}">mismatch details</a></dd>
+        </dl>
+    </details>
+    {% else %}
+    <p class="muted small">No implementations to verify.</p>
+    {% endfor %}
+</section>
+
+<section class="card" id="provenance">
+    <div class="section-title"><i data-lucide="git-branch" class="icon"></i> Provenance</div>
     <div class="table-wrap">
     <table class="bench">
-        <thead>
-            <tr>
-                <th>Lang.</th>
-                <th>Source</th>
-                <th>Model</th>
-                <th class="num">LOC</th>
-                <th class="num">Test vectors</th>
-                <th>Simulation</th>
-                <th>Golden model</th>
-                <th>File</th>
-                <th>Added</th>
-            </tr>
-        </thead>
+        <thead><tr><th>File</th><th>Source</th><th>Author / model</th><th>Prompt hash</th><th>Added</th><th>License</th></tr></thead>
         <tbody>
         {% for i in impls %}
-            <tr>
-                <td><strong>{{ i.language_label }}</strong></td>
-                <td><span class="tag">{{ i.source_label }}</span></td>
-                <td class="small">
-                    {% if i.model_responded %}<span class="mono">{{ i.model_responded }}</span>{% if i.provider %} <span class="muted">({{ i.provider }})</span>{% endif %}
-                    {% elif i.provider %}{{ i.provider }}{% else %}<span class="muted">—</span>{% endif %}
-                </td>
-                <td class="num">{{ i.loc }}</td>
-                <td class="num">{{ i.test_vectors }}</td>
-                <td>
-                    {% if i.sim_status == 'pass' %}<span class="tag ok" title="{{ i.sim_passed }} test lines parsed">✓ runs</span>
-                    {% elif i.sim_status == 'fail' %}<span class="tag bad">✗ fails</span>
-                    {% else %}<span class="tag dim">unverified</span>{% endif %}
-                </td>
-                <td>
-                    {% if i.golden_status == 'PASS' %}<span class="tag ok" title="{{ i.golden_passed }}/{{ i.golden_compared }} compared vectors match">✓ PASS {{ i.golden_passed }}/{{ i.golden_compared }}</span>
-                    {% elif i.golden_status == 'unverified' %}<span class="tag dim">unverified</span>
-                    {% else %}<span class="tag bad" title="{{ i.golden_passed }}/{{ i.golden_compared }} match">✗ {{ i.golden_status.replace('_', ' ') }}</span>{% endif %}
-                </td>
-                <td style="white-space:nowrap">
-                    <a href="{{ url_for('library.view_code', slug=b.slug, impl_id=i.id) }}" class="btn btn-outline btn-sm">View</a>
-                    <a href="{{ url_for('library.download_impl', slug=b.slug, impl_id=i.id) }}" class="btn btn-outline btn-sm">⬇ {{ i.filename.rsplit('.', 1)[-1] }}</a>
-                </td>
-                <td class="small muted">{{ i.created_at.strftime('%Y-%m-%d') }}</td>
-            </tr>
+        <tr>
+            <td class="mono">{{ i.filename }}</td>
+            <td><span class="tag">{{ i.source_label }}</span></td>
+            <td>{% if i.source == 'llm-generated' %}<span class="mono">{{ i.model_responded or i.model_requested or '—' }}</span>{% if i.provider %} <span class="muted small">({{ i.provider }})</span>{% endif %}
+                {% else %}{{ i.submitter_name or '—' }}{% if i.submitter_affiliation %} <span class="muted small">· {{ i.submitter_affiliation }}</span>{% endif %}{% endif %}</td>
+            <td class="mono small">{{ (i.prompt_hash[:16] ~ '…') if i.prompt_hash else '—' }}</td>
+            <td class="num">{{ i.created_at.strftime('%Y-%m-%d') }}</td>
+            <td>{{ i.license }}</td>
+        </tr>
         {% endfor %}
         </tbody>
     </table>
     </div>
-    <div class="legend">
-        <span><strong>Simulation</strong>: compiles and runs with gcc / python / iverilog / ghdl</span>
-        <span><strong>Golden model</strong>: every printed test vector compared digit-wise with the {{ b.logic_type }} reference; PASS = all match</span>
-        <span><strong>Model</strong>: as reported by the provider's API response</span>
-    </div>
-    {% else %}
-    <div class="empty">No implementations published for this specification yet.</div>
-    {% endif %}
-</div>
+</section>
 
-<div class="card">
-    <div class="section-title">Cite this benchmark</div>
-    <p class="small muted" style="margin-bottom:10px">Files are licensed under <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a>. Please cite:</p>
+<section class="card" id="history">
+    <div class="section-title"><i data-lucide="history" class="icon"></i> Review history</div>
+    {% if events %}
+    <ul class="timeline">
+        {% for e in events %}
+        <li><span class="when">{{ e.created_at.strftime('%Y-%m-%d %H:%M') }}</span><span><strong>{{ e.action }}</strong> by {{ e.actor }}{% if e.detail %} — {{ e.detail }}{% endif %}</span></li>
+        {% endfor %}
+    </ul>
+    {% else %}
+    <p class="muted small">No review events recorded.</p>
+    {% endif %}
+</section>
+
+<section class="card" id="cite">
+    <div class="section-head">
+        <div class="section-title"><i data-lucide="quote" class="icon"></i> Cite this benchmark</div>
+        <button class="btn btn-outline btn-sm" onclick="navigator.clipboard.writeText(document.getElementById('bibtex').textContent).then(()=>{this.textContent='Copied'})"><i data-lucide="copy" class="icon"></i> Copy BibTeX</button>
+    </div>
+    <p class="small muted" style="margin-bottom:10px">Files are licensed under <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a>.</p>
     <pre class="bibtex" id="bibtex">{{ bibtex }}</pre>
-    <button class="btn btn-outline btn-sm" style="margin-top:8px" onclick="navigator.clipboard.writeText(document.getElementById('bibtex').textContent).then(()=>{this.textContent='Copied ✓'})">Copy BibTeX</button>
+</section>
 </div>
+{% endblock %}
+{% block scripts %}
+<script>
+    (function () {
+        document.querySelectorAll('.tabs [data-tab]').forEach(btn => btn.addEventListener('click', () => {
+            document.querySelectorAll('.tabs [data-tab]').forEach(b => b.classList.toggle('active', b === btn));
+            document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.dataset.panel === btn.dataset.tab));
+        }));
+        if (window.hljs) document.querySelectorAll('pre.code code').forEach(el => hljs.highlightElement(el));
+    })();
+    function copyCode(btn, id) {
+        navigator.clipboard.writeText(document.getElementById(id).textContent).then(() => { btn.textContent = 'Copied'; });
+    }
+</script>
 {% endblock %}

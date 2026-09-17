@@ -6,24 +6,42 @@
     <title>{% block title %}MVL Benchmark Library{% endblock %}</title>
     <meta name="description" content="{% block meta_description %}An online resource for Multi-Valued Logic (MVL) benchmarks: verified ALU, register-file and CPU designs in C, Python, Verilog and VHDL.{% endblock %}">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/library.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/library.css', v=asset_version) }}">
+    <script src="https://cdn.jsdelivr.net/npm/lucide@0.460.0/dist/umd/lucide.min.js"></script>
     {% block head %}{% endblock %}
 </head>
 <body>
     <header class="site-header">
         <div class="container header-inner">
             <a href="{{ url_for('library.home') }}" class="brand">
-                <span class="brand-mark">🔢</span>
-                <span class="brand-text">MVL Benchmark <span class="brand-accent">Library</span></span>
+                <span class="brand-mark"><i data-lucide="layers" class="icon"></i></span>
+                <span>MVL Benchmark <span class="brand-accent">Library</span></span>
             </a>
-            <nav class="site-nav">
+            <button class="nav-toggle" id="navToggle" aria-label="Menu" aria-expanded="false"><i data-lucide="menu" class="icon"></i></button>
+            <nav class="site-nav" id="siteNav">
                 <a href="{{ url_for('library.browse') }}" class="{{ 'active' if nav == 'library' else '' }}">Library</a>
+                <a href="{{ url_for('submit.form') }}" class="{{ 'active' if nav == 'submit' else '' }}">Submit</a>
                 <a href="{{ url_for('generate_page') }}" class="{{ 'active' if nav == 'generate' else '' }}">Generate</a>
                 <a href="{{ url_for('library.about') }}" class="{{ 'active' if nav == 'about' else '' }}">About</a>
                 <a href="{{ url_for('library.cite') }}" class="{{ 'active' if nav == 'cite' else '' }}">Cite</a>
-                {% if is_authed %}
-                <a href="{{ url_for('auth.logout') }}" class="nav-muted" title="Sign out">Sign out</a>
-                {% endif %}
+                <div class="user-menu" id="userMenu">
+                    <button type="button" aria-haspopup="true" aria-expanded="false">
+                        <i data-lucide="{{ 'user-check' if is_authed else 'user' }}" class="icon-sm icon"></i>
+                        {{ 'Maintainer' if is_authed else 'Sign in' }}
+                        <i data-lucide="chevron-down" class="icon-sm icon"></i>
+                    </button>
+                    <div class="menu">
+                        {% if is_authed %}
+                        <span>Signed in as maintainer</span>
+                        <a href="{{ url_for('admin.queue') }}"><i data-lucide="inbox" class="icon-sm icon"></i> Review queue</a>
+                        <a href="{{ url_for('generate_page') }}"><i data-lucide="sparkles" class="icon-sm icon"></i> Generator</a>
+                        <a href="{{ url_for('auth.logout') }}"><i data-lucide="log-out" class="icon-sm icon"></i> Sign out</a>
+                        {% else %}
+                        <span>Generator and review are restricted</span>
+                        <a href="{{ url_for('auth.login', next=request.path) }}"><i data-lucide="log-in" class="icon-sm icon"></i> Sign in</a>
+                        {% endif %}
+                    </div>
+                </div>
             </nav>
         </div>
     </header>
@@ -39,33 +57,33 @@
 
     <footer class="site-footer">
         <div class="container footer-inner">
-            <div>
-                <strong>University of Bremen</strong> · Group of Computer Architecture (AGRA)<br>
-                <a href="https://de.linkedin.com/in/rolf-drechsler-2304a98" target="_blank" rel="noopener">Rolf Drechsler</a> ·
+            <div class="footer-authors">
+                Authors:
+                <a href="https://de.linkedin.com/in/rolf-drechsler-2304a98" target="_blank" rel="noopener">Rolf Drechsler</a>,
                 <a href="https://www.linkedin.com/in/qian-liu-0707482bb/" target="_blank" rel="noopener">Qian Liu</a>
+                · University of Bremen, Group of Computer Architecture (AGRA)
             </div>
             <div class="footer-links">
                 <a href="{{ url_for('library.cite') }}">Cite</a>
                 <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a>
                 <a href="https://github.com/QianLiu301/MVLBenchmarkGenerator" target="_blank" rel="noopener">GitHub</a>
-                <a href="#" id="legalLink">Imprint / Legal Notice</a>
             </div>
+            <div><a href="#" id="legalLink">Imprint / Legal Notice</a></div>
         </div>
     </footer>
 
-    <!-- Legal Modal -->
     <div class="modal-overlay" id="legalModal">
-        <div class="modal legal-modal">
+        <div class="modal">
             <div class="modal-header">
                 <h2>Imprint / Legal Notice</h2>
-                <button class="modal-close" id="legalClose" aria-label="Close">&times;</button>
+                <button class="modal-close" id="legalClose" aria-label="Close"><i data-lucide="x" class="icon"></i></button>
             </div>
             <div class="legal-content">
                 <p><strong>Information provided according to §5 German Telemedia Act (TMG)</strong></p>
                 <h3>Institution</h3>
                 <p><strong>University of Bremen</strong><br>Faculty 3<br>Group of Computer Architecture (AGRA)<br>Bibliothekstr. 5<br>28359 Bremen<br>Germany</p>
                 <h3>Contact</h3>
-                <p>📧 <a href="mailto:drechsler@uni-bremen.de">drechsler@uni-bremen.de</a><br>📧 <a href="mailto:treebush302@gmail.com">treebush302@gmail.com</a></p>
+                <p><a href="mailto:drechsler@uni-bremen.de">drechsler@uni-bremen.de</a><br><a href="mailto:qialiu@uni-bremen.de">qialiu@uni-bremen.de</a></p>
                 <h3>Responsible for Content (according to §55(2) RStV)</h3>
                 <p>Prof. Dr. Rolf Drechsler<br>Qian Liu</p>
                 <h3>Research Disclaimer</h3>
@@ -77,7 +95,7 @@
                 <h3>Liability for Links</h3>
                 <p>This website contains links to external third-party platforms (GitHub, arXiv, publisher pages), over whose content we have no control. The respective platform operators are solely responsible for the content of the linked pages.</p>
                 <h3>Privacy</h3>
-                <p>Browsing and downloading from this website does not require an account and no tracking or analytics services are employed. A technically necessary session cookie is set only when signing in to protected areas (generator, administration). External fonts are loaded from Google Fonts.</p>
+                <p>Browsing and downloading from this website does not require an account and no tracking or analytics services are employed. Submitting a benchmark stores the name, e-mail address and affiliation you enter, solely to attribute and review the submission. A technically necessary session cookie is set only when signing in to protected areas. External fonts and icon scripts are loaded from Google Fonts and jsDelivr.</p>
             </div>
         </div>
     </div>
@@ -88,6 +106,17 @@
             document.getElementById('legalLink').addEventListener('click', e => { e.preventDefault(); modal.classList.add('active'); });
             document.getElementById('legalClose').addEventListener('click', () => modal.classList.remove('active'));
             modal.addEventListener('click', e => { if (e.target === modal) modal.classList.remove('active'); });
+
+            const menu = document.getElementById('userMenu');
+            const btn = menu.querySelector('button');
+            btn.addEventListener('click', e => { e.stopPropagation(); const open = menu.classList.toggle('open'); btn.setAttribute('aria-expanded', open); });
+            document.addEventListener('click', () => { menu.classList.remove('open'); btn.setAttribute('aria-expanded', 'false'); });
+
+            const navToggle = document.getElementById('navToggle');
+            const nav = document.getElementById('siteNav');
+            navToggle.addEventListener('click', () => { const open = nav.classList.toggle('open'); navToggle.setAttribute('aria-expanded', open); });
+
+            if (window.lucide) lucide.createIcons();
         })();
     </script>
     {% block scripts %}{% endblock %}

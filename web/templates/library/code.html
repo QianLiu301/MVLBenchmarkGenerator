@@ -1,41 +1,55 @@
 {% extends "base.html" %}
 {% set nav = 'library' %}
 {% block title %}{{ i.filename }} — {{ b.slug }} — MVL Benchmark Library{% endblock %}
+{% block head %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/verilog.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/vhdl.min.js"></script>
+{% endblock %}
 {% block content %}
-<div class="small muted" style="margin-bottom:10px"><a href="{{ url_for('library.browse') }}">Library</a> › <a href="{{ url_for('library.detail', slug=b.slug) }}">{{ b.slug }}</a> › {{ i.filename }}</div>
+<div class="crumbs">
+    <a href="{{ url_for('library.browse') }}">Library</a> <i data-lucide="chevron-right" class="icon-sm icon"></i>
+    <a href="{{ url_for('library.detail', slug=b.slug) }}">{{ b.slug }}</a> <i data-lucide="chevron-right" class="icon-sm icon"></i>
+    <span class="mono">{{ i.filename }}</span>
+</div>
 
-<div class="code-head">
+<div class="detail-head">
     <div>
-        <h1 style="font-size:1.3rem" class="mono">{{ i.filename }}</h1>
+        <h1 class="mono" style="font-size:1.3rem">{{ i.filename }}</h1>
         <div class="small muted">
             {{ i.language_label }} · {{ i.source_label }}{% if i.model_responded %} · <span class="mono">{{ i.model_responded }}</span>{% endif %}
             · {{ i.loc }} lines · {{ i.test_vectors }} test vectors ·
-            {% if i.golden_status == 'PASS' %}<span class="tag ok">golden model ✓ {{ i.golden_passed }}/{{ i.golden_compared }}</span>
-            {% elif i.golden_status == 'unverified' %}<span class="tag dim">unverified</span>
-            {% else %}<span class="tag bad">golden model ✗ {{ i.golden_status.replace('_',' ') }}</span>{% endif %}
+            {% if i.golden_status == 'PASS' %}<span class="tag ok">golden model PASS {{ i.golden_passed }}/{{ i.golden_compared }}</span>
+            {% elif i.golden_status == 'unverified' %}<span class="tag">unverified</span>
+            {% else %}<span class="tag err">golden model {{ i.golden_status.replace('_',' ') }}</span>{% endif %}
         </div>
     </div>
     <div class="detail-actions">
-        <button class="btn btn-outline btn-sm" onclick="navigator.clipboard.writeText(document.getElementById('src').dataset.raw).then(()=>{this.textContent='Copied ✓'})">Copy</button>
-        <a href="{{ url_for('library.download_impl', slug=b.slug, impl_id=i.id) }}" class="btn btn-primary btn-sm">⬇ Download</a>
+        <button class="btn btn-outline btn-sm" onclick="navigator.clipboard.writeText(document.getElementById('src').textContent).then(()=>{this.textContent='Copied'})"><i data-lucide="copy" class="icon"></i> Copy</button>
+        <a href="{{ url_for('library.view_log', slug=b.slug, impl_id=i.id) }}" class="btn btn-outline btn-sm" target="_blank" rel="noopener"><i data-lucide="scroll-text" class="icon"></i> Log</a>
+        <a href="{{ url_for('library.download_impl', slug=b.slug, impl_id=i.id) }}" class="btn btn-primary btn-sm"><i data-lucide="download" class="icon"></i> Download</a>
     </div>
 </div>
 
-<pre class="code" id="src" data-raw="{{ i.code }}">{% for line in i.code.split('\n') %}<span class="ln">{{ loop.index }}</span>{{ line }}
-{% endfor %}</pre>
+<pre class="code" style="max-height:none"><code id="src" class="language-{{ {'c': 'c', 'python': 'python', 'verilog': 'verilog', 'vhdl': 'vhdl'}[i.language] }}">{{ i.code }}</code></pre>
 
-{% if report and (report.failures or report.compile_errors or report.run_errors) %}
+{% set a = report.strategy_a or {} %}
+{% set bb = report.strategy_b or {} %}
+{% if a.failures or a.compile_errors or a.run_errors or bb.failures %}
 <div class="card" style="margin-top:20px">
-    <div class="section-title">Verification details</div>
-    {% if report.compile_errors %}<pre class="bibtex">{{ report.compile_errors }}</pre>{% endif %}
-    {% if report.run_errors %}<pre class="bibtex">{{ report.run_errors }}</pre>{% endif %}
-    {% if report.failures %}
-    <p class="small muted">First mismatches against the golden model:</p>
-    <div class="table-wrap"><table class="bench">
+    <div class="section-title"><i data-lucide="shield-alert" class="icon"></i> Verification details</div>
+    {% if a.compile_errors %}<pre class="bibtex">{{ a.compile_errors }}</pre>{% endif %}
+    {% if a.run_errors %}<pre class="bibtex">{{ a.run_errors }}</pre>{% endif %}
+    {% for label, rep in [('self-reported vectors', a), ('injected golden vectors', bb)] if rep.failures %}
+    <p class="small muted" style="margin:10px 0 6px">First mismatches — {{ label }}:</p>
+    <div class="table-wrap"><table class="bench" style="min-width:0">
         <thead><tr><th>Op</th><th class="num">A</th><th class="num">B</th><th class="num">Got</th><th class="num">Expected</th></tr></thead>
-        <tbody>{% for f in report.failures %}<tr><td class="mono">{{ f.op }}</td><td class="num">{{ f.a }}</td><td class="num">{{ f.b }}</td><td class="num">{{ f.got }}</td><td class="num">{{ f.expected }}</td></tr>{% endfor %}</tbody>
+        <tbody>{% for f in rep.failures %}<tr><td class="mono">{{ f.op }}</td><td class="num">{{ f.a }}</td><td class="num">{{ f.b }}</td><td class="num">{{ f.got }}</td><td class="num">{{ f.expected }}</td></tr>{% endfor %}</tbody>
     </table></div>
-    {% endif %}
+    {% endfor %}
 </div>
 {% endif %}
+{% endblock %}
+{% block scripts %}
+<script>if (window.hljs) hljs.highlightElement(document.getElementById('src'));</script>
 {% endblock %}

@@ -56,11 +56,18 @@ def generate_one(provider, model, k, bits, lang, operations):
     return result['code'], result
 
 
-def store(session, spec, lang, code, *, source, provider, model_req, model_resp, metrics, notes=''):
+def store(session, spec, lang, code, *, source, provider, model_req, model_resp, metrics, notes='',
+          prompt_hash=None):
     bm = service.get_or_create_benchmark(session, spec)
     impl = service.add_implementation(
         session, bm, lang, code, source=source, provider=provider,
-        model_requested=model_req, model_responded=model_resp, metrics=metrics, notes=notes)
+        model_requested=model_req, model_responded=model_resp, prompt_hash=prompt_hash,
+        metrics=metrics, notes=notes)
+    if impl is not None:
+        what = f"{lang} by {model_resp or provider}" if source == 'llm-generated' else f"{lang} ({source})"
+        service.add_review_event(session, bm, 'seeded', f"{what}: golden model {metrics.get('golden_status')} "
+                                 f"{metrics.get('golden_passed')}/{metrics.get('golden_compared')}",
+                                 actor='seed_library.py', implementation_id=impl.id)
     return bm, impl
 
 
@@ -155,7 +162,7 @@ def main():
                 with session_scope() as s:
                     bm, impl = store(s, spec, lang, code, source='llm-generated', provider=args.provider,
                                      model_req=info.get('requested_model'), model_resp=info.get('response_model'),
-                                     metrics=metrics)
+                                     metrics=metrics, prompt_hash=info.get('prompt_sha256'))
                 if impl is None:
                     skipped += 1
                     print(f"{tag}  = identical code already stored  {time.time()-t0:.0f}s")

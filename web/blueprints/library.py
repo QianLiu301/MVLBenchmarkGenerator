@@ -1,64 +1,80 @@
 """Public, read-only library pages: home, browse/filter, detail, code view, downloads."""
 import io
+import math
 from datetime import datetime
 
-from flask import (Blueprint, Response, abort, jsonify, render_template,
-                   request, send_file)
+from flask import (Blueprint, Response, abort, jsonify, redirect, render_template,
+                   request, send_file, url_for)
 
 from library import service
 from library.db import session_scope
-from library.models import LANGUAGES, MODULE_TYPES, SOURCES
+from library.models import (LANGUAGES, MODULE_ICONS, MODULE_TYPES, SOURCES)
 
 bp = Blueprint('library', __name__)
 
 _LABELS = {
     'module_labels': MODULE_TYPES,
+    'module_icons': MODULE_ICONS,
     'language_labels': LANGUAGES,
     'source_labels': SOURCES,
     'family_labels': service.FAMILY_LABELS,
     'radix_names': service.RADIX_NAMES,
 }
 
+_FILTER_KEYS = list(service.FILTER_FIELDS) + list(service.IMPL_FILTERS) + ['q']
+
 
 def _current_filters() -> dict:
-    """Filter values from the query string, only the ones we understand."""
-    keys = list(service.FILTER_FIELDS) + ['language', 'source', 'verified']
-    return {k: request.args.get(k) for k in keys if request.args.get(k)}
+    return {k: request.args.get(k) for k in _FILTER_KEYS if request.args.get(k)}
 
 
 @bp.route('/')
 def home():
     with session_scope() as s:
         return render_template('library/home.html', stats=service.stats(s),
-                               facets=service.facets(s), **_LABELS)
+                               modules=service.module_counts(s),
+                               recent=service.recent_benchmarks(s, 5),
+                               bibtex=service.bibtex(), **_LABELS)
 
 
 @bp.route('/library')
 def browse():
     current = _current_filters()
+    sort = request.args.get('sort', 'name')
+    if sort not in service.SORT_OPTIONS:
+        sort = 'name'
+    try:
+        page = max(int(request.args.get('page', 1)), 1)
+    except ValueError:
+        page = 1
     with session_scope() as s:
-        benchmarks = service.list_benchmarks(
-            s, current, language=current.get('language'), source=current.get('source'),
-            verified_only=bool(current.get('verified')))
-        # touch relationships while the session is open
-        for b in benchmarks:
-            _ = b.published_implementations
-        return render_template('library/browse.html', benchmarks=benchmarks, current=current,
+        benchmarks, total = service.list_benchmarks(s, current, sort=sort, page=page)
+        pages = max(math.ceil(total / service.PAGE_SIZE), 1)
+        return render_template('library/browse.html', benchmarks=benchmarks, total=total,
+                               page=page, pages=pages, sort=sort, current=current,
                                facets=service.facets(s), **_LABELS)
 
 
-@bp.route('/library/<slug>')
+@bp.route('/benchmark/<slug>')
 def detail(slug):
     with session_scope() as s:
         b = service.get_benchmark(s, slug)
         if b is None or b.status != 'published':
             abort(404)
         impls = b.published_implementations
-        verified_n = sum(1 for i in impls if i.golden_status == 'PASS')
-        return render_template('library/detail.html', b=b, impls=impls, verified_n=verified_n,
+        events = list(b.review_events)
+        return render_template('library/detail.html', b=b, impls=impls,
+                               verified_n=sum(1 for i in impls if i.golden_status == 'PASS'),
+                               ops=service.op_definitions(b), events=events,
                                bibtex=service.bibtex(b), **_LABELS)
 
 
+@bp.route('/library/<slug>')
+def detail_legacy(slug):
+    return redirect(url_for('library.detail', slug=slug), code=301)
+
+
+@bp.route('/benchmark/<slug>/spec.json')
 @bp.route('/library/<slug>/spec.json')
 def spec_json(slug):
     with session_scope() as s:
@@ -78,6 +94,7 @@ def _load_impl(s, slug, impl_id):
     return b, impl
 
 
+@bp.route('/benchmark/<slug>/<int:impl_id>')
 @bp.route('/library/<slug>/<int:impl_id>')
 def view_code(slug, impl_id):
     with session_scope() as s:
@@ -85,6 +102,14 @@ def view_code(slug, impl_id):
         return render_template('library/code.html', b=b, i=i, report=i.verification_report or {}, **_LABELS)
 
 
+@bp.route('/benchmark/<slug>/<int:impl_id>/log')
+def view_log(slug, impl_id):
+    with session_scope() as s:
+        b, i = _load_impl(s, slug, impl_id)
+        return Response(i.verification_log or '(no log recorded)', mimetype='text/plain')
+
+
+@bp.route('/benchmark/<slug>/<int:impl_id>/download')
 @bp.route('/library/<slug>/<int:impl_id>/download')
 def download_impl(slug, impl_id):
     with session_scope() as s:
@@ -95,6 +120,7 @@ def download_impl(slug, impl_id):
     return send_file(io.BytesIO(data), as_attachment=True, download_name=name, mimetype='text/plain')
 
 
+@bp.route('/benchmark/<slug>/download')
 @bp.route('/library/<slug>/download')
 def download_benchmark(slug):
     with session_scope() as s:
@@ -111,9 +137,7 @@ def download_benchmark(slug):
 def download_all():
     current = _current_filters()
     with session_scope() as s:
-        benchmarks = service.list_benchmarks(
-            s, current, language=current.get('language'), source=current.get('source'),
-            verified_only=bool(current.get('verified')))
+        benchmarks, _ = service.list_benchmarks(s, current, sort='name', page=None)
         data = service.build_zip(benchmarks)
     stamp = datetime.utcnow().strftime('%Y%m%d')
     name = f"mvl-benchmarks-{stamp}.zip" if not current else f"mvl-benchmarks-selection-{stamp}.zip"

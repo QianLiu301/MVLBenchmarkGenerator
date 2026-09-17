@@ -1,0 +1,148 @@
+{% extends "base.html" %}
+{% set nav = 'submit' %}
+{% block title %}Submit a benchmark — MVL Benchmark Library{% endblock %}
+{% block content %}
+<div class="detail-head">
+    <div>
+        <h1 style="font-size:1.6rem">Submit a benchmark</h1>
+        <div class="muted small">A <span class="mono">manifest.json</span> plus one source file per language. Every submission goes through the automated pipeline below and a maintainer decision before it is published under CC BY 4.0.</div>
+    </div>
+    <div class="detail-actions">
+        <a href="{{ url_for('submit.manifest_template') }}" class="btn btn-outline"><i data-lucide="file-down" class="icon"></i> manifest template</a>
+        <a href="{{ url_for('submit.manifest_schema') }}" class="btn btn-outline" target="_blank" rel="noopener"><i data-lucide="braces" class="icon"></i> JSON Schema</a>
+    </div>
+</div>
+
+<ol class="steps" aria-label="Review pipeline">
+    {% for key, label in steps %}<li><span class="st">{{ loop.index }}</span>{{ label }}</li>{% endfor %}
+</ol>
+
+<div class="home-two">
+    <div class="card">
+        <div class="section-title"><i data-lucide="upload-cloud" class="icon"></i> Files</div>
+        <label class="dropzone" id="dropzone">
+            <input type="file" id="fileInput" multiple accept=".json,.c,.py,.v,.vhd">
+            <i data-lucide="file-plus-2" class="icon-lg icon"></i>
+            <div style="margin-top:8px"><strong>Drop files here</strong> or click to choose</div>
+            <div class="small">manifest.json · .c · .py · .v · .vhd — max 512 KB each</div>
+        </label>
+        <ul class="file-list" id="fileList"></ul>
+        <ul class="problems" id="problems"></ul>
+        <div style="display:flex;gap:10px;align-items:center;margin-top:16px;flex-wrap:wrap">
+            <button class="btn btn-primary" id="submitBtn" disabled><i data-lucide="send" class="icon"></i> Submit for review</button>
+            <span class="small muted" id="submitHint">Add a valid manifest.json and its files to enable.</span>
+        </div>
+    </div>
+    <div class="card">
+        <div class="section-title"><i data-lucide="book-open" class="icon"></i> What the manifest needs</div>
+        <ul class="prose" style="font-size:.88rem">
+            <li><span class="mono">module_type</span>, <span class="mono">k_value</span>, <span class="mono">bitwidth</span>, <span class="mono">operations</span> — define the spec; the name is derived (<span class="mono">alu_k3_8t</span>).</li>
+            <li><span class="mono">files[]</span> — filename + language for every uploaded source file.</li>
+            <li><span class="mono">source</span> — <span class="mono">human-authored</span>, <span class="mono">llm-generated</span> (then <span class="mono">generator.model</span> is required) or <span class="mono">reference</span>.</li>
+            <li><span class="mono">submitter</span> — name, e-mail, affiliation; shown as provenance.</li>
+            <li><span class="mono">license</span> — must be <span class="mono">CC-BY-4.0</span>: by submitting you agree to publish under this license.</li>
+        </ul>
+        <p class="small muted" style="margin-top:10px">Test output must follow <span class="mono">Test N: OP A=.. B=.. -&gt; R=.. Z=.. N=.. C=..</span> so the golden-model comparison can read it. The manifest is validated in your browser before upload.</p>
+        <details style="margin-top:10px"><summary class="small" style="cursor:pointer">Show template</summary><pre class="bibtex" style="margin-top:8px">{{ template_json }}</pre></details>
+    </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script id="schema" type="application/json">{{ schema_json|safe }}</script>
+<script>
+(function () {
+    const schema = JSON.parse(document.getElementById('schema').textContent);
+    const files = new Map();
+    const $ = id => document.getElementById(id);
+    const dz = $('dropzone'), input = $('fileInput'), list = $('fileList'), problems = $('problems'), btn = $('submitBtn'), hint = $('submitHint');
+
+    // --- minimal JSON-Schema (draft-07 subset) validator, mirrors the server ---
+    function validate(s, v, path) {
+        const errs = [];
+        if ('const' in s && JSON.stringify(v) !== JSON.stringify(s.const)) return [`${path}: must be ${JSON.stringify(s.const)}`];
+        if (s.enum && !s.enum.includes(v)) return [`${path}: must be one of ${s.enum.join(', ')}`];
+        if (s.type === 'object') {
+            if (typeof v !== 'object' || v === null || Array.isArray(v)) return [`${path}: must be an object`];
+            (s.required || []).forEach(r => { if (!(r in v)) errs.push(`${path}.${r}: required`); });
+            const props = s.properties || {};
+            if (s.additionalProperties === false) Object.keys(v).forEach(k => { if (!(k in props)) errs.push(`${path}.${k}: unknown field`); });
+            Object.entries(props).forEach(([k, sub]) => { if (k in v) errs.push(...validate(sub, v[k], `${path}.${k}`)); });
+        } else if (s.type === 'array') {
+            if (!Array.isArray(v)) return [`${path}: must be an array`];
+            if (s.minItems != null && v.length < s.minItems) errs.push(`${path}: at least ${s.minItems} item(s)`);
+            if (s.maxItems != null && v.length > s.maxItems) errs.push(`${path}: at most ${s.maxItems} item(s)`);
+            if (s.uniqueItems && new Set(v.map(x => JSON.stringify(x))).size !== v.length) errs.push(`${path}: items must be unique`);
+            v.forEach((item, i) => errs.push(...validate(s.items || {}, item, `${path}[${i}]`)));
+        } else if (s.type === 'integer') {
+            if (!Number.isInteger(v)) return [`${path}: must be an integer`];
+            if (s.minimum != null && v < s.minimum) errs.push(`${path}: must be ≥ ${s.minimum}`);
+            if (s.maximum != null && v > s.maximum) errs.push(`${path}: must be ≤ ${s.maximum}`);
+        } else if (s.type === 'string') {
+            if (typeof v !== 'string') return [`${path}: must be a string`];
+            if (s.minLength != null && v.length < s.minLength) errs.push(`${path}: at least ${s.minLength} characters`);
+            if (s.maxLength != null && v.length > s.maxLength) errs.push(`${path}: at most ${s.maxLength} characters`);
+            if (s.pattern && !new RegExp(s.pattern).test(v)) errs.push(`${path}: does not match ${s.pattern}`);
+            if (s.format === 'email' && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)) errs.push(`${path}: must be an e-mail address`);
+        }
+        return errs;
+    }
+
+    function check() {
+        const errs = [], oks = [];
+        const mf = files.get('manifest.json');
+        let manifest = null;
+        if (!mf) errs.push('manifest.json is missing');
+        else {
+            try { manifest = JSON.parse(mf.text); } catch (e) { errs.push('manifest.json: invalid JSON — ' + e.message); }
+        }
+        if (manifest) {
+            const e = validate(schema, manifest, 'manifest');
+            if (e.length) errs.push(...e); else oks.push('manifest matches the schema');
+            const declared = new Set((manifest.files || []).map(f => f.filename));
+            declared.forEach(n => { if (!files.has(n)) errs.push(`file '${n}' is declared but not added`); });
+            files.forEach((_, n) => { if (n !== 'manifest.json' && !declared.has(n)) errs.push(`'${n}' is not declared in manifest.files`); });
+            const ext = { c: '.c', python: '.py', verilog: '.v', vhdl: '.vhd' };
+            (manifest.files || []).forEach(f => { if (f.language && ext[f.language] && !f.filename.endsWith(ext[f.language])) errs.push(`'${f.filename}': language ${f.language} expects ${ext[f.language]}`); });
+            if (manifest.source === 'llm-generated' && !(manifest.generator && manifest.generator.model)) errs.push('generator.model is required for llm-generated');
+            if (!errs.length && declared.size) oks.push(`${declared.size} source file(s) declared and present`);
+        }
+        problems.innerHTML = errs.map(e => `<li class="err"><i data-lucide="alert-circle" class="icon-sm icon"></i>${esc(e)}</li>`).join('')
+            + oks.map(o => `<li class="ok"><i data-lucide="check-circle-2" class="icon-sm icon"></i>${esc(o)}</li>`).join('');
+        btn.disabled = errs.length > 0 || !manifest;
+        hint.textContent = btn.disabled ? 'Fix the problems above to enable.' : 'Ready — the server re-validates and runs the pipeline.';
+        lucide.createIcons();
+    }
+    function esc(s) { return s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+    function render() {
+        list.innerHTML = [...files.values()].map(f => `<li><span class="name">${esc(f.name)}</span><span class="small muted">${(f.size / 1024).toFixed(1)} KB</span><button type="button" data-rm="${esc(f.name)}" aria-label="remove"><i data-lucide="x" class="icon-sm icon"></i></button></li>`).join('');
+        list.querySelectorAll('[data-rm]').forEach(b => b.addEventListener('click', () => { files.delete(b.dataset.rm); render(); }));
+        check();
+    }
+    function add(fileList) {
+        [...fileList].forEach(f => {
+            const name = f.name.split(/[\\/]/).pop();
+            if (!/\.(json|c|py|v|vhd)$/i.test(name)) { problems.innerHTML += `<li class="err">${esc(name)}: unsupported type</li>`; return; }
+            if (f.size > 512 * 1024) { problems.innerHTML += `<li class="err">${esc(name)}: larger than 512 KB</li>`; return; }
+            f.text().then(text => { files.set(name, { name, size: f.size, text, blob: f }); render(); });
+        });
+    }
+    input.addEventListener('change', () => { add(input.files); input.value = ''; });
+    ['dragenter', 'dragover'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.add('over'); }));
+    ['dragleave', 'drop'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.remove('over'); }));
+    dz.addEventListener('drop', e => add(e.dataTransfer.files));
+
+    btn.addEventListener('click', async () => {
+        btn.disabled = true; hint.textContent = 'Uploading…';
+        const fd = new FormData();
+        files.forEach(f => fd.append('files', new Blob([f.text], { type: 'text/plain' }), f.name));
+        try {
+            const r = await fetch('/api/submit', { method: 'POST', body: fd });
+            const data = await r.json();
+            if (data.status_url && (data.ok || data.token)) { location.href = data.status_url; return; }
+            problems.innerHTML = (data.errors || ['Upload failed']).map(e => `<li class="err">${esc(e)}</li>`).join('');
+            btn.disabled = false; hint.textContent = '';
+        } catch (e) { problems.innerHTML = `<li class="err">${esc(e.message)}</li>`; btn.disabled = false; }
+    });
+})();
+</script>
+{% endblock %}

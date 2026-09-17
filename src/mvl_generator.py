@@ -9,6 +9,7 @@ Supports:
 - Languages: C, Python, Verilog, VHDL
 """
 
+import hashlib
 import os
 import re
 from datetime import datetime
@@ -732,6 +733,7 @@ class MVLGenerator:
                 'logic_type': resolved_logic,
                 'llm': self.llm_provider_name,
                 'validation_warnings': validation_warnings,
+                'prompt_sha256': hashlib.sha256(prompt.encode('utf-8')).hexdigest(),
                 **call_state
             }
 
@@ -856,6 +858,7 @@ class MVLGenerator:
                 'logic_type': resolved_logic,
                 'llm': self.llm_provider_name,
                 'validation_warnings': validation_warnings,
+                'prompt_sha256': hashlib.sha256(prompt.encode('utf-8')).hexdigest(),
                 **call_state
             })
 
