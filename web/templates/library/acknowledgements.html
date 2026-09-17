@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% set nav = 'about' %}
+{% block title %}Acknowledgements — MVL Benchmark Library{% endblock %}
+{% block content %}
+<div class="prose">
+    <h1>Acknowledgements</h1>
+    <p>
+        The MVL Benchmark Library is maintained by the Group of Computer Architecture (AGRA) at the
+        University of Bremen. We thank everyone who helps building it — by submitting benchmarks,
+        reporting problems, or improving the tooling.
+    </p>
+
+    <h2>Contributors</h2>
+    {% if contributors.people %}
+    <ul>
+        {% for p in contributors.people %}
+        <li><strong>{{ p.name }}</strong>{% if p.affiliation %} — {{ p.affiliation }}{% endif %}
+            <span class="muted small">({{ p.count }} implementation{{ '' if p.count == 1 else 's' }})</span></li>
+        {% endfor %}
+    </ul>
+    {% else %}
+    <p>No external contributions have been published yet — <a href="{{ url_for('submit.form') }}">be the first</a>.</p>
+    {% endif %}
+
+    <h2>Generation models</h2>
+    <p>Implementations marked <em>LLM-generated</em> were produced with the following models and then verified independently of the model:</p>
+    {% if contributors.models %}
+    <ul>
+        {% for m in contributors.models %}
+        <li><code>{{ m.model or '—' }}</code>{% if m.provider %} <span class="muted small">via {{ m.provider }}</span>{% endif %}
+            <span class="muted small">({{ m.count }} implementation{{ '' if m.count == 1 else 's' }})</span></li>
+        {% endfor %}
+    </ul>
+    {% else %}
+    <p class="muted">None yet.</p>
+    {% endif %}
+
+    <h2>Tools</h2>
+    <p>Verification relies on GCC, CPython, Icarus Verilog and GHDL, and on the deterministic Galois-field golden model described in the associated paper.</p>
+</div>
+{% endblock %}

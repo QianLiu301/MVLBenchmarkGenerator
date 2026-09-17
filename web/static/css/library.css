@@ -124,6 +124,11 @@ code, pre, .mono { font-family: var(--mono); }
 .hero p { max-width: 680px; margin: 0 auto 22px; color: var(--text-muted); font-size: 1.05rem; }
 .hero .search { max-width: 560px; margin: 0 auto 18px; }
 .hero-actions { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+.welcome { max-width: 860px; margin: 0 auto 34px; }
+.welcome h2 { font-size: 1.2rem; margin-bottom: 10px; }
+.welcome p { color: var(--text-muted); margin-bottom: 10px; font-size: .95rem; }
+.welcome p:last-child { margin-bottom: 0; }
+.welcome .notice { margin-top: 14px; padding: 10px 14px; background: var(--bg); border-left: 3px solid var(--link); border-radius: var(--radius-sm); color: var(--text); font-size: .88rem; }
 .stats-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px; margin: 14px 0 34px; }
 .stat { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; text-align: center; }
 .stat-value { font-size: 1.7rem; font-weight: 700; color: var(--primary-from); line-height: 1.1; font-variant-numeric: tabular-nums; }

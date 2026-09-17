@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% set nav = 'about' %}
+{% block title %}Benchmark format v1.0 — MVL Benchmark Library{% endblock %}
+{% block content %}
+<div class="prose">
+    <h1>Benchmark format <span class="muted" style="font-weight:500">v1.0</span></h1>
+    <p>
+        Every entry in the library is a <em>specification</em> (what is computed) with one or more
+        <em>implementations</em> (how it is computed, in a given language). Both are described by a small
+        set of conventions so that entries can be compared, verified and cited uniformly. When you
+        reference the format in a paper, please state the version: <code>MVL Benchmark Library format v1.0</code>.
+    </p>
+
+    <h2>1. Naming</h2>
+    <p>Specifications are identified by a stable name derived from their parameters:</p>
+    <ul>
+        <li><code>alu_k3_8t</code> — ALU, radix <em>k</em> = 3, 8 digits (trits)</li>
+        <li><code>regfile_k3_8t_r16</code> — register file with 16 registers</li>
+        <li><code>cpu_k3_8t_p5</code> — 5-stage processor</li>
+    </ul>
+    <p>Implementation files carry the specification name and the language extension: <code>alu_k3_8t.c</code>, <code>.py</code>, <code>.v</code>, <code>.vhd</code>.</p>
+
+    <h2>2. Algebraic structure</h2>
+    <p>The structure is fixed by <em>k</em>: GF(p) for prime <em>k</em>, GF(pⁿ) for prime powers (digit-wise field arithmetic), and the integer ring Z/kZ otherwise. Operands are integers in <code>0 … kⁿ − 1</code>; results are reduced modulo <code>kⁿ</code>. Each benchmark page lists the exact definition of every operation and flag.</p>
+
+    <h2>3. Test output</h2>
+    <p>Implementations print their self-test vectors in one line per vector so the golden-model comparison can read them:</p>
+    <pre class="bibtex">Test  1: ADD A=0 B=0 -> R=0 Z=1 N=0 C=0
+Test  2: SUB A=6560 B=1 -> R=6559 Z=0 N=1 C=0</pre>
+    <p>Accepted variants: <code>result=</code> instead of <code>R=</code>, lower-case keys, and a numeric <code>OP=</code> field (0 = ADD … 5 = DEC). Flags Z / N / C are optional but compared when present.</p>
+
+    <h2>4. Manifest (<code>manifest.json</code>)</h2>
+    <p>Submissions bundle their files with a manifest. The schema is published at <a href="{{ url_for('submit.manifest_schema') }}">/submit/manifest-schema.json</a>; a template is available on the <a href="{{ url_for('submit.form') }}">Submit page</a>.</p>
+    <pre class="bibtex">{{ template_json }}</pre>
+
+    <h2>5. Verification record</h2>
+    <p>Each published implementation stores: simulation result (compiles and runs), golden-model result over the self-reported vectors and over <code>N</code> injected golden vectors with a fixed seed (<code>random(N=50, seed=42)</code>), the toolchain versions used, the golden-model version, the SHA-256 of the file and the simulator log. These are shown on the benchmark page and exported in <code>spec.json</code>.</p>
+
+    <h2>6. Download archives</h2>
+    <p>Per-benchmark and library-wide archives contain <code>&lt;name&gt;/spec.json</code>, the implementation files, <code>LICENSE.txt</code> (CC BY 4.0) and <code>CITATION.bib</code>. When several implementations share a language, the file name carries the source and id, e.g. <code>alu_k3_8t_deepseek_12.c</code>.</p>
+
+    <h2>Changelog</h2>
+    <ul>
+        <li><strong>v1.0</strong> (2026-09) — initial format: naming, manifest v1, test-output convention, verification record, archive layout.</li>
+    </ul>
+</div>
+{% endblock %}

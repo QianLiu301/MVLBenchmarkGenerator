@@ -452,6 +452,27 @@ def module_counts(session) -> List[Dict]:
     return [{'value': m, 'label': label, 'specs': counts.get(m, 0)} for m, label in MODULE_TYPES.items()]
 
 
+def contributors(session) -> Dict:
+    """People and models behind the published implementations, for the Acknowledgements page."""
+    rows = session.execute(
+        select(Implementation.submitter_name, Implementation.submitter_affiliation, func.count())
+        .join(Benchmark, Benchmark.id == Implementation.benchmark_id)
+        .where(Implementation.status == 'published', Benchmark.status == 'published',
+               Implementation.submitter_name.isnot(None))
+        .group_by(Implementation.submitter_name, Implementation.submitter_affiliation)
+        .order_by(Implementation.submitter_name)).all()
+    people = [{'name': n, 'affiliation': a, 'count': c} for n, a, c in rows]
+    models = session.execute(
+        select(Implementation.provider, Implementation.model_responded, func.count())
+        .join(Benchmark, Benchmark.id == Implementation.benchmark_id)
+        .where(Implementation.status == 'published', Benchmark.status == 'published',
+               Implementation.source == 'llm-generated')
+        .group_by(Implementation.provider, Implementation.model_responded)
+        .order_by(Implementation.provider)).all()
+    return {'people': people,
+            'models': [{'provider': p, 'model': m, 'count': c} for p, m, c in models]}
+
+
 def bump_downloads(session, benchmark: Benchmark = None, impl: Implementation = None):
     if benchmark is not None:
         benchmark.download_count = (benchmark.download_count or 0) + 1

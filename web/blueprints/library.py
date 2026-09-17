@@ -31,8 +31,10 @@ def _current_filters() -> dict:
 @bp.route('/')
 def home():
     with session_scope() as s:
+        modules = service.module_counts(s)
+        only_alu = all(m['specs'] == 0 for m in modules if m['value'] != 'alu')
         return render_template('library/home.html', stats=service.stats(s),
-                               modules=service.module_counts(s),
+                               modules=modules, only_alu=only_alu,
                                recent=service.recent_benchmarks(s, 5),
                                bibtex=service.bibtex(), **_LABELS)
 
@@ -152,6 +154,20 @@ def about():
 @bp.route('/cite')
 def cite():
     return render_template('library/cite.html', bibtex=service.bibtex())
+
+
+@bp.route('/format')
+def format():
+    from library.submissions import MANIFEST_TEMPLATE
+    import json
+    return render_template('library/format.html', template_json=json.dumps(MANIFEST_TEMPLATE, indent=2))
+
+
+@bp.route('/acknowledgements')
+def acknowledgements():
+    with session_scope() as s:
+        return render_template('library/acknowledgements.html',
+                               contributors=service.contributors(s), **_LABELS)
 
 
 @bp.route('/api/library/stats')

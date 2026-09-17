@@ -4,7 +4,7 @@
 {% block content %}
 <section class="hero">
     <h1>An Online Resource for <span class="accent">Multi-Valued Logic</span> Benchmarks</h1>
-    <p>Verified ALU, register-file and CPU designs over GF(p), GF(pⁿ) and Z/kZ, in C, Python, Verilog and VHDL — each one compiled, simulated and checked against an independent golden model.</p>
+    <p>Reference specifications and implementations for MVL research, in C, Python, Verilog and VHDL — each checked against an independent golden model and published with a reproducible verification record.</p>
     <form class="search" action="{{ url_for('library.browse') }}" method="get" role="search">
         <i data-lucide="search" class="icon"></i>
         <input type="search" name="q" placeholder="Search benchmarks — e.g. alu_k3, ternary, GF(5)" aria-label="Search benchmarks">
@@ -13,6 +13,39 @@
         <a href="{{ url_for('library.browse') }}" class="btn btn-primary btn-lg"><i data-lucide="library" class="icon"></i> Browse Library</a>
         <a href="{{ url_for('submit.form') }}" class="btn btn-outline btn-lg"><i data-lucide="upload" class="icon"></i> Submit a Benchmark</a>
     </div>
+</section>
+
+<section class="card welcome">
+    <h2>Welcome to the MVL Benchmark Library</h2>
+    <p>
+        The MVL Benchmark Library is an online resource for benchmarks in the domain of multi-valued logic (MVL)
+        design and verification. It provides a <a href="{{ url_for('library.browse') }}">database of benchmark specifications</a>
+        {% if only_alu %}— starting with arithmetic-logic units defined over finite algebraic structures such as GF(p), GF(pⁿ) and Z/kZ,
+        with register files and processors to follow —{% else %}— arithmetic-logic units, register files and processors defined over
+        finite algebraic structures such as GF(p), GF(pⁿ) and Z/kZ —{% endif %}
+        together with <a href="{{ url_for('library.browse', verified=1) }}">reference implementations</a> in C, Python, Verilog and VHDL,
+        all given in a common <a href="{{ url_for('library.format') }}">benchmark format</a>.
+    </p>
+    <p>
+        Every implementation is compiled, simulated and compared digit-wise against an independent golden model before
+        publication. Each entry carries its own verification record — test strategy, toolchain versions, random seed and
+        file checksums — so that results can be reproduced.
+    </p>
+    <p>
+        The library is maintained by the Group of Computer Architecture (AGRA) at the University of Bremen and is open
+        to contributions from the MVL community. Whether you design ternary arithmetic, study Galois-field hardware or
+        evaluate verification tools, we invite you to <a href="{{ url_for('library.browse') }}">browse</a>,
+        <a href="{{ url_for('library.download_all') }}">download</a> and <a href="{{ url_for('submit.form') }}">contribute</a> benchmarks.
+        Submissions pass an automated review pipeline followed by maintainer approval; new benchmarks can also be derived
+        with our <a href="{{ url_for('generate_page') }}">LLM-based generator</a>.
+    </p>
+    <p>
+        To learn more, see the <a href="{{ url_for('library.about') }}">About page</a> and the
+        <a href="{{ url_for('library.format') }}">format documentation</a>. If you use the library, please
+        <a href="{{ url_for('library.cite') }}">cite</a> our ISMVL 2026 paper.
+    </p>
+    <p class="notice"><strong>Please note:</strong> the benchmark format in version 1.0 is available.
+        <a href="{{ url_for('library.format') }}">Learn more</a></p>
 </section>
 
 {% if stats.benchmarks >= 20 %}
