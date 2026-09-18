@@ -3,13 +3,27 @@
 {% block title %}About — MVL Benchmark Library{% endblock %}
 {% block content %}
 <div class="prose">
+    <img src="{{ url_for('static', filename='brand/mvl-logo-stacked.svg') }}" alt="MVL Benchmark Library" class="about-logo" width="314" height="96">
     <h1>About the MVL Benchmark Library</h1>
     <p>
-        The MVL Benchmark Library is an online resource for benchmarks within the domain of
-        Multi-Valued Logic (MVL) design. It provides a database of benchmark <em>specifications</em>
-        (module type, radix <em>k</em>, bitwidth, algebraic structure, operation set) together with
-        <em>implementations</em> in C, Python, Verilog and VHDL, each carrying a machine-checked
-        verification record.
+        The MVL Benchmark Library is an online resource for benchmarks in the domain of multi-valued logic (MVL)
+        design and verification. It provides a <a href="{{ url_for('library.browse') }}">database of benchmark specifications</a>
+        — arithmetic-logic units, register files and processors defined over finite algebraic structures such as
+        GF(p), GF(pⁿ) and Z/kZ — together with <a href="{{ url_for('library.browse', verified=1) }}">reference implementations</a>
+        in C, Python, Verilog and VHDL, all given in a common <a href="{{ url_for('library.format') }}">benchmark format</a>.
+    </p>
+    <p>
+        Every implementation is compiled, simulated and compared digit-wise against an independent golden model before
+        publication. Each entry carries its own verification record — test strategy, toolchain versions, random seed and
+        file checksums — so that results can be reproduced.
+    </p>
+    <p>
+        The library is maintained by the Group of Computer Architecture (AGRA) at the University of Bremen and is open
+        to contributions from the MVL community. Whether you design ternary arithmetic, study Galois-field hardware or
+        evaluate verification tools, we invite you to <a href="{{ url_for('library.browse') }}">browse</a>,
+        <a href="{{ url_for('library.browse', mode='download') }}">download</a> and <a href="{{ url_for('submit.form') }}">contribute</a> benchmarks.
+        Submissions pass an automated review pipeline followed by maintainer approval; new benchmarks can also be derived
+        with our <a href="{{ url_for('generate_page') }}">LLM-based generator</a>.
     </p>
 
     <h2>What makes an entry</h2>
@@ -22,20 +36,9 @@
             can be compared on identical specifications.</li>
         <li><strong>Verification record</strong> — the implementation is compiled and simulated
             (gcc, CPython, Icarus Verilog, GHDL); every test vector it prints is compared digit-wise
-            with an independent, deterministic golden model. Only the result is stored; nothing is
-            hand-edited.</li>
+            with an independent, deterministic golden model, and a second run injects golden vectors
+            with a fixed seed. Only the result is stored; nothing is hand-edited.</li>
     </ul>
-
-    <h2>How the library grows</h2>
-    <p>
-        Entries originate from an LLM-based generation pipeline described in the associated
-        ISMVL 2026 paper: a natural-language or parametric specification is turned into code by a
-        large language model, then simulated and validated. The generator is available on this site
-        (<a href="{{ url_for('generate_page') }}">Generate</a>). Externally authored benchmarks can be
-        <a href="{{ url_for('submit.form') }}">submitted</a>; they pass the same automated checks
-        (schema, lint, simulation against the golden model, duplicate detection) and a maintainer review
-        before publication.
-    </p>
 
     <h2>Format</h2>
     <p>

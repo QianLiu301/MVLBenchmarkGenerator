@@ -6,16 +6,19 @@
     <h1>Cite the MVL Benchmark Library</h1>
     <p>
         If you use benchmarks from this library in your work, please cite the paper that introduced
-        the generation and verification pipeline. Individual benchmark pages provide a BibTeX entry
-        with the benchmark's permanent URL in the <code>note</code> field.
+        the generation and verification pipeline. Individual benchmark pages provide the same entry
+        with the benchmark's permanent URL added in a <code>note</code> field.
     </p>
-    <pre class="bibtex" id="bibtex">{{ bibtex }}</pre>
-    <button class="btn btn-outline btn-sm" style="margin-top:8px" onclick="navigator.clipboard.writeText(document.getElementById('bibtex').textContent).then(()=>{this.textContent='Copied ✓'})">Copy BibTeX</button>
+    <p>{{ citation_text }}</p>
+    <pre class="bibtex wrap" id="bibtex">{{ bibtex }}</pre>
+    <div class="cite-actions">
+        <button class="btn btn-outline btn-sm" onclick="copyText('bibtex', this, 'BibTeX copied')"><i data-lucide="copy" class="icon"></i> Copy BibTeX</button>
+        <a href="{{ url_for('library.citation_file') }}" class="btn btn-outline btn-sm"><i data-lucide="download" class="icon"></i> CITATION.bib</a>
+    </div>
 
     <h2>Paper</h2>
     <p>
-        Rolf Drechsler. <em>LLM-based Generation of High-Level Benchmarks for MVL Designs.</em>
-        IEEE International Symposium on Multiple-Valued Logic (ISMVL), 2026.
+        {{ citation_text }}
         <a href="https://www.dfki.de/en/web/research/projects-and-publications/publication/17116" target="_blank" rel="noopener">Publication page</a>
     </p>
 
@@ -23,7 +26,7 @@
     <p>
         Benchmark files are licensed under
         <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">Creative Commons Attribution 4.0 International (CC BY 4.0)</a>.
-        Every download archive includes a <code>LICENSE.txt</code> and a <code>CITATION.bib</code>.
+        Every download archive includes a <code>LICENSE.txt</code>, a <code>CITATION.bib</code> and a <code>manifest.json</code>.
     </p>
 </div>
 {% endblock %}

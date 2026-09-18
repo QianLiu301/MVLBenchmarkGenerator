@@ -4,7 +4,9 @@ from flask import (Blueprint, abort, flash, redirect, render_template, request, 
 from blueprints.auth import require_access
 from library import submissions
 from library.db import session_scope
-from library.models import LANGUAGES, PIPELINE_STEPS, Submission
+from library.models import LANGUAGES, News, PIPELINE_STEPS, Submission
+from datetime import datetime
+from sqlalchemy import select
 
 bp = Blueprint('admin', __name__, url_prefix='/admin')
 
@@ -53,3 +55,57 @@ def decide(sub_id):
     except ValueError as e:
         flash(str(e), 'error')
     return redirect(url_for('admin.queue'))
+
+
+# ---------------------------------------------------------------------------
+# News (homepage "News" block)
+# ---------------------------------------------------------------------------
+
+@bp.route('/news')
+@require_access
+def news_list():
+    with session_scope() as s:
+        items = list(s.execute(select(News).order_by(News.date.desc())).scalars())
+        return render_template('admin/news.html', items=items, item=None)
+
+
+@bp.route('/news/new', methods=['GET', 'POST'])
+@bp.route('/news/<int:news_id>', methods=['GET', 'POST'])
+@require_access
+def news_edit(news_id=None):
+    with session_scope() as s:
+        item = s.get(News, news_id) if news_id else None
+        if news_id and item is None:
+            abort(404)
+        if request.method == 'POST':
+            title = (request.form.get('title') or '').strip()
+            if not title:
+                flash('A title is required.', 'error')
+                return redirect(request.path)
+            if item is None:
+                item = News()
+                s.add(item)
+            item.title = title
+            item.body_md = request.form.get('body_md') or ''
+            item.link = (request.form.get('link') or '').strip() or None
+            item.status = 'published' if request.form.get('status') == 'published' else 'draft'
+            try:
+                item.date = datetime.fromisoformat(request.form.get('date') or '')
+            except ValueError:
+                item.date = item.date or datetime.utcnow()
+            s.flush()
+            flash('News item saved.', 'success')
+            return redirect(url_for('admin.news_list'))
+        items = list(s.execute(select(News).order_by(News.date.desc())).scalars())
+        return render_template('admin/news.html', items=items, item=item)
+
+
+@bp.route('/news/<int:news_id>/delete', methods=['POST'])
+@require_access
+def news_delete(news_id):
+    with session_scope() as s:
+        item = s.get(News, news_id)
+        if item:
+            s.delete(item)
+            flash('News item deleted.', 'info')
+    return redirect(url_for('admin.news_list'))

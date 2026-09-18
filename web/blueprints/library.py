@@ -6,9 +6,11 @@ from datetime import datetime
 from flask import (Blueprint, Response, abort, jsonify, redirect, render_template,
                    request, send_file, url_for)
 
+from sqlalchemy import select
+
 from library import service
 from library.db import session_scope
-from library.models import (LANGUAGES, MODULE_ICONS, MODULE_TYPES, SOURCES)
+from library.models import (LANGUAGES, MODULE_ICONS, MODULE_TYPES, News, SOURCES)
 
 bp = Blueprint('library', __name__)
 
@@ -30,13 +32,17 @@ def _current_filters() -> dict:
 
 @bp.route('/')
 def home():
+    module = request.args.get('module') or None
+    if module not in MODULE_TYPES:
+        module = None
     with session_scope() as s:
         modules = service.module_counts(s)
-        only_alu = all(m['specs'] == 0 for m in modules if m['value'] != 'alu')
+        news = list(s.execute(select(News).where(News.status == 'published')
+                              .order_by(News.date.desc()).limit(3)).scalars())
         return render_template('library/home.html', stats=service.stats(s),
-                               modules=modules, only_alu=only_alu,
-                               recent=service.recent_benchmarks(s, 5),
-                               bibtex=service.bibtex(), **_LABELS)
+                               modules=modules, module=module,
+                               latest=service.latest_benchmarks(s, 10, module),
+                               news=news, bibtex=service.bibtex(), **_LABELS)
 
 
 @bp.route('/library')
@@ -49,12 +55,37 @@ def browse():
         page = max(int(request.args.get('page', 1)), 1)
     except ValueError:
         page = 1
+    download_mode = request.args.get('mode') == 'download'
     with session_scope() as s:
         benchmarks, total = service.list_benchmarks(s, current, sort=sort, page=page)
         pages = max(math.ceil(total / service.PAGE_SIZE), 1)
+        facets = service.facets(s)
+        selection = service.normalize_selection(request.args) if download_mode else None
+        summary = service.selection_summary(s, selection) if download_mode else None
         return render_template('library/browse.html', benchmarks=benchmarks, total=total,
                                page=page, pages=pages, sort=sort, current=current,
-                               facets=service.facets(s), **_LABELS)
+                               facets=facets, download_mode=download_mode,
+                               selection=selection, summary=summary, **_LABELS)
+
+
+@bp.route('/api/library/selection')
+def api_selection():
+    """Live counter for the download-by-selection panel."""
+    sel = service.normalize_selection(request.args)
+    with session_scope() as s:
+        return jsonify(service.selection_summary(s, sel))
+
+
+@bp.route('/library/download-selection')
+def download_selection():
+    sel = service.normalize_selection(request.args)
+    with session_scope() as s:
+        data, err = service.selection_zip(s, sel)
+    if err:
+        return render_template('library/error.html', message=err), 400
+    stamp = datetime.utcnow().strftime('%Y%m%d')
+    return send_file(io.BytesIO(data), as_attachment=True,
+                     download_name=f"mvl-benchmarks-selection-{stamp}.zip", mimetype='application/zip')
 
 
 @bp.route('/benchmark/<slug>')
@@ -153,7 +184,13 @@ def about():
 
 @bp.route('/cite')
 def cite():
-    return render_template('library/cite.html', bibtex=service.bibtex())
+    return render_template('library/cite.html', bibtex=service.bibtex(), citation_text=service.citation_text())
+
+
+@bp.route('/citation.bib')
+def citation_file():
+    return Response(service.bibtex(), mimetype='application/x-bibtex',
+                    headers={'Content-Disposition': 'attachment; filename=CITATION.bib'})
 
 
 @bp.route('/format')

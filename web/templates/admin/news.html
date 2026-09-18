@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% set nav = 'admin' %}
+{% block title %}News — MVL Benchmark Library{% endblock %}
+{% block content %}
+<div class="crumbs"><a href="{{ url_for('admin.queue') }}">Review queue</a> <i data-lucide="chevron-right" class="icon-sm icon"></i> News</div>
+<div class="detail-head">
+    <div>
+        <h1 style="font-size:1.5rem">News</h1>
+        <div class="muted small">The three most recent published items appear on the homepage. Drafts are never shown publicly.</div>
+    </div>
+    <a href="{{ url_for('admin.news_edit') }}" class="btn btn-primary btn-sm"><i data-lucide="plus" class="icon"></i> New item</a>
+</div>
+
+<div class="home-two">
+    <section class="card">
+        <h2 class="section-title">{{ 'Edit item' if item and item.id else ('New item' if item is not none else 'Items') }}</h2>
+        {% if item is not none %}
+        <form method="post" action="{{ url_for('admin.news_edit', news_id=item.id) if item.id else url_for('admin.news_edit') }}">
+            <div class="field"><label for="date">Date</label><input type="date" id="date" name="date" value="{{ item.date.strftime('%Y-%m-%d') if item.date else '' }}"></div>
+            <div class="field"><label for="title">Title</label><input type="text" id="title" name="title" value="{{ item.title or '' }}" required maxlength="200"></div>
+            <div class="field"><label for="body_md">Body (Markdown, optional)</label><textarea id="body_md" name="body_md" rows="4">{{ item.body_md or '' }}</textarea></div>
+            <div class="field"><label for="link">Link (optional)</label><input type="text" id="link" name="link" value="{{ item.link or '' }}" placeholder="/format or https://…"></div>
+            <div class="field"><label for="status">Status</label>
+                <select id="status" name="status">
+                    <option value="draft" {{ 'selected' if item.status != 'published' }}>Draft</option>
+                    <option value="published" {{ 'selected' if item.status == 'published' }}>Published</option>
+                </select>
+            </div>
+            <div class="cite-actions">
+                <button class="btn btn-primary btn-sm" type="submit"><i data-lucide="save" class="icon"></i> Save</button>
+                <a href="{{ url_for('admin.news_list') }}" class="btn btn-outline btn-sm">Cancel</a>
+            </div>
+        </form>
+        {% else %}
+        <p class="muted small">Choose an item on the right or create a new one.</p>
+        {% endif %}
+    </section>
+    <section>
+        {% if items %}
+        <ul class="news-list">
+            {% for n in items %}
+            <li>
+                <time class="num">{{ n.date.strftime('%Y-%m-%d') }}</time>
+                <a href="{{ url_for('admin.news_edit', news_id=n.id) }}">{{ n.title }}</a>
+                <span class="pill {{ 'ok' if n.status == 'published' else '' }}">{{ n.status }}</span>
+                <form method="post" action="{{ url_for('admin.news_delete', news_id=n.id) }}" style="display:inline" onsubmit="return confirm('Delete this item?')">
+                    <button class="btn btn-outline btn-sm" type="submit" aria-label="Delete"><i data-lucide="trash-2" class="icon"></i></button>
+                </form>
+            </li>
+            {% endfor %}
+        </ul>
+        {% else %}
+        <p class="muted small">No news items yet.</p>
+        {% endif %}
+    </section>
+</div>
+{% endblock %}

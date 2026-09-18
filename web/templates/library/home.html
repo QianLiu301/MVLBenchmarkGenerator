@@ -7,103 +7,128 @@
     <p>Reference specifications and implementations for MVL research, in C, Python, Verilog and VHDL — each checked against an independent golden model and published with a reproducible verification record.</p>
     <form class="search" action="{{ url_for('library.browse') }}" method="get" role="search">
         <i data-lucide="search" class="icon"></i>
-        <input type="search" name="q" placeholder="Search benchmarks — e.g. alu_k3, ternary, GF(5)" aria-label="Search benchmarks">
+        <input type="search" name="q" placeholder="Search by name, radix or structure, e.g. alu_k3, GF(5)" aria-label="Search benchmarks">
     </form>
     <div class="hero-actions">
-        <a href="{{ url_for('library.browse') }}" class="btn btn-primary btn-lg"><i data-lucide="library" class="icon"></i> Browse Library</a>
-        <a href="{{ url_for('submit.form') }}" class="btn btn-outline btn-lg"><i data-lucide="upload" class="icon"></i> Submit a Benchmark</a>
+        <a href="{{ url_for('library.browse') }}" class="btn btn-primary btn-lg"><i data-lucide="library" class="icon"></i> Browse library</a>
+        <a href="{{ url_for('submit.form') }}" class="btn btn-outline btn-lg"><i data-lucide="upload" class="icon"></i> Submit a benchmark</a>
+        <a href="{{ url_for('library.browse', mode='download') }}" class="text-link"><i data-lucide="download" class="icon"></i> Download by selection</a>
     </div>
 </section>
 
-<section class="card welcome">
-    <h2>Welcome to the MVL Benchmark Library</h2>
-    <p>
-        The MVL Benchmark Library is an online resource for benchmarks in the domain of multi-valued logic (MVL)
-        design and verification. It provides a <a href="{{ url_for('library.browse') }}">database of benchmark specifications</a>
-        {% if only_alu %}— starting with arithmetic-logic units defined over finite algebraic structures such as GF(p), GF(pⁿ) and Z/kZ,
-        with register files and processors to follow —{% else %}— arithmetic-logic units, register files and processors defined over
-        finite algebraic structures such as GF(p), GF(pⁿ) and Z/kZ —{% endif %}
-        together with <a href="{{ url_for('library.browse', verified=1) }}">reference implementations</a> in C, Python, Verilog and VHDL,
-        all given in a common <a href="{{ url_for('library.format') }}">benchmark format</a>.
-    </p>
-    <p>
-        Every implementation is compiled, simulated and compared digit-wise against an independent golden model before
-        publication. Each entry carries its own verification record — test strategy, toolchain versions, random seed and
-        file checksums — so that results can be reproduced.
-    </p>
-    <p>
-        The library is maintained by the Group of Computer Architecture (AGRA) at the University of Bremen and is open
-        to contributions from the MVL community. Whether you design ternary arithmetic, study Galois-field hardware or
-        evaluate verification tools, we invite you to <a href="{{ url_for('library.browse') }}">browse</a>,
-        <a href="{{ url_for('library.download_all') }}">download</a> and <a href="{{ url_for('submit.form') }}">contribute</a> benchmarks.
-        Submissions pass an automated review pipeline followed by maintainer approval; new benchmarks can also be derived
-        with our <a href="{{ url_for('generate_page') }}">LLM-based generator</a>.
-    </p>
-    <p>
-        To learn more, see the <a href="{{ url_for('library.about') }}">About page</a> and the
-        <a href="{{ url_for('library.format') }}">format documentation</a>. If you use the library, please
-        <a href="{{ url_for('library.cite') }}">cite</a> our ISMVL 2026 paper.
-    </p>
-    <p class="notice"><strong>Please note:</strong> the benchmark format in version 1.0 is available.
-        <a href="{{ url_for('library.format') }}">Learn more</a></p>
+<section class="about-line">
+    <p>The MVL Benchmark Library collects specifications and reference implementations of multi-valued logic designs — starting with arithmetic-logic units over GF(p), GF(pⁿ) and Z/kZ — in C, Python, Verilog and VHDL. Each implementation is checked against an independent golden model and published with its verification record. <a href="{{ url_for('library.about') }}">More about the library</a></p>
 </section>
 
-{% if stats.benchmarks >= 20 %}
-<div class="stats-row">
-    <div class="stat"><div class="stat-value">{{ stats.benchmarks }}</div><div class="stat-label">Specs</div></div>
-    <div class="stat"><div class="stat-value">{{ stats.implementations }}</div><div class="stat-label">Implementations</div></div>
-    <div class="stat"><div class="stat-value">{{ stats.verified_pct }}%</div><div class="stat-label">Verified</div></div>
-    <div class="stat"><div class="stat-value">{{ stats.k_min }}–{{ stats.k_max }}</div><div class="stat-label">k range</div></div>
-</div>
-{% endif %}
-
-<div class="section-head"><div class="section-title">Benchmarks by module type</div></div>
-<div class="module-grid">
-    {% for m in modules %}
-    <a class="module-card {{ 'empty' if not m.specs }}" href="{{ url_for('library.browse', module_type=m.value) }}">
-        <i data-lucide="{{ module_icons.get(m.value, 'box') }}" class="icon-lg icon"></i>
-        <div>
-            <h3>{{ m.label }}</h3>
-            <div class="n">{{ m.specs }} spec{{ '' if m.specs == 1 else 's' }}</div>
+<section class="home-benchmarks">
+    <div class="section-head">
+        <h2 class="section-title">Benchmarks</h2>
+        <div class="chip-row" role="group" aria-label="Filter by module type">
+            <a href="{{ url_for('library.home') }}" class="filter-chip {{ 'active' if not module }}">All <span class="n">{{ stats.benchmarks }}</span></a>
+            {% for m in modules %}
+                {% if m.specs %}
+                <a href="{{ url_for('library.home', module=m.value) }}" class="filter-chip {{ 'active' if module == m.value }}">{{ m.label }} <span class="n">{{ m.specs }}</span></a>
+                {% else %}
+                <span class="filter-chip disabled" aria-disabled="true" title="No published benchmarks yet">{{ m.label }} <span class="n">0</span></span>
+                {% endif %}
+            {% endfor %}
         </div>
-    </a>
-    {% endfor %}
-</div>
+    </div>
 
-<div class="home-two">
-    <div class="card">
-        <div class="section-head">
-            <div class="section-title">Recently added</div>
-            <a href="{{ url_for('library.browse', sort='date') }}" class="small">All by date</a>
-        </div>
-        {% if recent %}
-        <ul class="recent-list">
-            {% for b in recent %}
-            <li>
-                <div>
-                    <a href="{{ url_for('library.detail', slug=b.slug) }}" class="slug">{{ b.slug }}</a>
-                    <div class="meta">{{ b.title }} · {{ b.logic_type }}</div>
-                </div>
-                <div class="badges">
+    {% if latest %}
+    <div class="table-wrap">
+    <table class="bench bench-stack">
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Module</th>
+                <th class="num">k</th>
+                <th class="num">Digits</th>
+                <th>Structure</th>
+                <th>Operations</th>
+                <th>Implementations</th>
+                <th>Added</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for b in latest %}
+            <tr data-summary="{{ b.module_label }} · k = {{ b.k_value }} · {{ b.bitwidth }} digits · {{ b.logic_type }}">
+                <td data-label="Name"><a href="{{ url_for('library.detail', slug=b.slug) }}" class="slug">{{ b.slug }}</a></td>
+                <td data-label="Module">{{ b.module_label }}</td>
+                <td data-label="k" class="num">{{ b.k_value }}</td>
+                <td data-label="Digits" class="num">{{ b.bitwidth }}</td>
+                <td data-label="Structure">{{ b.logic_type }}</td>
+                <td data-label="Operations">
+                    <div class="ops-chips">
+                        {% for op in b.operations[:4] %}<span class="chip">{{ op }}</span>{% endfor %}
+                        {% if b.operations|length > 4 %}<span class="chip more" title="{{ b.operations[4:]|join(', ') }}">+{{ b.operations|length - 4 }}</span>{% endif %}
+                    </div>
+                </td>
+                <td data-label="Implementations">
+                    <div class="badges">
                     {% for lang, st in b.language_status().items() %}
-                    <span class="badge {{ st }}" title="{{ language_labels[lang] }}: {{ st }}"><span class="dot"></span>{{ language_labels[lang] }}</span>
+                        {% set of_lang = b.published_implementations|selectattr('language', 'equalto', lang)|list %}
+                        <span class="badge {{ st }}" title="{{ language_labels[lang] }}: {{ {'verified': 'verified against the golden model', 'pending': 'pending review', 'unverified': 'did not pass the golden-model check'}[st] }}{% if of_lang|length > 1 %} · {{ of_lang|length }} implementations{% endif %}"><span class="dot"></span>{{ language_labels[lang] }}</span>
                     {% endfor %}
-                </div>
-                <span class="meta num">{{ b.created_at.strftime('%Y-%m-%d') }}</span>
-            </li>
+                    </div>
+                </td>
+                <td data-label="Added" class="num"><time datetime="{{ b.created_at.strftime('%Y-%m-%dT%H:%M:%SZ') }}" title="{{ b.created_at.strftime('%Y-%m-%d %H:%M UTC') }}" data-relative>{{ b.created_at.strftime('%Y-%m-%d') }}</time></td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    </div>
+    <div class="table-foot">
+        <span class="legend-line"><span class="badge verified"><span class="dot"></span>Teal badge</span> verified against the golden model · <span class="badge pending"><span class="dot"></span>Amber badge</span> pending review · <span class="badge unverified"><span class="dot"></span>Grey badge</span> did not pass</span>
+        <a href="{{ url_for('library.browse', module_type=module) if module else url_for('library.browse') }}">View all benchmarks</a>
+    </div>
+    {% else %}
+    <div class="table-wrap">
+        <div class="empty-row">No benchmarks are published yet. <a href="{{ url_for('submit.form') }}">Submit the first one</a> or <a href="{{ url_for('generate_page') }}">generate one</a>.</div>
+    </div>
+    {% endif %}
+</section>
+
+<div class="home-two home-bottom">
+    <section>
+        <h2 class="section-title">News</h2>
+        {% if news %}
+        <ul class="news-list">
+            {% for n in news %}
+            <li><time class="num" datetime="{{ n.date.strftime('%Y-%m-%d') }}">{{ n.date.strftime('%Y-%m-%d') }}</time>
+                {% if n.link %}<a href="{{ n.link }}">{{ n.title }}</a>{% else %}<span>{{ n.title }}</span>{% endif %}</li>
             {% endfor %}
         </ul>
         {% else %}
-        <div class="empty">Nothing published yet.</div>
+        <p class="muted small">No news yet.</p>
         {% endif %}
-    </div>
-    <div class="card">
-        <div class="section-head">
-            <div class="section-title">Cite</div>
-            <button class="btn btn-outline btn-sm" onclick="navigator.clipboard.writeText(document.getElementById('bibtex').textContent).then(()=>{this.textContent='Copied'})"><i data-lucide="copy" class="icon"></i> Copy BibTeX</button>
+    </section>
+    <section>
+        <h2 class="section-title">Cite</h2>
+        <p class="small">If you use the library, please cite our ISMVL 2026 paper.</p>
+        <div class="cite-actions">
+            <button class="btn btn-outline btn-sm" onclick="copyText('bibtex', this, 'BibTeX copied')"><i data-lucide="copy" class="icon"></i> Copy BibTeX</button>
+            <a href="{{ url_for('library.cite') }}" class="small">Citation details</a>
         </div>
-        <p class="small muted" style="margin-bottom:10px">All files are CC BY 4.0. If you use them, please cite:</p>
-        <pre class="bibtex" id="bibtex">{{ bibtex }}</pre>
-    </div>
+        <pre id="bibtex" hidden>{{ bibtex }}</pre>
+    </section>
 </div>
+{% endblock %}
+{% block scripts %}
+<script>
+    // "Added" column: relative date, full date stays in the title attribute
+    (function () {
+        const units = [['year', 31536000], ['month', 2592000], ['week', 604800], ['day', 86400], ['hour', 3600], ['minute', 60]];
+        const rtf = ('Intl' in window && Intl.RelativeTimeFormat) ? new Intl.RelativeTimeFormat('en', { numeric: 'auto' }) : null;
+        document.querySelectorAll('time[data-relative]').forEach(t => {
+            const secs = (Date.now() - new Date(t.getAttribute('datetime'))) / 1000;
+            for (const [unit, n] of units) {
+                if (Math.abs(secs) >= n || unit === 'minute') {
+                    t.textContent = rtf ? rtf.format(-Math.round(secs / n), unit) : t.textContent;
+                    break;
+                }
+            }
+        });
+    })();
+</script>
 {% endblock %}

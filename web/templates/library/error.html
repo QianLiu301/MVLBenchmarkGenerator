@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% set nav = 'library' %}
+{% block title %}Request could not be completed — MVL Benchmark Library{% endblock %}
+{% block content %}
+<div class="prose">
+    <h1>Request could not be completed</h1>
+    <div class="flash flash-error">{{ message }}</div>
+    <p><a href="{{ url_for('library.browse', mode='download') }}">Back to the selection</a></p>
+</div>
+{% endblock %}

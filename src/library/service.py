@@ -29,22 +29,37 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 PAGE_SIZE = 25
 LOG_LIMIT = 64 * 1024
 
-CITATION = {
-    'key': 'drechsler2026llmmvl',
-    'authors': 'Rolf Drechsler',
-    'title': 'LLM-based Generation of High-Level Benchmarks for MVL Designs',
-    'booktitle': 'IEEE International Symposium on Multiple-Valued Logic (ISMVL)',
-    'year': '2026',
-    'url': 'https://llm-mvl.com',
-}
+CITATION_FILE = PROJECT_ROOT / 'config' / 'citation.bib'
+FORMAT_VERSION = '1.0'
+
+
+def citation_bibtex() -> str:
+    """The BibTeX entry, byte-identical everywhere it is shown (config/citation.bib, comments stripped)."""
+    try:
+        text = CITATION_FILE.read_text(encoding='utf-8')
+    except OSError:
+        return '% config/citation.bib is missing'
+    lines = [l for l in text.splitlines() if not l.lstrip().startswith('%')]
+    return '\n'.join(lines).strip() + '\n'
+
+
+def _citation_field(name: str) -> str:
+    m = re.search(r'^\s*' + name + r'\s*=\s*\{(.*)\}\s*,?\s*$', citation_bibtex(), re.M)
+    return m.group(1).strip() if m else ''
+
+
+def citation_text() -> str:
+    """One-line human-readable citation derived from the same file."""
+    return (f"{_citation_field('author')}. \"{_citation_field('title')}\". "
+            f"{_citation_field('booktitle')}, {_citation_field('year')}.")
+
 
 LICENSE_NOTICE = (
     "MVL Benchmark Library — https://llm-mvl.com\n"
     "Licensed under Creative Commons Attribution 4.0 International (CC BY 4.0).\n"
     "https://creativecommons.org/licenses/by/4.0/\n\n"
     "You may share and adapt these files for any purpose, provided you give\n"
-    "appropriate credit by citing:\n"
-    f"  {CITATION['authors']}. \"{CITATION['title']}\". {CITATION['booktitle']}, {CITATION['year']}.\n"
+    "appropriate credit by citing the entry in CITATION.bib.\n"
 )
 
 _FAMILY = {'prime_field': 'gf-prime', 'extension_field': 'gf-ext', 'integer_ring': 'ring'}
@@ -401,6 +416,16 @@ def get_benchmark(session, slug: str) -> Optional[Benchmark]:
     return session.execute(select(Benchmark).where(Benchmark.slug == slug)).scalar_one_or_none()
 
 
+def latest_benchmarks(session, n: int = 10, module_type: str = None) -> List[Benchmark]:
+    stmt = select(Benchmark).where(Benchmark.status == 'published')
+    if module_type:
+        stmt = stmt.where(Benchmark.module_type == module_type)
+    rows = list(session.execute(stmt.order_by(Benchmark.created_at.desc(), Benchmark.id.desc()).limit(n)).scalars())
+    for b in rows:
+        _ = b.published_implementations
+    return rows
+
+
 def recent_benchmarks(session, n: int = 5) -> List[Benchmark]:
     rows = list(session.execute(select(Benchmark).where(Benchmark.status == 'published')
                                 .order_by(Benchmark.created_at.desc()).limit(n)).scalars())
@@ -493,14 +518,13 @@ def bump_downloads(session, benchmark: Benchmark = None, impl: Implementation = 
 # ----------------------------------------------------------------------------
 
 def bibtex(benchmark: Optional[Benchmark] = None) -> str:
-    c = CITATION
-    note = f",\n  note      = {{Benchmark {benchmark.slug}, {c['url']}/benchmark/{benchmark.slug}}}" if benchmark else \
-           f",\n  note      = {{{c['url']}}}"
-    return (f"@inproceedings{{{c['key']},\n"
-            f"  author    = {{{c['authors']}}},\n"
-            f"  title     = {{{c['title']}}},\n"
-            f"  booktitle = {{{c['booktitle']}}},\n"
-            f"  year      = {{{c['year']}}}{note}\n}}")
+    """config/citation.bib verbatim; for a benchmark page a `note` with its permanent URL is added."""
+    text = citation_bibtex()
+    if benchmark is None:
+        return text
+    note = f"  note      = {{Benchmark {benchmark.slug}, https://llm-mvl.com/benchmark/{benchmark.slug}}}"
+    body = text.rstrip().rstrip('}').rstrip()
+    return body + ',\n' + note + '\n}\n'
 
 
 def spec_json(benchmark: Benchmark) -> str:
@@ -522,23 +546,109 @@ def spec_json(benchmark: Benchmark) -> str:
     }, indent=2)
 
 
-def _add_benchmark_to_zip(zf: zipfile.ZipFile, benchmark: Benchmark, prefix: str = ''):
-    zf.writestr(f"{prefix}{benchmark.slug}/spec.json", spec_json(benchmark))
-    for impl in benchmark.published_implementations:
-        name = impl.filename
-        same_lang = [i for i in benchmark.published_implementations if i.language == impl.language]
-        if len(same_lang) > 1:
-            tag = (impl.provider or impl.source or 'x').replace('/', '-')
-            stem, ext = os.path.splitext(name)
-            name = f"{stem}_{tag}_{impl.id}{ext}"
-        zf.writestr(f"{prefix}{benchmark.slug}/{name}", impl.code)
-
-
-def build_zip(benchmarks: Iterable[Benchmark]) -> bytes:
+def build_zip(benchmarks: Iterable[Benchmark], filters: Optional[Dict] = None,
+              verified_only: bool = False, languages: Optional[set] = None) -> bytes:
+    benchmarks = list(benchmarks)
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
         zf.writestr('LICENSE.txt', LICENSE_NOTICE)
         zf.writestr('CITATION.bib', bibtex())
+        files = []
         for bm in benchmarks:
-            _add_benchmark_to_zip(zf, bm)
+            impls = [i for i in bm.published_implementations
+                     if (not verified_only or i.golden_status == 'PASS')
+                     and (not languages or i.language in languages)]
+            zf.writestr(f"{bm.slug}/spec.json", spec_json(bm))
+            for impl in impls:
+                name = impl.filename
+                same_lang = [i for i in impls if i.language == impl.language]
+                if len(same_lang) > 1:
+                    tag = (impl.provider or impl.source or 'x').replace('/', '-')
+                    stem, ext = os.path.splitext(name)
+                    name = f"{stem}_{tag}_{impl.id}{ext}"
+                zf.writestr(f"{bm.slug}/{name}", impl.code)
+                files.append({'path': f"{bm.slug}/{name}", 'sha256': impl.sha256, 'language': impl.language,
+                              'golden_model': impl.golden_status, 'implementation_id': impl.id})
+        zf.writestr('manifest.json', json.dumps({
+            'format_version': FORMAT_VERSION,
+            'generated_at': datetime.utcnow().isoformat(timespec='seconds') + 'Z',
+            'filters': filters or {},
+            'verified_only': verified_only,
+            'spec_ids': [bm.slug for bm in benchmarks],
+            'files': files,
+            'license': LICENSE_ID,
+        }, indent=2))
     return buf.getvalue()
+
+
+# --- Download by selection ----------------------------------------------------
+MAX_SELECTION_SPECS = 500
+SELECTION_FIELDS = ('module_type', 'k_value', 'bitwidth', 'logic_family', 'language')
+_ZIP_CACHE_DIR = PROJECT_ROOT / 'output' / 'zip_cache'
+
+
+def normalize_selection(args) -> Dict:
+    """Multi-value filters from a query string -> sorted, de-duplicated dict (cache key material)."""
+    sel = {}
+    for f in SELECTION_FIELDS:
+        vals = sorted({v for v in args.getlist(f) if v})
+        if vals:
+            sel[f] = vals
+    sel['verified_only'] = args.get('verified_only', '1') not in ('0', 'false', '')
+    return sel
+
+
+def _selection_stmt(sel: Dict):
+    stmt = select(Benchmark).where(Benchmark.status == 'published')
+    for f in ('module_type', 'logic_family'):
+        if sel.get(f):
+            stmt = stmt.where(getattr(Benchmark, f).in_(sel[f]))
+    for f in ('k_value', 'bitwidth'):
+        if sel.get(f):
+            stmt = stmt.where(getattr(Benchmark, f).in_([int(v) for v in sel[f]]))
+    sub = select(Implementation.benchmark_id).where(Implementation.status == 'published')
+    if sel.get('language'):
+        sub = sub.where(Implementation.language.in_(sel['language']))
+    if sel.get('verified_only'):
+        sub = sub.where(Implementation.golden_status == 'PASS')
+    return stmt.where(Benchmark.id.in_(sub)).order_by(Benchmark.k_value, Benchmark.bitwidth)
+
+
+def selection_summary(session, sel: Dict) -> Dict:
+    rows = list(session.execute(_selection_stmt(sel)).scalars())
+    n_files = 0
+    n_bytes = 0
+    for b in rows:
+        for i in b.published_implementations:
+            if sel.get('language') and i.language not in sel['language']:
+                continue
+            if sel.get('verified_only') and i.golden_status != 'PASS':
+                continue
+            n_files += 1
+            n_bytes += len(i.code.encode('utf-8'))
+    return {'specs': len(rows), 'files': n_files, 'bytes': n_bytes, 'limit': MAX_SELECTION_SPECS}
+
+
+def selection_zip(session, sel: Dict) -> Tuple[Optional[bytes], Optional[str]]:
+    """(zip bytes, error). Cached on disk keyed by the normalized filter set + library size."""
+    rows = list(session.execute(_selection_stmt(sel)).scalars())
+    if len(rows) > MAX_SELECTION_SPECS:
+        return None, f"Selection has {len(rows)} specs; the limit is {MAX_SELECTION_SPECS}. Narrow the filters."
+    if not rows:
+        return None, "No specs match this selection."
+    # cache key: filters + newest change among the selected specs (so a republish invalidates).
+    # One aggregate query — iterating b.implementations would lazy-load every spec over the network.
+    newest = session.execute(
+        select(func.max(Implementation.created_at))
+        .where(Implementation.benchmark_id.in_([b.id for b in rows]))).scalar() or datetime.min
+    key = hashlib.sha256(json.dumps({'sel': sel, 'n': len(rows), 'newest': newest.isoformat()},
+                                    sort_keys=True).encode()).hexdigest()[:24]
+    _ZIP_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    path = _ZIP_CACHE_DIR / f"{key}.zip"
+    if path.exists():
+        return path.read_bytes(), None
+    filters = {k: v for k, v in sel.items() if k != 'verified_only'}
+    data = build_zip(rows, filters=filters, verified_only=sel.get('verified_only', True),
+                     languages=set(sel['language']) if sel.get('language') else None)
+    path.write_bytes(data)
+    return data, None

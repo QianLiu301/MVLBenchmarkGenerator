@@ -31,6 +31,45 @@
     {% endif %}
 {%- endmacro %}
 
+{% if download_mode %}
+<section class="card selection" id="selection">
+    <div class="section-head">
+        <h2 class="section-title"><i data-lucide="package" class="icon"></i> Download by selection</h2>
+        <a href="{{ url_for('library.browse') }}" class="small">Back to browsing</a>
+    </div>
+    <form id="selForm" method="get" action="{{ url_for('library.download_selection') }}">
+        <div class="sel-grid">
+            {% macro selgroup(field, title, rows, labels, kind='') -%}
+            <fieldset>
+                <legend>{{ title }}</legend>
+                {% for r in rows %}
+                <label class="check"><input type="checkbox" name="{{ field }}" value="{{ r.value }}" {{ 'checked' if selection.get(field) and (r.value|string) in selection.get(field) }}>
+                    {%- if kind == 'k' %} k = {{ r.value }}{% elif kind == 'digits' %} {{ r.value }} digits{% else %} {{ labels.get(r.value, r.value) }}{% endif %}
+                    <span class="n">{{ r.specs }}</span></label>
+                {% endfor %}
+            </fieldset>
+            {%- endmacro %}
+            {{ selgroup('module_type', 'Module', facets.module_type, module_labels) }}
+            {{ selgroup('k_value', 'Radix k', facets.k_value, {}, kind='k') }}
+            {{ selgroup('bitwidth', 'Digits', facets.bitwidth, {}, kind='digits') }}
+            {{ selgroup('logic_family', 'Structure', facets.logic_family, family_labels) }}
+            {{ selgroup('language', 'Language', facets.language, language_labels) }}
+            <fieldset>
+                <legend>Verification</legend>
+                <label class="check"><input type="checkbox" name="verified_only" value="1" {{ 'checked' if selection.get('verified_only') }}> Verified implementations only</label>
+                <input type="hidden" name="verified_only" value="0">
+            </fieldset>
+        </div>
+        <div class="sel-foot">
+            <span id="selCount" class="small" aria-live="polite">{{ summary.specs }} specs, {{ summary.files }} files, ≈ {{ '%.1f'|format(summary.bytes / 1048576) }} MB</span>
+            <span id="selError" class="small" style="color:var(--err-fg)" hidden></span>
+            <button class="btn btn-primary" type="submit" id="selBtn"><i data-lucide="download" class="icon"></i> Download selection (.zip)</button>
+        </div>
+        <p class="small muted" style="margin-top:8px">The archive contains <span class="mono">manifest.json</span> (filters, spec IDs, SHA-256 per file, format version, timestamp), <span class="mono">CITATION.bib</span> and <span class="mono">LICENSE.txt</span>. At most {{ summary.limit }} specs per request.</p>
+    </form>
+</section>
+{% endif %}
+
 <div class="toolbar">
     <button class="btn btn-outline btn-sm filter-toggle" id="filterToggle"><i data-lucide="sliders-horizontal" class="icon"></i> Filters</button>
     <form class="search" method="get" action="{{ url_for('library.browse') }}" role="search">
@@ -45,13 +84,14 @@
         <option value="{{ qs({'sort': (none if key == 'name' else key), 'page': none}) }}" {{ 'selected' if sort == key }}>{{ label }}</option>
         {% endfor %}
     </select>
-    <a href="{{ url_for('library.download_all', **current) }}" class="btn btn-outline btn-sm"><i data-lucide="download" class="icon"></i> Download {{ 'selection' if current else 'all' }}</a>
+    <a href="{{ url_for('library.download_all', **current) if current else url_for('library.download_all') }}" class="btn btn-outline btn-sm"><i data-lucide="download" class="icon"></i> Download {{ 'these' if current else 'all' }}</a>
+    {% if not download_mode %}<a href="{{ url_for('library.browse', mode='download') }}" class="btn btn-outline btn-sm"><i data-lucide="package" class="icon"></i> Download by selection</a>{% endif %}
 </div>
 
 <div class="drawer-backdrop" id="drawerBackdrop"></div>
 <div class="browse">
     <aside class="filters" id="filters" aria-label="Filters">
-        <div class="drawer-head">Filters <button class="btn btn-outline btn-sm" id="filterClose"><i data-lucide="x" class="icon"></i></button></div>
+        <div class="drawer-head">Filters <button class="btn btn-outline btn-sm" id="filterClose" aria-label="Close filters"><i data-lucide="x" class="icon"></i></button></div>
         {{ facet('module_type', 'Module type', facets.module_type, module_labels) }}
         {{ facet('k_value', 'Radix k', facets.k_value, {}, kind='k') }}
         {{ facet('bitwidth', 'Digits', facets.bitwidth, {}, kind='digits') }}
@@ -123,9 +163,9 @@
         </div>
         <div class="legend">
             <span><span class="dot full"></span>verified</span>
-            <span><span class="dot none"></span>unverified</span>
             <span><span class="dot half"></span>pending</span>
-            <span class="muted">— hover a badge for verification strength</span>
+            <span><span class="dot none"></span>unverified</span>
+            <span class="muted">Hover a badge for the verification strength.</span>
         </div>
         {% if pages > 1 %}
         <nav class="pagination" aria-label="Pagination">
@@ -146,6 +186,31 @@
 {% endblock %}
 {% block scripts %}
 <script>
+    (function () {
+        const form = document.getElementById('selForm');
+        if (!form) return;
+        const count = document.getElementById('selCount'), err = document.getElementById('selError'), btn = document.getElementById('selBtn');
+        let timer = null;
+        function params() {
+            const p = new URLSearchParams();
+            form.querySelectorAll('input[type=checkbox]:checked').forEach(c => p.append(c.name, c.value));
+            if (!form.querySelector('input[name=verified_only][type=checkbox]').checked) p.set('verified_only', '0');
+            return p;
+        }
+        async function refresh() {
+            try {
+                const r = await fetch('/api/library/selection?' + params().toString());
+                const d = await r.json();
+                count.textContent = `${d.specs} specs, ${d.files} files, ≈ ${(d.bytes / 1048576).toFixed(1)} MB`;
+                const over = d.specs > d.limit;
+                err.hidden = !over; err.textContent = over ? `Selection exceeds the limit of ${d.limit} specs.` : '';
+                btn.disabled = over || d.specs === 0;
+            } catch (e) { /* keep last value */ }
+        }
+        form.addEventListener('change', () => { clearTimeout(timer); timer = setTimeout(refresh, 150); });
+        form.addEventListener('submit', e => { e.preventDefault(); location.href = form.action + '?' + params().toString(); });
+        refresh();
+    })();
     (function () {
         const filters = document.getElementById('filters');
         const backdrop = document.getElementById('drawerBackdrop');

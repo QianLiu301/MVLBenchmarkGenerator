@@ -6,6 +6,10 @@
     <title>{% block title %}MVL Benchmark Library{% endblock %}</title>
     <meta name="description" content="{% block meta_description %}An online resource for Multi-Valued Logic (MVL) benchmarks: verified ALU, register-file and CPU designs in C, Python, Verilog and VHDL.{% endblock %}">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='brand/mvl-favicon.svg') }}">
+    <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='brand/favicon-32.png') }}">
+    <link rel="icon" type="image/png" sizes="16x16" href="{{ url_for('static', filename='brand/favicon-16.png') }}">
+    <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='brand/favicon-180.png') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/library.css', v=asset_version) }}">
     <script src="https://cdn.jsdelivr.net/npm/lucide@0.460.0/dist/umd/lucide.min.js"></script>
     {% block head %}{% endblock %}
@@ -13,9 +17,8 @@
 <body>
     <header class="site-header">
         <div class="container header-inner">
-            <a href="{{ url_for('library.home') }}" class="brand">
-                <span class="brand-mark"><i data-lucide="layers" class="icon"></i></span>
-                <span>MVL Benchmark <span class="brand-accent">Library</span></span>
+            <a href="{{ url_for('library.home') }}" class="brand" aria-label="MVL Benchmark Library, home">
+                <img src="{{ url_for('static', filename='brand/mvl-logo-horizontal.svg') }}" alt="" class="brand-logo" width="406" height="64">
             </a>
             <button class="nav-toggle" id="navToggle" aria-label="Menu" aria-expanded="false"><i data-lucide="menu" class="icon"></i></button>
             <nav class="site-nav" id="siteNav">
@@ -23,7 +26,6 @@
                 <a href="{{ url_for('submit.form') }}" class="{{ 'active' if nav == 'submit' else '' }}">Submit</a>
                 <a href="{{ url_for('generate_page') }}" class="{{ 'active' if nav == 'generate' else '' }}">Generate</a>
                 <a href="{{ url_for('library.about') }}" class="{{ 'active' if nav == 'about' else '' }}">About</a>
-                <a href="{{ url_for('library.cite') }}" class="{{ 'active' if nav == 'cite' else '' }}">Cite</a>
                 <div class="user-menu" id="userMenu">
                     <button type="button" aria-haspopup="true" aria-expanded="false">
                         <i data-lucide="{{ 'user-check' if is_authed else 'user' }}" class="icon-sm icon"></i>
@@ -58,7 +60,6 @@
     <footer class="site-footer">
         <div class="container footer-inner">
             <div class="footer-authors">
-                Authors:
                 <a href="https://de.linkedin.com/in/rolf-drechsler-2304a98" target="_blank" rel="noopener">Rolf Drechsler</a>,
                 <a href="https://www.linkedin.com/in/qian-liu-0707482bb/" target="_blank" rel="noopener">Qian Liu</a>
             </div>
@@ -66,16 +67,18 @@
                 <a href="{{ url_for('library.format') }}">Format v1.0</a>
                 <a href="{{ url_for('library.acknowledgements') }}">Acknowledgements</a>
                 <a href="{{ url_for('library.cite') }}">Cite</a>
-                <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a>
+                <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">License (CC BY 4.0)</a>
+                <a href="#" id="legalLink">Imprint / Legal notice</a>
             </div>
-            <div><a href="#" id="legalLink">Imprint / Legal Notice</a></div>
         </div>
     </footer>
+
+    <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
     <div class="modal-overlay" id="legalModal">
         <div class="modal">
             <div class="modal-header">
-                <h2>Imprint / Legal Notice</h2>
+                <h2>Imprint / Legal notice</h2>
                 <button class="modal-close" id="legalClose" aria-label="Close"><i data-lucide="x" class="icon"></i></button>
             </div>
             <div class="legal-content">
@@ -118,6 +121,14 @@
 
             if (window.lucide) lucide.createIcons();
         })();
+        function showToast(text) {
+            const t = document.getElementById('toast');
+            t.textContent = text; t.hidden = false;
+            clearTimeout(t._timer); t._timer = setTimeout(() => { t.hidden = true; }, 2200);
+        }
+        function copyText(id, btn, done) {
+            navigator.clipboard.writeText(document.getElementById(id).textContent).then(() => showToast(done || 'Copied'));
+        }
     </script>
     {% block scripts %}{% endblock %}
 </body>

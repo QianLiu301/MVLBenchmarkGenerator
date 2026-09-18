@@ -18,12 +18,20 @@ from sqlalchemy.orm import relationship
 
 from .db import Base
 
+# UI labels. The internal value 'cpu-risc-v' is kept (renaming it would need a
+# migration of the generator's module_type and existing rows).
+# TODO(maintainer): define the MVL processor encoding (instruction set, radix of
+# the register file, pipeline stages) before publishing processor entries.
 MODULE_TYPES = {
     'alu': 'ALU',
-    'register': 'Register File',
-    'cpu-risc-v': 'RISC-V CPU',
+    'register': 'Register file',
+    'cpu-risc-v': 'Processor',
 }
 MODULE_ICONS = {'alu': 'cpu', 'register': 'database', 'cpu-risc-v': 'microchip'}
+
+# Publication status of specs/implementations. 'published' == "approved" in the
+# review pipeline; there is no separate approved value.
+PUBLISHED = 'published'
 LANGUAGES = {'c': 'C', 'python': 'Python', 'verilog': 'Verilog', 'vhdl': 'VHDL'}
 LANGUAGE_EXT = {'c': '.c', 'python': '.py', 'verilog': '.v', 'vhdl': '.vhd'}
 SOURCES = {
@@ -186,6 +194,19 @@ class Submission(Base):
     @property
     def files_summary(self):
         return ', '.join(sorted(self.files.keys()))
+
+
+class News(Base):
+    __tablename__ = 'news'
+
+    id = Column(Integer, primary_key=True)
+    date = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
+    title = Column(String(200), nullable=False)
+    body_md = Column(Text, nullable=False, default='')
+    link = Column(String(300))
+    status = Column(String(16), nullable=False, default='draft', index=True)   # draft / published
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
 class ReviewEvent(Base):
