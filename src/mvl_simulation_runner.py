@@ -623,7 +623,12 @@ class MVLSimulationRunner:
 
             result['run_time'] = round(time.time() - start, 2)
             result['output'] = run_result.stdout
-            result['success'] = True
+            result['success'] = run_result.returncode == 0
+            if not result['success']:
+                result['errors'].append(
+                    f"Simulation aborted (exit code {run_result.returncode}): "
+                    + (run_result.stderr or '').strip().splitlines()[-1:][0] if (run_result.stderr or '').strip() else
+                    f"Simulation aborted (exit code {run_result.returncode})")
 
             # Save log
             with open(log_file, 'w', encoding='utf-8') as f:
@@ -817,7 +822,12 @@ class MVLSimulationRunner:
 
             result['run_time'] = round(time.time() - start, 2)
             result['output'] = run_result.stdout
-            result['success'] = True
+            result['success'] = run_result.returncode == 0
+            if not result['success']:
+                result['errors'].append(
+                    f"Simulation aborted (exit code {run_result.returncode}): "
+                    + (run_result.stderr or '').strip().splitlines()[-1:][0] if (run_result.stderr or '').strip() else
+                    f"Simulation aborted (exit code {run_result.returncode})")
 
             # Save log
             with open(log_file, 'w', encoding='utf-8') as f:
@@ -1040,7 +1050,15 @@ class MVLSimulationRunner:
             result['run_time'] = round(time.time() - start, 2)
             # GHDL outputs report messages to stderr
             result['output'] = run_result.stdout + run_result.stderr
-            result['success'] = True
+            # A non-zero exit or a "ghdl:error:" line (bound check failure, overflow,
+            # "simulation failed") means the run aborted; lines printed before the
+            # crash must not be graded as a passing run.
+            crashed = run_result.returncode != 0 or 'ghdl:error:' in result['output']
+            result['success'] = not crashed
+            if crashed:
+                tail = [l for l in result['output'].splitlines() if 'ghdl:error' in l][:3]
+                result['errors'].append(
+                    f"Simulation aborted (exit code {run_result.returncode}): " + ' | '.join(tail))
 
             with open(log_file, 'w', encoding='utf-8') as f:
                 f.write(result['output'])

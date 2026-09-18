@@ -979,7 +979,7 @@ class OpenAIProvider(LLMProvider):
         if not self.api_key:
             raise ValueError("OpenAI API key not provided")
 
-        self.client = OpenAI(api_key=self.api_key)
+        self.client = OpenAI(api_key=self.api_key, timeout=600.0, max_retries=2)  # a hung stream once blocked seeding for 1h45m
         self.max_retries = 3
 
     def _is_gpt5_model(self, model: str) -> bool:

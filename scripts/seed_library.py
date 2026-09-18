@@ -169,10 +169,21 @@ def main():
                     skipped += 1
                     print(f"{tag}  – {verdict}  (not stored)  {time.time()-t0:.0f}s", flush=True)
                     continue
-                with session_scope() as s:
-                    bm, impl = store(s, spec, lang, code, source='llm-generated', provider=args.provider,
-                                     model_req=info.get('requested_model'), model_resp=info.get('response_model'),
-                                     metrics=metrics, prompt_hash=info.get('prompt_sha256'))
+                # A generated + verified result is expensive; don't lose it to a network blip
+                # (Neon DNS/SSL hiccups): retry the store a few times before giving up.
+                from sqlalchemy.exc import OperationalError, InvalidatePoolError
+                for attempt in range(4):
+                    try:
+                        with session_scope() as s:
+                            bm, impl = store(s, spec, lang, code, source='llm-generated', provider=args.provider,
+                                             model_req=info.get('requested_model'), model_resp=info.get('response_model'),
+                                             metrics=metrics, prompt_hash=info.get('prompt_sha256'))
+                        break
+                    except (OperationalError, InvalidatePoolError) as e:
+                        if attempt == 3:
+                            raise
+                        print(f"{tag}  db error ({str(e).splitlines()[0][:80]}), retrying in {15 * (attempt + 1)}s", flush=True)
+                        time.sleep(15 * (attempt + 1))
                 if impl is None:
                     skipped += 1
                     print(f"{tag}  = identical code already stored  {time.time()-t0:.0f}s", flush=True)

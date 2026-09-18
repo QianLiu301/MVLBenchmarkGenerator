@@ -232,7 +232,15 @@ def verify_code(code: str, language: str, k: int, bitwidth: int, validator=None,
             pass
 
     sum_b = None
-    if sum_a['compile_success'] and sum_a['run_success']:
+    # The VHDL harness feeds vectors through textio into `integer` (32-bit); wider
+    # operand ranges overflow it, so injection cannot be used there. Say so instead
+    # of reporting a crash as a result.
+    vhdl_range_limit = language == 'vhdl' and k ** bitwidth > 2 ** 31 - 1
+    if vhdl_range_limit:
+        sum_b = {'status': 'skipped', 'error': f'operand range {k}^{bitwidth} exceeds VHDL integer (2^31-1); '
+                                               'injection harness not applicable',
+                 'total_compared': 0, 'passed': 0, 'failed': 0}
+    elif sum_a['compile_success'] and sum_a['run_success']:
         try:
             rep_b = validator.validate_with_injection(code, k, bitwidth, language,
                                                       random_count=random_count, seed=seed)
