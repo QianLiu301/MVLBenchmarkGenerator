@@ -2198,6 +2198,7 @@ end architecture Behavioral;
         code = code.strip()
         code = re.sub(r'^```\w*\s*', '', code)
         code = re.sub(r'\s*```$', '', code)
+        code = self._strip_markdown_margins(code)
 
         if not code:
             return None
@@ -2211,6 +2212,20 @@ end architecture Behavioral;
             print(f"   The generated code will be returned but may not compile as {language.upper()}")
 
         return code
+
+    @staticmethod
+    def _strip_markdown_margins(code: str) -> str:
+        """Drop markdown left around the code: a leading or trailing line that is only an
+        inline-code token (`mvl_alu_3_8bit`) or a bold label (**Verilog**). Seen with
+        gemini-2.5-flash, where such a line made otherwise valid Verilog fail to compile
+        at line 1. Markdown headings are not stripped: `# ...` is a Python comment."""
+        margin = re.compile(r'^\s*(`[^`]*`|\*\*[^*]*\*\*)\s*$')
+        lines = code.split('\n')
+        while lines and (not lines[0].strip() or margin.match(lines[0])):
+            lines.pop(0)
+        while lines and (not lines[-1].strip() or margin.match(lines[-1])):
+            lines.pop()
+        return '\n'.join(lines)
 
     def _fix_code(self, code: str, language: str) -> str:
         """Fix common code issues across all languages"""
