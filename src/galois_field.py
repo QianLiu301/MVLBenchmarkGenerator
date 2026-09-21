@@ -103,10 +103,13 @@ def _poly_mul_mod(a: List[int], b: List[int], irr: List[int], p: int) -> List[in
         if raw[-1] != 0:
             coeff = raw[-1]
             deg = len(raw) - 1
+            # subtract coeff * x^(deg-n) * irr(x): irr[i] is the coefficient of x^i
+            # (indexing it as irr[n - i] only worked for palindromic polynomials
+            #  such as x^2+x+1 and x^2+1; x^3+x+1 and x^4+x+1 reduced wrongly)
             for i in range(len(irr)):
-                idx = deg - (n - i)
+                idx = deg - n + i
                 if 0 <= idx < len(raw):
-                    raw[idx] = (raw[idx] - coeff * irr[n - i]) % p
+                    raw[idx] = (raw[idx] - coeff * irr[i]) % p
         raw.pop()
 
     # Pad to length n
