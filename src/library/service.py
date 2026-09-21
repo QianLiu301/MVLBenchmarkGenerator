@@ -62,8 +62,22 @@ LICENSE_NOTICE = (
     "appropriate credit by citing the entry in CITATION.bib.\n"
 )
 
-_FAMILY = {'prime_field': 'gf-prime', 'extension_field': 'gf-ext', 'integer_ring': 'ring'}
-FAMILY_LABELS = {'gf-prime': 'GF(p) prime field', 'gf-ext': 'GF(pⁿ) extension field', 'ring': 'Z/kZ integer ring'}
+# Two algebraic families (see /format §2). The reference model computes
+#   modular : the ring Z/k^nZ — radix-k integer arithmetic with carry/borrow
+#   field   : the ring GF(q)[x]/(x^n) — digit-wise Galois-field arithmetic, q = k a prime power
+# 'prime_field' and 'integer_ring' from galois_field.py are the same arithmetic (only k differs).
+_FAMILY = {'prime_field': 'modular', 'integer_ring': 'modular', 'extension_field': 'field'}
+FAMILY_LABELS = {'modular': 'Z/kⁿZ — radix-k integer arithmetic (with carry)',
+                 'field': 'GF(q)[x]/(xⁿ) — Galois-field polynomial arithmetic'}
+_SUP = str.maketrans('0123456789', '⁰¹²³⁴⁵⁶⁷⁸⁹')
+
+
+def structure_label(k: int, n: int) -> str:
+    """Exact algebraic object of a spec, e.g. 'Z/3⁸Z' or 'GF(4)[x]/(x⁸)'."""
+    info = resolve_logic_type(k)
+    if info['category'] == 'extension_field':
+        return f"GF({k})[x]/(x{str(n).translate(_SUP)})"
+    return f"Z/{k}{str(n).translate(_SUP)}Z"
 RADIX_NAMES = {2: 'binary', 3: 'ternary', 4: 'quaternary', 5: 'quinary', 6: 'senary', 7: 'septenary'}
 
 _TEST_INDICATORS = {
@@ -108,17 +122,26 @@ def describe_spec(module_type: str, k: int, bitwidth: int, operations: List[str]
     if params.get('pipeline_stages'):
         title += f" ({params['pipeline_stages']}-stage)"
     ops = ', '.join(operations)
-    description = (f"{MODULE_TYPES.get(module_type, module_type)} over {info['display']} with k = {k} logic values "
-                   f"per digit and {bitwidth} digits per operand (operand range 0 … {k ** bitwidth - 1}). "
-                   f"Operations: {ops}. Results are reduced modulo {k ** bitwidth}; zero, negative and "
-                   f"carry flags are reported for every operation.")
+    family = _FAMILY.get(info['category'], 'modular')
+    label = structure_label(k, bitwidth)
+    if family == 'modular':
+        semantics = (f"Words are radix-{k} integers with {bitwidth} digits (range 0 … {k ** bitwidth - 1}); "
+                     f"results are reduced modulo {k ** bitwidth}, ADD/INC report a carry and SUB/DEC a borrow, "
+                     f"Z = result is 0, N = result ≥ {k ** bitwidth // 2}.")
+    else:
+        semantics = (f"Words are polynomials of degree < {bitwidth} over GF({k}) (irreducible polynomial "
+                     f"{info['tables']['irreducible_poly'] if info.get('tables') else ''}); ADD/SUB/NEG act digit-wise, "
+                     f"MUL is the polynomial product truncated to {bitwidth} digits, INC/DEC add/subtract 1 in digit 0; "
+                     f"carry and negative are always 0.")
+    description = (f"{MODULE_TYPES.get(module_type, module_type)} over {label} with k = {k} logic values per digit "
+                   f"and {bitwidth} digits per operand. Operations: {ops}. {semantics}")
     return {
         'slug': make_slug(module_type, k, bitwidth, params),
         'module_type': module_type,
         'k_value': k,
         'bitwidth': bitwidth,
-        'logic_type': info['display'],
-        'logic_family': _FAMILY.get(info['category'], 'ring'),
+        'logic_type': label,
+        'logic_family': family,
         'mod_value': k ** bitwidth,
         'operations': list(operations),
         'params': {kk: v for kk, v in params.items() if v},
@@ -131,7 +154,7 @@ def op_definitions(b: Benchmark) -> List[Dict]:
     """Mathematical definition of every operation, for the Spec block."""
     M = b.mod_value
     half = M // 2
-    if b.logic_family == 'ring' or b.logic_family == 'gf-prime':
+    if b.logic_family == 'modular':
         # integer arithmetic modulo k^n (GF(p) with carry propagation is the same as Z/p^nZ here)
         defs = {
             'ADD': (f'(a + b) mod {M}', f'carry = 1 iff a + b ≥ {M}'),
@@ -213,6 +236,9 @@ def _trim(report: Dict) -> Dict:
     return report
 
 
+EXHAUSTIVE_MAX_RANGE = 256   # k^n <= 256 -> all 65 536 operand pairs x 6 ops are simulated
+
+
 def verify_code(code: str, language: str, k: int, bitwidth: int, validator=None,
                 random_count: int = 50, seed: int = 42) -> Dict:
     """Run the BenchmarkValidator on a code string and return the Implementation fields.
@@ -255,10 +281,14 @@ def verify_code(code: str, language: str, k: int, bitwidth: int, validator=None,
         sum_b = {'status': 'skipped', 'error': f'operand range {k}^{bitwidth} exceeds VHDL integer (2^31-1); '
                                                'injection harness not applicable',
                  'total_compared': 0, 'passed': 0, 'failed': 0}
+    exhaustive = k ** bitwidth <= EXHAUSTIVE_MAX_RANGE
+    if vhdl_range_limit:
+        pass
     elif sum_a['compile_success'] and sum_a['run_success']:
         try:
             rep_b = validator.validate_with_injection(code, k, bitwidth, language,
-                                                      random_count=random_count, seed=seed)
+                                                      random_count=random_count, seed=seed,
+                                                      exhaustive=exhaustive)
             sum_b = rep_b.summary()
             if rep_b.run_output:
                 log += '\n\n=== Strategy B (golden vectors via harness) ===\n' + rep_b.run_output
@@ -268,7 +298,8 @@ def verify_code(code: str, language: str, k: int, bitwidth: int, validator=None,
     sim_ok = sum_a['compile_success'] and sum_a['run_success']
     b_ran = bool(sum_b) and sum_b.get('total_compared', 0) > 0
     if b_ran:
-        strength = f"random(N={random_count}, seed={seed})"
+        strength = (f"exhaustive(N={sum_b['total_compared']})" if exhaustive
+                    else f"random(N={random_count}, seed={seed})")
         golden_status = 'PASS' if (sum_a['status'] == 'PASS' and sum_b['status'] == 'PASS') else \
             (sum_b['status'] if sum_b['status'] != 'PASS' else sum_a['status'])
     else:
@@ -292,6 +323,7 @@ def verify_code(code: str, language: str, k: int, bitwidth: int, validator=None,
             'strategy_a': {'status': sum_a['status'], 'compared': sum_a['total_compared'], 'passed': sum_a['passed']},
             'strategy_b': ({'status': sum_b['status'], 'compared': sum_b.get('total_compared', 0),
                             'passed': sum_b.get('passed', 0), 'N': random_count, 'seed': seed,
+                            'exhaustive': exhaustive,
                             'error': sum_b.get('error')} if sum_b else {'status': 'skipped'}),
         },
         'verification_report': {'strategy_a': _trim(sum_a), 'strategy_b': _trim(sum_b) if sum_b else None},

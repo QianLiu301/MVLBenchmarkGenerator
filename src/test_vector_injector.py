@@ -76,8 +76,83 @@ def _strip_c_main(code: str) -> str:
     return code[:start]
 
 
+_C_FLAG_NAMES = {
+    'z': ('z', 'zero', 'zf', 'zero_flag', 'is_zero'),
+    'n': ('n', 'neg', 'negative', 'nf', 'negative_flag', 'sign'),
+    'c': ('c', 'carry', 'cf', 'carry_flag', 'cout', 'overflow'),
+}
+_C_RESULT_NAMES = ('result', 'value', 'res', 'val', 'r', 'out', 'y')
+
+
+def _c_struct_fields(code: str, type_name: str):
+    """Field list [(type, name)] of `typedef struct {...} type_name;` or `struct type_name {...}`."""
+    # body must not contain braces, otherwise the pattern would span neighbouring structs
+    m = (re.search(r'typedef\s+struct\s*\w*\s*\{([^{}]*)\}\s*' + re.escape(type_name) + r'\s*;', code, re.S)
+         or re.search(r'struct\s+' + re.escape(type_name) + r'\s*\{([^{}]*)\}', code, re.S))
+    if not m:
+        return None
+    body = re.sub(r'/\*.*?\*/', '', m.group(1), flags=re.S)
+    body = re.sub(r'//[^\n]*', '', body)
+    fields = []
+    for decl in body.split(';'):
+        decl = decl.strip()
+        if not decl:
+            continue
+        parts = decl.replace('*', ' ').split()
+        if len(parts) >= 2:
+            fields.append((' '.join(parts[:-1]), parts[-1]))
+    return fields
+
+
+def _c_interface(code: str):
+    """Work out how to read result and flags from what alu_exec() returns.
+
+    The generator prompt only fixes the *contents* of the struct (result + flags
+    z, n, c); models choose the type name and whether the flags are nested. Returns
+    (return_type, result_expr, z_expr, n_expr, c_expr) with `r` as the variable, or
+    None when the interface cannot be determined (reported as a harness error).
+    """
+    sig = re.search(r'\b(\w+)\s+alu_exec\s*\(', code)
+    if not sig:
+        return None
+    rtype = sig.group(1)
+    fields = _c_struct_fields(code, rtype)
+    if not fields:
+        return None
+
+    def pick(names, flds, prefix):
+        for _, fname in flds:
+            if fname.lower() in names:
+                return prefix + fname
+        return None
+
+    res = pick(_C_RESULT_NAMES, fields, 'r.')
+    flag = {}
+    for key, names in _C_FLAG_NAMES.items():
+        flag[key] = pick(names, fields, 'r.')
+    # flags nested in a sub-struct member (e.g. `Flags flags;`)
+    if not all(flag.values()):
+        for ftype, fname in fields:
+            sub = _c_struct_fields(code, ftype.replace('struct', '').strip())
+            if sub:
+                for key, names in _C_FLAG_NAMES.items():
+                    flag[key] = flag[key] or pick(names, sub, f'r.{fname}.')
+    if res is None:
+        # a lone integer field that is not a flag is the result
+        others = [f for t, f in fields if f.lower() not in sum(_C_FLAG_NAMES.values(), ())]
+        res = f'r.{others[0]}' if len(others) == 1 else None
+    if res is None or not all(flag.values()):
+        return None
+    return rtype, res, flag['z'], flag['n'], flag['c']
+
+
 def _harness_c(llm_code: str, k: int, bits: int) -> str:
     alu_only = _strip_c_main(llm_code)
+    iface = _c_interface(alu_only)
+    if iface is None:
+        raise ValueError('C harness: could not determine the alu_exec() result/flag interface '
+                         '(expected a struct with a result field and flags z/n/c, flat or nested)')
+    rtype, res, z, n, c = iface
 
     # Ensure essential headers are present
     headers = ''
@@ -102,23 +177,23 @@ def _harness_c(llm_code: str, k: int, bits: int) -> str:
                     return 1;
                 }
 
-                /* Call the LLM ALU */
-                ALUResult r = alu_exec(a_val, b_val, op);
+                /* Call the LLM ALU (op is passed as int; enums accept it) */
+                RTYPE r = alu_exec((uint64_t)a_val, (uint64_t)b_val, op);
 
-                /* Print in the standard format the validator expects */
                 const char* names[] = {"ADD","SUB","MUL","NEG","INC","DEC"};
                 const char* op_str = (op >= 0 && op <= 5) ? names[op] : "???";
                 printf("Test %2d: %s A=%llu B=%llu -> R=%llu Z=%d N=%d C=%d\n",
                        i + 1, op_str,
                        (unsigned long long)a_val,
                        (unsigned long long)b_val,
-                       (unsigned long long)r.result,
-                       r.zero, r.negative, r.carry);
+                       (unsigned long long)(RES),
+                       (int)(ZF), (int)(NF), (int)(CF));
             }
             return 0;
         }
     """)
-
+    harness_main = (harness_main.replace('RTYPE', rtype).replace('(RES)', f'({res})')
+                    .replace('(ZF)', f'({z})').replace('(NF)', f'({n})').replace('(CF)', f'({c})'))
     return headers + '\n' + alu_only.rstrip() + '\n' + harness_main
 
 

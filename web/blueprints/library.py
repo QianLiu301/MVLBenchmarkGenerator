@@ -196,8 +196,18 @@ def citation_file():
 @bp.route('/format')
 def format():
     from library.submissions import MANIFEST_TEMPLATE
-    import json
-    return render_template('library/format.html', template_json=json.dumps(MANIFEST_TEMPLATE, indent=2))
+    from library.models import GOLDEN_MODEL_VERSION
+    import hashlib, json
+    src = service.PROJECT_ROOT / 'src'
+    sha = lambda name: hashlib.sha256((src / name).read_bytes()).hexdigest()
+    return render_template('library/format.html', template_json=json.dumps(MANIFEST_TEMPLATE, indent=2),
+                           golden_version=GOLDEN_MODEL_VERSION,
+                           golden_sha=sha('golden_model.py'), field_sha=sha('galois_field.py'))
+
+
+@bp.route('/review-process')
+def review():
+    return render_template('library/review.html')
 
 
 @bp.route('/acknowledgements')

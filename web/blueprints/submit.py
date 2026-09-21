@@ -75,7 +75,7 @@ def status(token):
         if sub is None:
             abort(404)
         return render_template('submit/status.html', sub=sub, steps=PIPELINE_STEPS,
-                               language_labels=LANGUAGES)
+                               language_labels=LANGUAGES, outcome=submissions.outcome(sub))
 
 
 @bp.route('/api/submission/<token>')

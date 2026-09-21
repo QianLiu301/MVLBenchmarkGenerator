@@ -274,10 +274,15 @@ def run_pipeline(sub_id: int):
             results[f['filename']] = {k: v for k, v in m.items() if k not in ('verification_log',)}
             results[f['filename']]['verification_log'] = m['verification_log'][-4000:]
             results[f['filename']]['verified_at'] = m['verified_at'].isoformat(timespec='seconds')
-            ok = m['golden_status'] == 'PASS'
+            # Rule (review process, step 3): both strategies must pass. Strategy B may only be
+            # absent when the format says it is not applicable (VHDL beyond the integer range).
+            b_status = ((m.get('verification_meta') or {}).get('strategy_b') or {}).get('status')
+            ok = m['golden_status'] == 'PASS' and b_status in ('PASS', 'skipped')
             all_ok &= ok
+            note = '' if b_status in ('PASS', 'skipped') else \
+                f" — injected-vector harness did not run ({b_status}); see the harness interface in the format, section 4"
             logs.append(f"{f['filename']}: sim={m['sim_status']} golden={m['golden_status']} "
-                        f"{m['golden_passed']}/{m['golden_compared']} [{m['verification_strength']}]")
+                        f"{m['golden_passed']}/{m['golden_compared']} [{m['verification_strength']}]{note}")
         update(lambda sub: (setattr(sub, 'results', results),
                             _set_step(sub, 'simulation', 'pass' if all_ok else 'fail', '\n'.join(logs))))
         if not all_ok:
@@ -382,3 +387,41 @@ def list_submissions(session, status: Optional[str] = None) -> List[Submission]:
 
 def get_by_token(session, token: str) -> Optional[Submission]:
     return session.execute(select(Submission).where(Submission.token == token)).scalar_one_or_none()
+
+
+# ---------------------------------------------------------------------------
+# Outcome summary for the status page: what happened, why, what to do next
+# ---------------------------------------------------------------------------
+
+def outcome(sub: Submission) -> Dict:
+    """{'label', 'tone', 'why', 'next'} derived from the pipeline state (rules: /review-process)."""
+    steps = sub.steps or {}
+    failed = next((k for k, _ in PIPELINE_STEPS if (steps.get(k) or {}).get('status') == 'fail'), None)
+    names = dict(PIPELINE_STEPS)
+    if sub.status == 'approved':
+        return {'label': 'Published', 'tone': 'ok',
+                'why': f"All automated checks passed and a maintainer approved it: {sub.decision_reason or ''}".strip(),
+                'next': f"The files are published under /benchmark/{sub.slug}. Thank you for contributing."}
+    if sub.status == 'rejected':
+        return {'label': 'Rejected by maintainer', 'tone': 'err',
+                'why': sub.decision_reason or 'No reason recorded.',
+                'next': 'Address the reason above and submit again; every submission gets a fresh review.'}
+    if sub.status == 'failed' and failed:
+        step_no = [k for k, _ in PIPELINE_STEPS].index(failed) + 1
+        hints = {
+            'schema': 'Correct manifest.json (the problems are listed under step 1) and upload again.',
+            'lint': 'Remove the flagged construct or fix the file (step 2 log), then submit again.',
+            'simulation': 'Fix the implementation so that it compiles, runs to completion and matches the reference '
+                          'model on every vector (see the mismatch list under step 3), then submit again.',
+            'dedup': 'This exact file is already in the library (see step 6). Submit a different implementation.',
+        }
+        return {'label': f'Rejected automatically at step {step_no} ({names[failed]})', 'tone': 'err',
+                'why': (steps.get(failed) or {}).get('log', '').strip().splitlines()[0] if (steps.get(failed) or {}).get('log') else 'see the step log',
+                'next': hints.get(failed, 'See the step log, then submit again.')}
+    if sub.status == 'awaiting_review':
+        return {'label': 'Awaiting maintainer decision', 'tone': 'warn',
+                'why': 'All automated checks (steps 1–6) passed.',
+                'next': 'A maintainer decides within 14 days. Bookmark this page; no e-mail is sent.'}
+    return {'label': 'Automated checks running', 'tone': 'warn',
+            'why': 'Steps 1–6 are being executed.',
+            'next': 'This page refreshes itself. Typical duration: 1–5 minutes (up to 10 for VHDL).'}

@@ -40,7 +40,10 @@ SOURCES = {
     'reference': 'Reference',
 }
 LICENSE_ID = 'CC-BY-4.0'
-GOLDEN_MODEL_VERSION = '1.0'
+# 1.0  initial (ISMVL 2026)
+# 1.1  2026-09-21: polynomial reduction fixed for non-palindromic irreducible
+#      polynomials (GF(8), GF(16)); GF(4)/GF(9) unaffected. Validation suite added.
+GOLDEN_MODEL_VERSION = '1.1'
 
 # Pipeline steps, in order. Each Submission stores {step: {status, log, detail}}.
 PIPELINE_STEPS = [

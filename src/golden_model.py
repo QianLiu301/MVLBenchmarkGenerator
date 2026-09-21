@@ -141,6 +141,18 @@ class GoldenModel:
 
         return vectors
 
+    def generate_exhaustive_vectors(self, ops: List[int] = None) -> List[TestVector]:
+        """Every (op, a, b) — feasible only for small operand ranges (k^n <= 256:
+        65 536 pairs x 6 ops). Used when the library grades with strength 'exhaustive'."""
+        if ops is None:
+            ops = [OP_ADD, OP_SUB, OP_MUL, OP_NEG, OP_INC, OP_DEC]
+        vectors: List[TestVector] = []
+        for op in ops:
+            for a in range(self.mod):
+                for b in range(self.mod):
+                    vectors.append(TestVector(op=op, a=a, b=b, expected=self.execute(op, a, b)))
+        return vectors
+
     # ------------------------------------------------------------------
     # Modular arithmetic (prime field / integer ring)
     # ------------------------------------------------------------------

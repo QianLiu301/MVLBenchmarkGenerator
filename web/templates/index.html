@@ -1780,6 +1780,7 @@
             } else {
                 row.style.display = 'none';
             }
+            updateLogicType();   // the label carries the digit count
         }
 
         function onKValueChange() {
@@ -1833,16 +1834,17 @@
                 return;
             }
 
+            // Naming follows the library format (§2): prime powers with m > 1 are the
+            // Galois-field polynomial family, everything else is radix-k integer arithmetic.
             const pp = getPrimePower(k);
-            if (pp) {
-                const label = pp.m === 1 ? `GF(${pp.p})` : `GF(${pp.p}${toSuperscript(pp.m)})`;
-                const desc = pp.m === 1 ? 'prime field' : 'extension field';
-                display.value = `${label} — ${desc}`;
-                display.style.color = 'var(--text-primary)';
+            const n = getEffectiveBitwidth();
+            const sup = isNaN(n) ? 'ⁿ' : toSuperscript(n);
+            if (pp && pp.m > 1) {
+                display.value = `GF(${k})[x]/(x${sup}) — Galois-field polynomial arithmetic`;
             } else {
-                display.value = `mod ${k} — no Galois Field`;
-                display.style.color = 'var(--primary-from)';
+                display.value = `Z/${k}${sup}Z — radix-${k} integer arithmetic (with carry)`;
             }
+            display.style.color = 'var(--text-primary)';
         }
 
         // Update Logic Type when custom K-Value input changes

@@ -6,12 +6,12 @@
     <h1>Benchmark format <span class="muted" style="font-weight:500">v1.0</span></h1>
     <p>
         Every entry in the library is a <em>specification</em> (what is computed) with one or more
-        <em>implementations</em> (how it is computed, in a given language). Both are described by a small
-        set of conventions so that entries can be compared, verified and cited uniformly. When you
-        reference the format in a paper, please state the version: <code>MVL Benchmark Library format v1.0</code>.
+        <em>implementations</em> (how it is computed, in a given language). Both follow the conventions
+        below so that entries can be compared, verified and cited uniformly. When you reference the
+        format in a paper, state the version: <code>MVL Benchmark Library format v1.0</code>.
     </p>
 
-    <h2>1. Naming</h2>
+    <h2 id="naming">1. Naming</h2>
     <p>Specifications are identified by a stable name derived from their parameters:</p>
     <ul>
         <li><code>alu_k3_8t</code> — ALU, radix <em>k</em> = 3, 8 digits (trits)</li>
@@ -20,28 +20,107 @@
     </ul>
     <p>Implementation files carry the specification name and the language extension: <code>alu_k3_8t.c</code>, <code>.py</code>, <code>.v</code>, <code>.vhd</code>.</p>
 
-    <h2>2. Algebraic structure</h2>
-    <p>The structure is fixed by <em>k</em>: GF(p) for prime <em>k</em>, GF(pⁿ) for prime powers (digit-wise field arithmetic), and the integer ring Z/kZ otherwise. Operands are integers in <code>0 … kⁿ − 1</code>; results are reduced modulo <code>kⁿ</code>. Each benchmark page lists the exact definition of every operation and flag.</p>
+    <h2 id="semantics">2. Reference semantics</h2>
+    <p>
+        A specification fixes the radix <em>k</em> and the number of digits <em>n</em>. Operands and results are
+        words of <em>n</em> digits, each digit in {0, …, k−1}, written as the integer
+        <em>a</em> = Σ a<sub>i</sub>·k<sup>i</sup> (range 0 … k<sup>n</sup>−1). The arithmetic performed on those words
+        belongs to one of two families, chosen by <em>k</em>:
+    </p>
+    <h3>Family M — modular: the ring Z/k<sup>n</sup>Z (k = 2, 3, 5, 6, 7, …)</h3>
+    <p>Radix-k integer arithmetic with carry propagation — the direct generalisation of an unsigned binary ALU. With M = k<sup>n</sup>:</p>
+    <div class="table-wrap"><table class="defs">
+        <tr><td>ADD</td><td class="mono">(a + b) mod M</td><td>C = 1 iff a + b ≥ M</td></tr>
+        <tr><td>SUB</td><td class="mono">(a − b) mod M</td><td>C = 1 iff a &lt; b (borrow)</td></tr>
+        <tr><td>MUL</td><td class="mono">(a · b) mod M</td><td>C = 0</td></tr>
+        <tr><td>NEG</td><td class="mono">(−a) mod M</td><td>C = 0</td></tr>
+        <tr><td>INC</td><td class="mono">(a + 1) mod M</td><td>C = 1 iff a = M − 1</td></tr>
+        <tr><td>DEC</td><td class="mono">(a − 1) mod M</td><td>C = 1 iff a = 0</td></tr>
+        <tr><td>Z, N</td><td class="mono">Z = 1 iff result = 0;  N = 1 iff result ≥ ⌊M/2⌋</td><td></td></tr>
+    </table></div>
+    <p class="small muted">Whether k is prime (3, 5, 7) or composite (6) makes no difference to this family; the label "GF(3)" used in earlier versions of this site was inaccurate for these entries and has been replaced by Z/3<sup>n</sup>Z.</p>
 
-    <h2>3. Test output</h2>
-    <p>Implementations print their self-test vectors in one line per vector so the golden-model comparison can read them:</p>
+    <h3>Family F — Galois-field: the ring GF(q)[x]/(x<sup>n</sup>) (k = q a prime power: 4, 8, 9, 16, …)</h3>
+    <p>
+        Each digit is an element of the finite field GF(q); a word is the polynomial a<sub>0</sub> + a<sub>1</sub>x + … + a<sub>n−1</sub>x<sup>n−1</sup>.
+        There is no carry between digits. GF(q) is constructed from GF(p)[x] modulo the conventional irreducible polynomial
+        (GF(4): x²+x+1 · GF(8): x³+x+1 · GF(9): x²+1 · GF(16): x⁴+x+1; the same choices as the <a href="https://github.com/mhostetter/galois" target="_blank" rel="noopener">galois</a> library and standard tables, e.g. Lidl &amp; Niederreiter).
+    </p>
+    <div class="table-wrap"><table class="defs">
+        <tr><td>ADD</td><td class="mono">a<sub>i</sub> ⊕ b<sub>i</sub> digit-wise in GF(q)</td><td>C = 0</td></tr>
+        <tr><td>SUB</td><td class="mono">a<sub>i</sub> ⊖ b<sub>i</sub> digit-wise</td><td>C = 0</td></tr>
+        <tr><td>MUL</td><td class="mono">polynomial product a(x)·b(x), truncated to degree &lt; n (i.e. mod x<sup>n</sup>)</td><td>C = 0</td></tr>
+        <tr><td>NEG</td><td class="mono">digit-wise additive inverse</td><td>C = 0</td></tr>
+        <tr><td>INC / DEC</td><td class="mono">a<sub>0</sub> ⊕ 1  /  a<sub>0</sub> ⊖ 1 (digit 0 only, no carry)</td><td>C = 0</td></tr>
+        <tr><td>Z, N</td><td class="mono">Z = 1 iff result = 0;  N = 0 always</td><td></td></tr>
+    </table></div>
+    <p class="small muted">This is the truncated polynomial ring, not the extension field GF(q<sup>n</sup>): multiplication is truncated, not reduced by a degree-n irreducible polynomial. Entries of this family are labelled GF(q)[x]/(x<sup>n</sup>) to make that explicit.</p>
+
+    <h2 id="reference-model">3. Reference model (golden model)</h2>
+    <p>
+        The two families above are implemented once, in plain Python, in
+        <a href="https://github.com/QianLiu301/MVLBenchmarkGenerator/blob/main/src/golden_model.py" target="_blank" rel="noopener"><code>src/golden_model.py</code></a> and
+        <a href="https://github.com/QianLiu301/MVLBenchmarkGenerator/blob/main/src/galois_field.py" target="_blank" rel="noopener"><code>src/galois_field.py</code></a>.
+        It is written directly from the definitions in §2, has no dependency on any language model, and is the only
+        oracle used in step 3 of the <a href="{{ url_for('library.review') }}">review process</a>.
+    </p>
+    <dl class="record">
+        <dt>Current version</dt><dd class="mono">v{{ golden_version }}</dd>
+        <dt>SHA-256</dt><dd class="mono small">golden_model.py {{ golden_sha[:16] }}… · galois_field.py {{ field_sha[:16] }}…</dd>
+        <dt>How it is validated</dt>
+        <dd>
+            <a href="https://github.com/QianLiu301/MVLBenchmarkGenerator/blob/main/tests/test_golden_model.py" target="_blank" rel="noopener"><code>tests/test_golden_model.py</code></a> pins it to definitions that are independent of our code:
+            family M is compared exhaustively (small k<sup>n</sup>) or with 20 000 seeded pairs against Python integer arithmetic;
+            the GF(q) addition and multiplication tables are compared row by row with the independent <code>galois</code> package
+            under the same irreducible polynomial; family F word operations are compared with a separate polynomial-ring implementation;
+            and the ring/field axioms (associativity, commutativity, distributivity, identities, inverses, SUB∘ADD = id,
+            NEG = SUB(0, ·), INC = ADD(·, 1)) are checked directly. k = 2 must reproduce the ordinary binary ALU.
+        </dd>
+        <dt>Version history</dt>
+        <dd>
+            <strong>v1.1</strong> (2026-09-21) — the cross-check found that polynomial reduction indexed the irreducible polynomial backwards, which only affected non-palindromic polynomials (GF(8), GF(16)); GF(4) and GF(9), the only fields used by published entries, were unaffected. Fixed; validation suite added.<br>
+            <strong>v1.0</strong> — initial release with the ISMVL 2026 paper. Every verification record states the version it was produced with.
+        </dd>
+    </dl>
+
+    <h2 id="output">4. Test output</h2>
+    <p>Implementations print their self-test vectors one per line so that the comparison in step 3 can read them:</p>
     <pre class="bibtex">Test  1: ADD A=0 B=0 -> R=0 Z=1 N=0 C=0
 Test  2: SUB A=6560 B=1 -> R=6559 Z=0 N=1 C=0</pre>
     <p>Accepted variants: <code>result=</code> instead of <code>R=</code>, lower-case keys, and a numeric <code>OP=</code> field (0 = ADD … 5 = DEC). Flags Z / N / C are optional but compared when present.</p>
 
-    <h2>4. Manifest (<code>manifest.json</code>)</h2>
+    <h3 id="harness">Harness interface (strategy B)</h3>
+    <p>
+        For the injected-vector run the reviewer replaces your test section with its own driver, so the
+        computational part must expose this interface. Submissions whose harness cannot be built or does
+        not run are rejected at step 3 (the strength label of every published entry states whether B ran).
+    </p>
+    <div class="table-wrap"><table class="defs">
+        <tr><td>C</td><td class="mono">&lt;struct&gt; alu_exec(uint64_t a, uint64_t b, &lt;op&gt; op)</td><td>returns a struct with a <code>result</code> field and flags <code>z</code>, <code>n</code>, <code>c</code> (flat, or nested in a member such as <code>flags</code>); the type name is free; <code>main()</code> is replaced</td></tr>
+        <tr><td>Python</td><td class="mono">alu_exec(a, b, op) -&gt; (result, flags)</td><td><code>flags</code> has attributes <code>z</code>/<code>n</code>/<code>c</code> (or <code>zero</code>/<code>negative</code>/<code>carry</code>); the <code>if __name__ == "__main__"</code> block is replaced</td></tr>
+        <tr><td>Verilog</td><td class="mono">module mvl_alu_&lt;k&gt;_&lt;n&gt;bit(clk, rst, a, b, opcode[3:0], result, zero, negative, carry)</td><td>the testbench module is replaced; the DUT must settle within two clock periods</td></tr>
+        <tr><td>VHDL</td><td class="mono">entity mvl_alu_&lt;k&gt;_&lt;n&gt;bit with the same ports (std_logic / std_logic_vector)</td><td>the testbench entity is replaced; the design must not create zero-delay loops when driven with <code>rst = '1'</code> at time 0; not applicable when k<sup>n</sup> &gt; 2<sup>31</sup>−1 (32-bit integer I/O)</td></tr>
+    </table></div>
+
+    <h2 id="manifest">5. Manifest (<code>manifest.json</code>)</h2>
     <p>Submissions bundle their files with a manifest. The schema is published at <a href="{{ url_for('submit.manifest_schema') }}">/submit/manifest-schema.json</a>; a template is available on the <a href="{{ url_for('submit.form') }}">Submit page</a>.</p>
     <pre class="bibtex">{{ template_json }}</pre>
 
-    <h2>5. Verification record</h2>
-    <p>Each published implementation stores: simulation result (compiles and runs), golden-model result over the self-reported vectors and over <code>N</code> injected golden vectors with a fixed seed (<code>random(N=50, seed=42)</code>), the toolchain versions used, the golden-model version, the SHA-256 of the file and the simulator log. These are shown on the benchmark page and exported in <code>spec.json</code>.</p>
+    <h2 id="record">6. Verification record</h2>
+    <p>
+        Each published implementation stores: whether it compiles and runs; the golden-model result over the self-reported
+        vectors (strategy A) and over the injected vectors (strategy B) with the strength label
+        <code>exhaustive(N)</code> — all operand pairs, used when k<sup>n</sup> ≤ 256 — or <code>random(N=50, seed=42)</code>;
+        the toolchain versions; the reference-model version; the SHA-256 of the file; and the simulator log.
+        These appear on the benchmark page and in <code>spec.json</code>. The <a href="{{ url_for('library.review') }}">review process</a> page states exactly which outcomes pass.
+    </p>
 
-    <h2>6. Download archives</h2>
-    <p>Per-benchmark and library-wide archives contain <code>&lt;name&gt;/spec.json</code>, the implementation files, <code>LICENSE.txt</code> (CC BY 4.0) and <code>CITATION.bib</code>. When several implementations share a language, the file name carries the source and id, e.g. <code>alu_k3_8t_deepseek_12.c</code>.</p>
+    <h2 id="archive">7. Download archives</h2>
+    <p>Per-benchmark, library-wide and selection archives contain <code>&lt;name&gt;/spec.json</code>, the implementation files, <code>manifest.json</code> (filters, spec IDs, SHA-256 per file, format version, timestamp), <code>LICENSE.txt</code> (CC BY 4.0) and <code>CITATION.bib</code>. When several implementations share a language, the file name carries the source and id, e.g. <code>alu_k3_8t_deepseek_12.c</code>.</p>
 
     <h2>Changelog</h2>
     <ul>
-        <li><strong>v1.0</strong> (2026-09) — initial format: naming, manifest v1, test-output convention, verification record, archive layout.</li>
+        <li><strong>v1.0</strong> (2026-09) — initial format: naming, manifest v1, test-output convention, verification record, archive layout. 2026-09-21: structure labels corrected (Z/k<sup>n</sup>Z and GF(q)[x]/(x<sup>n</sup>) instead of GF(p) / GF(p<sup>n</sup>) / Z/kZ); reference model v1.1; exhaustive strength for k<sup>n</sup> ≤ 256.</li>
     </ul>
 </div>
 {% endblock %}

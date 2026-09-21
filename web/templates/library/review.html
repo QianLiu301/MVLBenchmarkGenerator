@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% set nav = 'submit' %}
+{% block title %}Review process — MVL Benchmark Library{% endblock %}
+{% block content %}
+<div class="prose wide">
+    <h1>Review process</h1>
+    <p>
+        Every submission goes through the same seven steps. Steps 1–6 are automated and finish within
+        minutes; step 7 is a decision by a maintainer. The rules below are the rules the pipeline
+        implements — nothing else is checked, and nothing is waived. You can follow each step on the
+        submission's status page, including the full logs.
+    </p>
+
+    <h2>Steps, pass criteria and rejection reasons</h2>
+    <div class="table-wrap">
+    <table class="bench rules">
+        <thead>
+            <tr><th>#</th><th>Step</th><th>What is checked</th><th>Passes when</th><th>Rejected when (automatic)</th><th>What you see</th></tr>
+        </thead>
+        <tbody>
+            <tr><td class="num">1</td><td>Schema</td>
+                <td><code>manifest.json</code> against the <a href="{{ url_for('submit.manifest_schema') }}">published JSON Schema</a>; declared files vs. uploaded files.</td>
+                <td>All required fields present with the right types; every declared file uploaded and every uploaded file declared; file extension matches the language; <code>license</code> is <code>CC-BY-4.0</code>; <code>generator.model</code> given when <code>source</code> is <code>llm-generated</code>.</td>
+                <td>Any violation. The browser pre-validates, so this normally never reaches the server.</td>
+                <td>One line per problem, with the JSON path.</td></tr>
+            <tr><td class="num">2</td><td>Lint</td>
+                <td>Static checks on each source file.</td>
+                <td>≤ 512 KB; UTF-8 text without control characters; contains a <code>main()</code> / <code>__main__</code> block / <code>module</code> / <code>entity</code>; no <code>system()</code>, process spawning, file or network I/O, <code>eval</code>/<code>exec</code>.</td>
+                <td>Any violation.</td>
+                <td>File name and the matched construct.</td></tr>
+            <tr><td class="num">3</td><td>Simulation vs golden model</td>
+                <td>Compile and run each file with gcc / CPython / Icarus Verilog / GHDL, then compare against the <a href="{{ url_for('library.format') }}#reference-model">reference model</a> in two ways: <strong>A</strong> — every test vector the program prints itself; <strong>B</strong> — the program's test section is replaced by a harness fed with golden vectors (all operand pairs when k<sup>n</sup> ≤ 256, otherwise 50 seeded random pairs plus edge cases).</td>
+                <td>Compiles; the run exits normally; <strong>100 % of vectors in A and B match the reference model</strong> — result and Z/N/C flags.</td>
+                <td>Compile error; runtime error, crash or timeout; any single mismatching vector (<code>LOGIC_ERROR</code>); no parsable test output (<code>NO_OUTPUT</code>); the strategy-B harness cannot be built or run because the <a href="{{ url_for('library.format') }}#harness">harness interface</a> is not met.</td>
+                <td>Compiler/simulator log; the mismatching vectors (operation, a, b, obtained, expected); the strength label (<code>exhaustive</code> / <code>random(N, seed)</code> / <code>self-reported</code>).</td></tr>
+            <tr><td class="num">4</td><td>Formal (optional)</td>
+                <td>Reserved for equivalence checking of RTL against a reference.</td>
+                <td colspan="2">Not enabled yet — always <code>skipped</code>, never a reason for rejection.</td>
+                <td><code>skipped</code></td></tr>
+            <tr><td class="num">5</td><td>LLM review</td>
+                <td>Reserved for an advisory model-based code review.</td>
+                <td colspan="2">Not enabled yet — always <code>skipped</code>. When enabled it will only annotate; it cannot reject.</td>
+                <td><code>skipped</code></td></tr>
+            <tr><td class="num">6</td><td>Dedup</td>
+                <td>SHA-256 of each file against every published implementation.</td>
+                <td>No identical file in the library.</td>
+                <td>A byte-identical file is already published.</td>
+                <td>Link to the existing entry.</td></tr>
+            <tr><td class="num">7</td><td>Maintainer approval</td>
+                <td>Human review of what the machine cannot judge.</td>
+                <td>Name and parameters match the format; description is accurate; source, generator model and authorship are plausible; the implementation is a genuine design (not a lookup table of the expected outputs, not a trivial wrapper); files are readable.</td>
+                <td>Decision with a written reason (both outcomes require one). Typical reasons: misdeclared parameters, misleading provenance, output tables instead of arithmetic, duplicate spec under a different name.</td>
+                <td>The reason, verbatim, on the status page and in the entry's review history once published.</td></tr>
+        </tbody>
+    </table>
+    </div>
+
+    <h2>Timeline</h2>
+    <ul>
+        <li>Steps 1–6 run immediately after upload; a typical submission takes 1–5 minutes, VHDL with large operand ranges up to 10 minutes.</li>
+        <li>Step 7: a maintainer decides <strong>within 14 days</strong> of the automated steps passing. There is no e-mail notification — bookmark the status page.</li>
+    </ul>
+
+    <h2>After a rejection</h2>
+    <ul>
+        <li>A rejection is not a ban. Fix the reported problem and submit again; every submission gets a new number and a fresh pipeline run.</li>
+        <li>If you think an automated verdict is wrong (for example a golden-model mismatch you can show to be an error in the reference), write to <a href="mailto:qialiu@uni-bremen.de">qialiu@uni-bremen.de</a> with the submission link. Confirmed reference-model errors are fixed, versioned and announced on the format page.</li>
+    </ul>
+
+    <h2>What "verified" means on a published entry</h2>
+    <p>
+        A teal badge means step 3 passed with the strength shown in the entry's verification record —
+        it is a statement about simulation against the reference model, not a formal proof. The record
+        lists the tool versions, the reference-model version, the vector count, the seed and the SHA-256
+        of the file, so the run can be repeated.
+    </p>
+    <p>
+        The library also keeps implementations that <em>failed</em> step 3 when they were produced by the
+        project's own LLM pipeline (grey badge, full failure report). They are published deliberately:
+        which model gets which specification wrong is part of what the library documents. External
+        submissions are never published with a failed verification.
+    </p>
+</div>
+{% endblock %}

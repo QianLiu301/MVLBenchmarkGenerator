@@ -11,7 +11,14 @@
     <span class="pill {{ pill.get(sub.status, '') }}" id="statusPill" style="font-size:.85rem">{{ sub.status.replace('_', ' ') }}</span>
 </div>
 
-<p class="small muted" style="margin-bottom:12px">Bookmark this page — it is the only place where the status is shown (no e-mail is sent). The automated steps take from seconds to a few minutes.</p>
+<section class="card outcome outcome-{{ outcome.tone }}">
+    <dl class="record">
+        <dt>Outcome</dt><dd><strong>{{ outcome.label }}</strong></dd>
+        <dt>Why</dt><dd>{{ outcome.why }}</dd>
+        <dt>Next step</dt><dd>{{ outcome.next }} <a href="{{ url_for('library.review') }}" class="small">Rules</a></dd>
+    </dl>
+</section>
+<p class="small muted" style="margin:12px 0">Bookmark this page — it is the only place where the status is shown (no e-mail is sent).</p>
 
 {% include "submit/_steps.html" %}
 

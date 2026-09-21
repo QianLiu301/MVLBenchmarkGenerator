@@ -8,8 +8,8 @@
     <p>
         The MVL Benchmark Library is an online resource for benchmarks in the domain of multi-valued logic (MVL)
         design and verification. It provides a <a href="{{ url_for('library.browse') }}">database of benchmark specifications</a>
-        — arithmetic-logic units, register files and processors defined over finite algebraic structures such as
-        GF(p), GF(pⁿ) and Z/kZ — together with <a href="{{ url_for('library.browse', verified=1) }}">reference implementations</a>
+        — arithmetic-logic units, register files and processors defined over Z/kⁿZ (radix-k integer arithmetic)
+        and GF(q)[x]/(xⁿ) (Galois-field polynomial arithmetic) — together with <a href="{{ url_for('library.browse', verified=1) }}">reference implementations</a>
         in C, Python, Verilog and VHDL, all given in a common <a href="{{ url_for('library.format') }}">benchmark format</a>.
     </p>
     <p>
@@ -29,15 +29,19 @@
     <h2>What makes an entry</h2>
     <ul>
         <li><strong>Specification</strong> — identified by a stable name such as <code>alu_k3_8t</code>
-            (module, radix, digits). It fixes the algebraic structure: GF(p) for prime <em>k</em>,
-            GF(pⁿ) for prime powers, and the integer ring Z/kZ otherwise.</li>
+            (module, radix, digits). It fixes the algebraic structure: the ring Z/kⁿZ (radix-k integer
+            arithmetic with carry) for k = 2, 3, 5, 6, 7 …, and the ring GF(q)[x]/(xⁿ) (digit-wise
+            Galois-field arithmetic) when k = q is a prime power such as 4. The exact definitions and the
+            reference model are in the <a href="{{ url_for('library.format') }}">format</a>.</li>
         <li><strong>Implementation</strong> — one source file realising the specification. Several
             implementations may exist per language, e.g. produced by different LLMs, so that models
             can be compared on identical specifications.</li>
         <li><strong>Verification record</strong> — the implementation is compiled and simulated
             (gcc, CPython, Icarus Verilog, GHDL); every test vector it prints is compared digit-wise
             with an independent, deterministic golden model, and a second run injects golden vectors
-            with a fixed seed. Only the result is stored; nothing is hand-edited.</li>
+            (all operand pairs for small ranges, otherwise a fixed seed). Only the result is stored;
+            nothing is hand-edited. The pass and rejection rules are on the
+            <a href="{{ url_for('library.review') }}">review process</a> page.</li>
     </ul>
 
     <h2>Format</h2>

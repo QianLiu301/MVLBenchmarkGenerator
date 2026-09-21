@@ -86,6 +86,8 @@ def main():
     ap.add_argument('--notes', default='')
     ap.add_argument('--reset', action='store_true', help='delete ALL library rows first (local dev)')
     ap.add_argument('--reverify', action='store_true', help='re-run verification on every stored implementation')
+    ap.add_argument('--slug', help='with --reverify: only this spec')
+    ap.add_argument('--lang', help='with --reverify: only this language')
     ap.add_argument('--skip-existing', action='store_true', help='skip (spec, language) pairs that already have a published implementation')
     args = ap.parse_args()
 
@@ -108,13 +110,17 @@ def main():
             impls = s.query(Implementation).all()
             for i in impls:
                 bm = i.benchmark
+                if args.slug and bm.slug != args.slug:
+                    continue
+                if args.lang and i.language != args.lang:
+                    continue
                 metrics, _ = quiet(service.verify_code, i.code, i.language, bm.k_value, bm.bitwidth, validator)
                 before = i.golden_status
                 for key, val in metrics.items():
                     setattr(i, key, val)
                 i.test_vectors = service.count_test_vectors(i.code, i.language)
                 print(f"{bm.slug} {i.language:8s} #{i.id}: {before} -> {i.golden_status} "
-                      f"{i.golden_passed}/{i.golden_compared}")
+                      f"{i.golden_passed}/{i.golden_compared}  [{i.verification_strength}]", flush=True)
         return
 
     # ---- import mode -------------------------------------------------------

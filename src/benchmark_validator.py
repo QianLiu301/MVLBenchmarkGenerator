@@ -242,6 +242,7 @@ class BenchmarkValidator:
         language: str,
         random_count: int = 50,
         seed: int = 42,
+        exhaustive: bool = False,
     ) -> ValidationReport:
         """Strategy B validation pipeline.
 
@@ -262,7 +263,8 @@ class BenchmarkValidator:
 
         # Step 1: Golden test vectors
         golden = GoldenModel(k, bits)
-        vectors = golden.generate_test_vectors(random_count=random_count, seed=seed)
+        vectors = (golden.generate_exhaustive_vectors() if exhaustive
+                   else golden.generate_test_vectors(random_count=random_count, seed=seed))
         stdin_text = serialize_vectors(vectors)
 
         # Step 2: Generate harness (LLM code + our stdin-driven main)
