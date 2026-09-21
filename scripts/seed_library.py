@@ -89,6 +89,8 @@ def main():
     ap.add_argument('--slug', help='with --reverify: only this spec')
     ap.add_argument('--lang', help='with --reverify: only this language')
     ap.add_argument('--skip-existing', action='store_true', help='skip (spec, language) pairs that already have a published implementation')
+    ap.add_argument('--skip-provider-existing', action='store_true',
+                    help='skip (spec, language) pairs that already have an implementation from --provider (rerun of an interrupted batch)')
     args = ap.parse_args()
 
     init_db()
@@ -171,11 +173,13 @@ def main():
                 n += 1
                 t0 = time.time()
                 tag = f"[{n}/{total}] {spec['slug']} {lang:8s} {args.provider}/{args.model or 'default'}"
-                if args.skip_existing:
+                if args.skip_existing or args.skip_provider_existing:
                     with session_scope() as s:
                         bm = service.get_benchmark(s, spec['slug'])
-                        have = bm is not None and any(i.language == lang and i.status == 'published'
-                                                      for i in bm.implementations)
+                        have = bm is not None and any(
+                            i.language == lang and i.status == 'published'
+                            and (not args.skip_provider_existing or i.provider == args.provider)
+                            for i in bm.implementations)
                     if have:
                         skipped += 1
                         print(f"{tag}  = already in library, skipped", flush=True)

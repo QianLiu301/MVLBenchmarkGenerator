@@ -261,8 +261,7 @@ class GeminiProvider(LLMProvider):
             self.model,  # 首先尝试配置的模型
             "gemini-2.5-flash",  # 当前稳定版
             "gemini-2.5-flash-lite",  # 轻量版
-            "gemini-2.0-flash",  # 旧版备用
-        ]
+        ]   # gemini-2.0-flash was retired (404 since 2026-09)
         # 去重并保持顺序
         models_to_try = list(dict.fromkeys(models_to_try))
 
@@ -286,13 +285,15 @@ class GeminiProvider(LLMProvider):
 
             try:
                 proxies = self._get_proxies()
-                response = requests.post(url, json=payload, timeout=60, proxies=proxies)
+                # 300 s: large HDL answers with thinking took longer than 60 s and the
+                # timeout then cascaded through the fallback models
+                response = requests.post(url, json=payload, timeout=300, proxies=proxies)
 
                 # 如果是 429 配额错误，尝试下一个模型
                 if response.status_code == 429:
                     error_data = response.json()
                     print(f"⚠️  Model {model_name} quota exceeded, trying next model...")
-                    last_error = error_data
+                    last_error = last_error or error_data
                     continue
 
                 response.raise_for_status()
@@ -310,7 +311,7 @@ class GeminiProvider(LLMProvider):
                     try:
                         error_detail = e.response.json()
                         print(f"   Error details: {error_detail}")
-                        last_error = error_detail
+                        last_error = last_error or error_detail   # keep the first (configured model's) error
                     except:
                         pass
                 continue
@@ -318,11 +319,11 @@ class GeminiProvider(LLMProvider):
             except Exception as e:
                 self._note_error(e)
                 print(f"⚠️  Unexpected error with {model_name}: {e}")
-                last_error = str(e)
+                last_error = last_error or f"{model_name}: {e}"
                 continue
 
         # 所有模型都失败
-        print(f"❌ All Gemini models failed. Last error: {last_error}")
+        print(f"❌ All Gemini models failed. First error: {last_error}")
         self._note_error(last_error)
         return self._fallback_description(prompt)
 
@@ -2026,7 +2027,7 @@ class MistralProvider(LLMProvider):
                     proxies = self._get_proxies()
                     response = requests.post(
                         self.api_url, headers=headers, json=payload,
-                        timeout=60, proxies=proxies
+                        timeout=300, proxies=proxies
                     )
 
                     # ============================================================
