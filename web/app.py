@@ -90,6 +90,9 @@ CORS(app)
 # Signed session cookie for the password gate. Set SECRET_KEY on Render so
 # logins survive restarts; the random fallback only affects local dev.
 app.secret_key = os.environ.get('SECRET_KEY') or os.urandom(32)
+if not os.environ.get('SECRET_KEY') and os.environ.get('RENDER'):
+    # Render sets RENDER=true. Without a fixed key every deploy signs out all users.
+    print('[auth] WARNING: SECRET_KEY is not set; sessions will not survive a redeploy', flush=True)
 app.permanent_session_lifetime = timedelta(days=30)
 app.register_blueprint(auth_bp)
 app.register_blueprint(library_bp)

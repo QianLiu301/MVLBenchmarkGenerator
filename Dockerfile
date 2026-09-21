@@ -1,7 +1,7 @@
 # ============================================================
 # MVL Benchmark Generator - Dockerfile
 # ============================================================
-# Supports: GCC (C), Python, Icarus Verilog simulation tools
+# Supports: GCC (C), Python, Icarus Verilog, GHDL simulation tools
 # ============================================================
 
 FROM python:3.11-slim
@@ -22,7 +22,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     g++ \
     make \
     # Verilog simulation
-    iverilog \
+    iverilog     # VHDL simulation (Debian's ghdl metapackage; the library verifies .vhd submissions with it)
+    ghdl \
     # Utilities
     curl \
     git \
@@ -34,7 +35,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN echo "=== Checking installed tools ===" && \
     gcc --version && \
     python3 --version && \
-    iverilog -V && \
+    iverilog -V &&     ghdl --version && \
     echo "=== All tools installed successfully ==="
 
 # Copy requirements first (for Docker cache optimization)
