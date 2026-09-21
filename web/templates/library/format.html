@@ -99,7 +99,7 @@ Test  2: SUB A=6560 B=1 -> R=6559 Z=0 N=1 C=0</pre>
         <tr><td>C</td><td class="mono">&lt;struct&gt; alu_exec(uint64_t a, uint64_t b, &lt;op&gt; op)</td><td>returns a struct with a <code>result</code> field and flags <code>z</code>, <code>n</code>, <code>c</code> (flat, or nested in a member such as <code>flags</code>); the type name is free; <code>main()</code> is replaced</td></tr>
         <tr><td>Python</td><td class="mono">alu_exec(a, b, op) -&gt; (result, flags)</td><td><code>flags</code> has attributes <code>z</code>/<code>n</code>/<code>c</code> (or <code>zero</code>/<code>negative</code>/<code>carry</code>); the <code>if __name__ == "__main__"</code> block is replaced</td></tr>
         <tr><td>Verilog</td><td class="mono">module mvl_alu_&lt;k&gt;_&lt;n&gt;bit(clk, rst, a, b, opcode[3:0], result, zero, negative, carry)</td><td>the testbench module is replaced; the DUT must settle within two clock periods</td></tr>
-        <tr><td>VHDL</td><td class="mono">entity mvl_alu_&lt;k&gt;_&lt;n&gt;bit with the same ports (std_logic / std_logic_vector)</td><td>the testbench entity is replaced; the design must not create zero-delay loops when driven with <code>rst = '1'</code> at time 0; not applicable when k<sup>n</sup> &gt; 2<sup>31</sup>−1 (32-bit integer I/O)</td></tr>
+        <tr><td>VHDL</td><td class="mono">entity mvl_alu_&lt;k&gt;_&lt;n&gt;bit with the same ports (std_logic / std_logic_vector)</td><td>the testbench entity is replaced; the harness drives <code>rst = '1'</code> for two clock periods, then applies each vector for two periods; not applicable when k<sup>n</sup> &gt; 2<sup>31</sup>−1 (32-bit integer I/O)</td></tr>
     </table></div>
 
     <h2 id="manifest">5. Manifest (<code>manifest.json</code>)</h2>

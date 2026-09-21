@@ -105,22 +105,39 @@ def main():
 
     # ---- re-verify mode ----------------------------------------------------
     if args.reverify:
-        from library.models import Implementation
+        from library.models import Implementation, Benchmark
+        # Simulation of a whole language can take many minutes; a single long
+        # transaction gets its idle connection dropped by Neon, losing every result.
+        # So: pick the targets in one short session, verify with no session open,
+        # and store each result in its own short session (one retry on a dropped link).
         with session_scope() as s:
-            impls = s.query(Implementation).all()
-            for i in impls:
-                bm = i.benchmark
-                if args.slug and bm.slug != args.slug:
-                    continue
-                if args.lang and i.language != args.lang:
-                    continue
-                metrics, _ = quiet(service.verify_code, i.code, i.language, bm.k_value, bm.bitwidth, validator)
-                before = i.golden_status
-                for key, val in metrics.items():
-                    setattr(i, key, val)
-                i.test_vectors = service.count_test_vectors(i.code, i.language)
-                print(f"{bm.slug} {i.language:8s} #{i.id}: {before} -> {i.golden_status} "
-                      f"{i.golden_passed}/{i.golden_compared}  [{i.verification_strength}]", flush=True)
+            q = s.query(Implementation.id, Implementation.language, Implementation.code,
+                        Benchmark.slug, Benchmark.k_value, Benchmark.bitwidth).join(Benchmark)
+            if args.slug:
+                q = q.filter(Benchmark.slug == args.slug)
+            if args.lang:
+                q = q.filter(Implementation.language == args.lang)
+            targets = q.all()
+        for impl_id, lang, code, slug, k, bits in targets:
+            metrics, _ = quiet(service.verify_code, code, lang, k, bits, validator)
+            n_vec = service.count_test_vectors(code, lang)
+            for attempt in (1, 2):
+                try:
+                    with session_scope() as s:
+                        i = s.get(Implementation, impl_id)
+                        before = i.golden_status
+                        for key, val in metrics.items():
+                            setattr(i, key, val)
+                        i.test_vectors = n_vec
+                    break
+                except Exception as e:
+                    if attempt == 2:
+                        raise
+                    print(f"  store failed ({type(e).__name__}); retrying", flush=True)
+                    time.sleep(3)
+            print(f"{slug} {lang:8s} #{impl_id}: {before} -> {metrics['golden_status']} "
+                  f"{metrics['golden_passed']}/{metrics['golden_compared']}  [{metrics['verification_strength']}]",
+                  flush=True)
         return
 
     # ---- import mode -------------------------------------------------------

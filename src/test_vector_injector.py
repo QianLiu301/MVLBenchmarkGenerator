@@ -400,6 +400,11 @@ def _harness_vhdl(llm_code: str, k: int, bits: int) -> str:
             signal zero_sig    : std_logic;
             signal negative_sig: std_logic;
             signal carry_sig   : std_logic;
+            -- Set by stim_proc when the vector file is exhausted; stops the clock so
+            -- the simulation ends on its own instead of running to --stop-time
+            -- (a free-running clock kept the DUT evaluating the last opcode for
+            -- 10^7 cycles, which for a k=4 MUL exceeded the process timeout).
+            signal sim_done    : boolean := false;
 
             constant CLK_PERIOD : time := 10 ns;
         begin
@@ -418,8 +423,11 @@ def _harness_vhdl(llm_code: str, k: int, bits: int) -> str:
 
             clk_proc: process
             begin
-                clk_sig <= '0'; wait for CLK_PERIOD / 2;
-                clk_sig <= '1'; wait for CLK_PERIOD / 2;
+                while not sim_done loop
+                    clk_sig <= '0'; wait for CLK_PERIOD / 2;
+                    clk_sig <= '1'; wait for CLK_PERIOD / 2;
+                end loop;
+                wait;
             end process;
 
             stim_proc: process
@@ -471,6 +479,7 @@ def _harness_vhdl(llm_code: str, k: int, bits: int) -> str:
                 end loop;
 
                 report "STRATEGY_B_DONE" severity note;
+                sim_done <= true;
                 wait;
             end process;
         end architecture test;
