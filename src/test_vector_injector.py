@@ -98,9 +98,17 @@ def _c_struct_fields(code: str, type_name: str):
         decl = decl.strip()
         if not decl:
             continue
+        # `int z, n, c;` declares three fields of one type; `unsigned x : 1` is a bit-field
+        decl = re.sub(r':\s*\d+', '', decl)
         parts = decl.replace('*', ' ').split()
-        if len(parts) >= 2:
-            fields.append((' '.join(parts[:-1]), parts[-1]))
+        if len(parts) < 2:
+            continue
+        names = [n.strip() for n in ' '.join(parts[1:]).split(',')]
+        # everything before the first declarator is the type
+        head = names[0].split()
+        ftype = ' '.join([parts[0]] + head[:-1])
+        names[0] = head[-1]
+        fields.extend((ftype, n) for n in names if n)
     return fields
 
 

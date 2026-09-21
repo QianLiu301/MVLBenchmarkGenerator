@@ -115,7 +115,8 @@ def describe_spec(module_type: str, k: int, bitwidth: int, operations: List[str]
                   params: Optional[Dict] = None) -> Dict:
     info = resolve_logic_type(k)
     radix = RADIX_NAMES.get(k, f'radix-{k}')
-    title = f"{bitwidth}-trit {radix} {MODULE_TYPES.get(module_type, module_type)}"
+    unit = 'bit' if k == 2 else 'trit' if k == 3 else 'digit'
+    title = f"{bitwidth}-{unit} {radix} {MODULE_TYPES.get(module_type, module_type)}"
     params = params or {}
     if params.get('register_count'):
         title += f" ({params['register_count']} registers)"
@@ -165,22 +166,26 @@ def op_definitions(b: Benchmark) -> List[Dict]:
             'DEC': (f'(a − 1 + {M}) mod {M}', 'borrow = 1 iff a = 0'),
         }
     else:
-        info = resolve_logic_type(b.k_value)
-        p, n = info.get('p'), info.get('n')
-        f = f'GF({p}^{n})'
+        # GF(q)[x]/(x^n): digit-wise in GF(q), truncated polynomial product, no carry
+        # (must match GoldenModel._execute_extension and format section 2, family F)
+        f = f'GF({b.k_value})'
         defs = {
-            'ADD': (f'digit-wise a_i ⊕ b_i in {f}', 'carry = 0 (no carry in a field)'),
+            'ADD': (f'digit-wise a_i ⊕ b_i in {f}', 'carry = 0 (no carry between digits)'),
             'SUB': (f'digit-wise a_i ⊖ b_i in {f}', 'borrow = 0'),
-            'MUL': (f'digit-wise a_i ⊗ b_i in {f}', 'carry = 0'),
+            'MUL': (f'polynomial product a(x)·b(x) over {f}, truncated to degree < {b.bitwidth}', 'carry = 0'),
             'NEG': (f'digit-wise additive inverse in {f}', 'carry = 0'),
-            'INC': (f'digit-wise a_i ⊕ 1', f'carry = 1 iff a = {M - 1}'),
-            'DEC': (f'digit-wise a_i ⊖ 1', 'borrow = 1 iff a = 0'),
+            'INC': ('a_0 ⊕ 1 (digit 0 only)', 'carry = 0'),
+            'DEC': ('a_0 ⊖ 1 (digit 0 only)', 'borrow = 0'),
         }
     out = []
     for op in b.operations:
         formula, flag = defs.get(op, ('—', ''))
         out.append({'op': op, 'formula': formula, 'flag': flag})
-    out.append({'op': 'Z / N', 'formula': f'Z = 1 iff result = 0;  N = 1 iff result ≥ {half}', 'flag': ''})
+    if b.logic_family == 'modular':
+        zn = f'Z = 1 iff result = 0;  N = 1 iff result ≥ {half}'
+    else:
+        zn = 'Z = 1 iff result = 0;  N = 0 always'
+    out.append({'op': 'Z / N', 'formula': zn, 'flag': ''})
     return out
 
 
