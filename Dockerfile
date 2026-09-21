@@ -22,7 +22,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     g++ \
     make \
     # Verilog simulation
-    iverilog     # VHDL simulation (Debian's ghdl metapackage; the library verifies .vhd submissions with it)
+    iverilog \
+    # VHDL simulation (Debian ghdl package; the library verifies .vhd submissions with it)
     ghdl \
     # Utilities
     curl \
