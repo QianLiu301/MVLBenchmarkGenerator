@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+{% set nav = 'about' %}
+{% block title %}Generation models — MVL Benchmark Library{% endblock %}
+{% block content %}
+<div class="prose wide">
+    <h1>Generation models</h1>
+    <p>
+        Most implementations in the library were produced by a language model from the same
+        specification prompt and then checked by the same
+        <a href="{{ url_for('library.review') }}">review pipeline</a> against reference model
+        v{{ golden_version }}. Failed implementations from the project's own pipeline are published
+        with their failure report, so the tables below compare models on identical tasks:
+        <strong>verified / generated</strong> per language, per algebraic family and by failure class.
+        The prompt hash of every implementation is on its benchmark page.
+    </p>
+
+    {% set langs = matrix.languages %}
+    <h2>By language</h2>
+    <div class="table-wrap">
+    <table class="bench models">
+        <thead>
+            <tr>
+                <th>Model</th>
+                {% for code, name in langs.items() %}<th class="num">{{ name }}</th>{% endfor %}
+                <th class="num">All</th>
+                <th>Verified</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for m in matrix.models %}
+            <tr>
+                <td>
+                    {% if m.llm %}<code>{{ m.label }}</code>{% if m.provider %} <span class="muted small">via {{ m.provider }}</span>{% endif %}
+                    {% else %}{{ m.label }}{% endif %}
+                </td>
+                {% for code in langs %}
+                    {% set v, n = m.by_language[code] %}
+                    <td class="num">{% if n %}{{ v }}/{{ n }}{% else %}<span class="muted">—</span>{% endif %}</td>
+                {% endfor %}
+                <td class="num"><strong>{{ m.verified }}/{{ m.total }}</strong></td>
+                <td>
+                    <div class="rate" role="img" aria-label="{{ m.pct }} percent verified">
+                        <span class="rate-track"><span class="rate-bar" style="width: {{ m.pct }}%"></span></span>
+                        <span class="rate-num">{{ m.pct }} %</span>
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+
+    <h2>By algebraic family</h2>
+    <p>
+        Family M (Z/k<sup>n</sup>Z, carry-propagating integer arithmetic) and family F
+        (GF(q)[x]/(x<sup>n</sup>), digit-wise Galois-field arithmetic) are defined in the
+        <a href="{{ url_for('library.format') }}#semantics">format, section 2</a>.
+    </p>
+    <div class="table-wrap">
+    <table class="bench models">
+        <thead>
+            <tr>
+                <th>Model</th>
+                {% for fam, label in matrix.families.items() %}<th class="num">{{ label.split(' — ')[0] }} <span class="muted">({{ 'M' if fam == 'modular' else 'F' }})</span></th>{% endfor %}
+            </tr>
+        </thead>
+        <tbody>
+            {% for m in matrix.models %}
+            <tr>
+                <td>{% if m.llm %}<code>{{ m.label }}</code>{% else %}{{ m.label }}{% endif %}</td>
+                {% for fam in matrix.families %}
+                    {% set v, n = m.by_family[fam] %}
+                    <td class="num">{% if n %}{{ v }}/{{ n }} <span class="muted small">({{ (100 * v / n) | round | int }} %)</span>{% else %}<span class="muted">—</span>{% endif %}</td>
+                {% endfor %}
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+
+    <h2>By outcome of step 3</h2>
+    <p>
+        <code>COMPILE_ERROR</code>: the file does not compile or elaborate ·
+        <code>RUNTIME_ERROR</code>: it crashes, aborts or times out (for VHDL typically a width or
+        bound-check failure) · <code>LOGIC_ERROR</code>: it runs, but at least one vector disagrees
+        with the reference model · <code>NO_OUTPUT</code>: no parsable test lines.
+    </p>
+    <div class="table-wrap">
+    <table class="bench models">
+        <thead>
+            <tr>
+                <th>Model</th>
+                {% for st in matrix.statuses %}<th class="num"><code>{{ st }}</code></th>{% endfor %}
+            </tr>
+        </thead>
+        <tbody>
+            {% for m in matrix.models %}
+            <tr>
+                <td>{% if m.llm %}<code>{{ m.label }}</code>{% else %}{{ m.label }}{% endif %}</td>
+                {% for st in matrix.statuses %}
+                    {% set n = m.by_status[st] %}
+                    <td class="num {{ 'ok' if st == 'PASS' and n else '' }}">{% if n %}{{ n }}{% else %}<span class="muted">—</span>{% endif %}</td>
+                {% endfor %}
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+
+    <h2>Reading the numbers</h2>
+    <ul>
+        <li>Each cell counts implementations, not specifications: a model may have several implementations of one specification in one language when it was run more than once.</li>
+        <li>Coverage differs between models — a model that was only asked for HDL has no C or Python column. Compare models on the same language and family.</li>
+        <li>The specification prompt is identical for every model; sampling settings follow each provider's defaults (GPT-5 only allows temperature 1). The responding model name comes from the provider's response, not from the request.</li>
+        <li>External submissions are only published when they pass, so the human-authored row is not a failure rate.</li>
+    </ul>
+    <p class="small muted">Models and counts are listed on the <a href="{{ url_for('library.acknowledgements') }}">acknowledgements</a> page; browse the implementations themselves in the <a href="{{ url_for('library.browse') }}">library</a>.</p>
+</div>
+{% endblock %}

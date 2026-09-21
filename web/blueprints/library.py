@@ -10,7 +10,7 @@ from sqlalchemy import select
 
 from library import service
 from library.db import session_scope
-from library.models import (LANGUAGES, MODULE_ICONS, MODULE_TYPES, News, SOURCES)
+from library.models import (GOLDEN_MODEL_VERSION, LANGUAGES, MODULE_ICONS, MODULE_TYPES, News, SOURCES)
 
 bp = Blueprint('library', __name__)
 
@@ -196,7 +196,6 @@ def citation_file():
 @bp.route('/format')
 def format():
     from library.submissions import MANIFEST_TEMPLATE
-    from library.models import GOLDEN_MODEL_VERSION
     import hashlib, json
     src = service.PROJECT_ROOT / 'src'
     sha = lambda name: hashlib.sha256((src / name).read_bytes()).hexdigest()
@@ -215,6 +214,13 @@ def acknowledgements():
     with session_scope() as s:
         return render_template('library/acknowledgements.html',
                                contributors=service.contributors(s), **_LABELS)
+
+
+@bp.route('/models')
+def models():
+    with session_scope() as s:
+        return render_template('library/models.html', matrix=service.model_matrix(s),
+                               golden_version=GOLDEN_MODEL_VERSION, **_LABELS)
 
 
 @bp.route('/api/library/stats')

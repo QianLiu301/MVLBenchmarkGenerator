@@ -264,6 +264,10 @@ class GeminiProvider(LLMProvider):
         ]   # gemini-2.0-flash was retired (404 since 2026-09)
         # 去重并保持顺序
         models_to_try = list(dict.fromkeys(models_to_try))
+        if os.environ.get('GEMINI_NO_FALLBACK'):
+            # Seeding the library: one model per batch, so a quota error must fail the
+            # request rather than silently store a flash-lite answer under this batch.
+            models_to_try = models_to_try[:1]
 
         last_error = None
         for model_name in models_to_try:

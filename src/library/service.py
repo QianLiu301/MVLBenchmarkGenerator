@@ -543,6 +543,53 @@ def contributors(session) -> Dict:
             'models': [{'provider': p, 'model': m, 'count': c} for p, m, c in models]}
 
 
+STATUS_CLASSES = ('PASS', 'COMPILE_ERROR', 'RUNTIME_ERROR', 'LOGIC_ERROR', 'NO_OUTPUT')
+
+
+def model_matrix(session) -> Dict:
+    """Pass rates per generation model, for the Models page.
+
+    One row per responding model (human-authored files form their own row); per row the
+    verified/total counts by language, by algebraic family, and the golden-model status
+    classes. Only published implementations of published specs are counted, including the
+    failed ones the project's own pipeline keeps (they are the point of the comparison).
+    """
+    rows = session.execute(
+        select(Implementation.source, Implementation.provider, Implementation.model_responded,
+               Implementation.language, Benchmark.logic_family, Implementation.golden_status, func.count())
+        .join(Benchmark, Benchmark.id == Implementation.benchmark_id)
+        .where(Implementation.status == 'published', Benchmark.status == 'published')
+        .group_by(Implementation.source, Implementation.provider, Implementation.model_responded,
+                  Implementation.language, Benchmark.logic_family, Implementation.golden_status)).all()
+    models: Dict[str, Dict] = {}
+    for source, provider, model, lang, family, status, n in rows:
+        if source == 'llm-generated':
+            key = model or provider or 'unknown model'
+            label, sub = key, provider
+        else:
+            key = f'source:{source}'
+            label, sub = SOURCES.get(source, source), None
+        m = models.setdefault(key, {
+            'label': label, 'provider': sub, 'llm': source == 'llm-generated',
+            'total': 0, 'verified': 0,
+            'by_language': {l: [0, 0] for l in LANGUAGES},
+            'by_family': {f: [0, 0] for f in FAMILY_LABELS},
+            'by_status': {c: 0 for c in STATUS_CLASSES},
+        })
+        ok = n if status == 'PASS' else 0
+        m['total'] += n; m['verified'] += ok
+        if lang in m['by_language']:
+            m['by_language'][lang][0] += ok; m['by_language'][lang][1] += n
+        if family in m['by_family']:
+            m['by_family'][family][0] += ok; m['by_family'][family][1] += n
+        m['by_status'][status if status in m['by_status'] else 'NO_OUTPUT'] += n
+    for m in models.values():
+        m['pct'] = round(100 * m['verified'] / m['total']) if m['total'] else 0
+    ordered = sorted(models.values(), key=lambda m: (not m['llm'], -m['total'], m['label']))
+    return {'models': ordered, 'languages': LANGUAGES, 'families': FAMILY_LABELS,
+            'statuses': STATUS_CLASSES}
+
+
 def bump_downloads(session, benchmark: Benchmark = None, impl: Implementation = None):
     if benchmark is not None:
         benchmark.download_count = (benchmark.download_count or 0) + 1
