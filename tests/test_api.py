@@ -93,6 +93,30 @@ def test_filters(client):
     assert client.get('/api/v1/benchmarks?model=nope').get_json()['count'] == 0
 
 
+def test_search_shorthands(client):
+    """What a visitor types into the search box acts as a filter, not as text."""
+    from library import service
+    assert service.parse_query('k=3 vhdl')[0] == {'k_value': '3', 'language': 'vhdl'}
+    assert service.parse_query('ternary')[0] == {'k_value': '3'}
+    assert service.parse_query('GF(4)')[0] == {'logic_family': 'field'}
+    assert service.parse_query('8 digits verified')[0] == {'bitwidth': '8', 'verified': '1'}
+    assert service.parse_query('vhdl failed')[0] == {'language': 'vhdl', 'verified': '0'}
+    # a specification name is a literal, not something to take apart
+    assert service.parse_query('alu_k3_8t') == ({}, 'alu_k3_8t')
+    # free text that means nothing to the parser survives as text
+    assert service.parse_query('adder tree') == ({}, 'adder tree')
+
+    got = client.get('/api/v1/benchmarks?q=k%3D3').get_json()
+    assert got['count'] == 1 and got['benchmarks'][0]['slug'] == 'alu_k3_8t'
+    assert client.get('/api/v1/benchmarks?q=GF(4)').get_json()['benchmarks'][0]['slug'] == 'alu_k4_8t'
+    assert client.get('/api/v1/benchmarks?q=nonsense').get_json()['count'] == 0
+    # an explicit filter wins over the shorthand
+    assert client.get('/api/v1/benchmarks?q=k%3D3&k_value=4').get_json()['benchmarks'][0]['slug'] == 'alu_k4_8t'
+
+    page = client.get('/library?q=k%3D3+vhdl').get_data(as_text=True)
+    assert 'Search read as' in page and 'k = 3' in page and 'VHDL' in page
+
+
 def test_full_and_detail_carry_verification(client):
     d = client.get('/api/v1/benchmarks/alu_k3_8t').get_json()
     impls = {i['language']: i for i in d['implementations']}

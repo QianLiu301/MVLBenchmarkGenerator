@@ -79,7 +79,7 @@
         {% for k, v in current.items() if k != 'q' %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
         {% if sort != 'name' %}<input type="hidden" name="sort" value="{{ sort }}">{% endif %}
         <i data-lucide="search" class="icon"></i>
-        <input type="search" name="q" value="{{ current.get('q', '') }}" placeholder="Search name, title, structure…" aria-label="Search">
+        <input type="search" name="q" value="{{ current.get('q', '') }}" placeholder="Search or filter, e.g. k=3 vhdl, GF(4), 8 digits" aria-label="Search">
     </form>
     <label class="small muted" for="sortSel">Sort</label>
     <select id="sortSel" onchange="location.href=this.value">
@@ -91,6 +91,13 @@
 </div>
 
 <div class="drawer-backdrop" id="drawerBackdrop"></div>
+{% if query_terms and query_terms|length > 1 or (query_terms and query_terms[0].field != 'q') %}
+<p class="read-as small muted">Search read as
+    {% for t in query_terms %}<span class="chip">{{ t.label }}</span>{% endfor %}
+    <a href="{{ url_for('library.browse') }}">clear</a>
+</p>
+{% endif %}
+
 <div class="browse">
     <aside class="filters" id="filters" aria-label="Filters">
         <div class="drawer-head">Filters <button class="btn btn-outline btn-sm" id="filterClose" aria-label="Close filters"><i data-lucide="x" class="icon"></i></button></div>

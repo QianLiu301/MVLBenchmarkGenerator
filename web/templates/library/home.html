@@ -8,7 +8,7 @@
     <p>Specifications and implementations in C, Python, Verilog and VHDL, each checked against an independent reference model.</p>
     <form class="search" action="{{ url_for('library.browse') }}" method="get" role="search">
         <i data-lucide="search" class="icon"></i>
-        <input type="search" name="q" placeholder="Search by name, radix or structure, e.g. alu_k3, GF(4)[x]" aria-label="Search benchmarks">
+        <input type="search" name="q" placeholder="Search or filter, e.g. k=3 vhdl, GF(4), 8 digits" aria-label="Search benchmarks">
     </form>
     <div class="hero-actions">
         <a href="{{ url_for('library.browse') }}" class="btn btn-primary btn-lg"><i data-lucide="library" class="icon"></i> Browse library</a>

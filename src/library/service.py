@@ -447,7 +447,84 @@ FILTER_FIELDS = ('module_type', 'k_value', 'bitwidth', 'logic_family')
 IMPL_FILTERS = ('language', 'source', 'verified', 'model')
 
 
+_Q_LANGUAGES = {'c': 'c', 'python': 'python', 'py': 'python', 'verilog': 'verilog', 'vhdl': 'vhdl'}
+_Q_LABELS = {'k_value': 'k = {}', 'bitwidth': '{} digits', 'module_type': '{}',
+             'logic_family': '{}', 'language': '{}', 'verified': '{}'}
+
+
+def parse_query(q: str) -> Tuple[Dict, str]:
+    """Read the shorthands a visitor actually types into a search box.
+
+    'k=3 vhdl' or 'GF(4) verified' should filter, not look for those characters in a
+    description. Returns (filters, leftover text); the leftover is matched as text.
+    A specification name such as alu_k3_8t is left alone — it is already a literal.
+    """
+    text = (q or '').strip()
+    if not text or re.search(r'[a-z]+_k\d', text, re.I):
+        return {}, text
+    found: Dict[str, str] = {}
+    rest = text
+
+    def take(pattern, field, value=None, group=1):
+        nonlocal rest
+        m = re.search(pattern, rest, re.I)
+        if m and field not in found:
+            found[field] = value if value is not None else m.group(group)
+            rest = (rest[:m.start()] + ' ' + rest[m.end():])
+        return bool(m)
+
+    take(r'\bk\s*=?\s*(\d+)\b', 'k_value')
+    take(r'\bradix\s*(\d+)\b', 'k_value')
+    for k, name in RADIX_NAMES.items():          # "ternary" means k = 3
+        if 'k_value' in found:
+            break
+        take(r'\b' + name + r'\b', 'k_value', str(k))
+    take(r'\b(\d+)\s*(?:digits?|trits?|t)\b', 'bitwidth')
+    take(r'\bn\s*=\s*(\d+)\b', 'bitwidth')
+    if not take(r'\bgf\s*\(?\s*\d*\s*\)?', 'logic_family', 'field'):
+        take(r'\b(?:modular|z/?k)\b', 'logic_family', 'modular')
+    take(r'\balus?\b', 'module_type', 'alu')
+    take(r'\b(?:register\s*file|regfile)\b', 'module_type', 'register')
+    if not take(r'\b(?:unverified|failed|not\s+verified)\b', 'verified', '0'):
+        take(r'\bverified\b', 'verified', '1')
+    for word, lang in _Q_LANGUAGES.items():
+        if 'language' in found:
+            break
+        take(r'\b' + word + r'\b', 'language', lang)
+
+    return found, ' '.join(rest.split())
+
+
+def query_terms(q: str, labels: Dict = None) -> List[Dict]:
+    """The parsed query as chips for the page: [{field, value, label}]."""
+    found, rest = parse_query(q)
+    labels = labels or {}
+    out = []
+    for field, value in found.items():
+        if field == 'verified':
+            label = 'verified' if value == '1' else 'did not pass'
+        elif field == 'logic_family':
+            label = FAMILY_LABELS.get(value, value).split(' — ')[0]
+        elif field == 'language':
+            label = LANGUAGES.get(value, value)
+        elif field == 'module_type':
+            label = MODULE_TYPES.get(value, value)
+        else:
+            label = _Q_LABELS.get(field, '{}').format(value)
+        out.append({'field': field, 'value': value, 'label': label})
+    if rest:
+        out.append({'field': 'q', 'value': rest, 'label': f'text “{rest}”'})
+    return out
+
+
 def _apply_filters(stmt, filters: Dict):
+    # shorthands typed into the search box act as filters; an explicit filter wins
+    filters = dict(filters)
+    parsed, leftover = parse_query(filters.get('q') or '')
+    for field, value in parsed.items():
+        if not filters.get(field):
+            filters[field] = value
+    filters['q'] = leftover
     for field in FILTER_FIELDS:
         val = filters.get(field)
         if val not in (None, '', 'all'):

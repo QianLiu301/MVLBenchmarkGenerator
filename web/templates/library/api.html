@@ -41,7 +41,7 @@
             <tr><td class="mono">source</td><td><code>llm-generated</code>, <code>human-authored</code>, <code>reference</code></td><td>Provenance</td></tr>
             <tr><td class="mono">verified</td><td><code>1</code>, <code>0</code></td><td><code>1</code>: specs with a verified implementation · <code>0</code>: specs with one that did not pass</td></tr>
             <tr><td class="mono">model</td><td>a responding model name, e.g. <code>gpt-5-2025-08-07</code></td><td>Specs with an implementation from that model (see <a href="{{ url_for('library.models') }}">generation models</a>)</td></tr>
-            <tr><td class="mono">q</td><td>free text</td><td>Search name, structure, description</td></tr>
+            <tr><td class="mono">q</td><td>free text and shorthands</td><td>Matches name, structure and description; <code>k=3</code>, <code>ternary</code>, <code>8 digits</code>, <code>GF(4)</code>, <code>vhdl</code>, <code>verified</code> act as the corresponding filters</td></tr>
             <tr><td class="mono">sort</td><td><code>name</code>, <code>k</code>, <code>digits</code>, <code>date</code></td><td>Order (default <code>name</code>)</td></tr>
             <tr><td class="mono">limit, offset</td><td>1 … {{ max_limit }}, ≥ 0</td><td>Paging (default limit {{ page_size }})</td></tr>
             <tr><td class="mono">full</td><td><code>1</code></td><td>Include the implementation list in each item</td></tr>

@@ -69,6 +69,7 @@ def browse():
         return render_template('library/browse.html', benchmarks=benchmarks, total=total,
                                page=page, pages=pages, sort=sort, current=current,
                                facets=facets, download_mode=download_mode,
+                               query_terms=service.query_terms(current.get('q', '')),
                                selection=selection, summary=summary, **_LABELS)
 
 

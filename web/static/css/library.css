@@ -490,6 +490,7 @@ details.selection:not([open]) > summary .sel-caret { transform: rotate(180deg); 
 details.selection[open] > summary { margin-bottom: 14px; }
 details.selection > summary:hover .section-title { color: var(--link-hover); }
 
+.read-as { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; }
 .sel-legend { margin: 0 0 12px; }
 .cat-unit { margin-left: auto; font-weight: 500; }
 
