@@ -46,7 +46,7 @@ License: CC BY 4.0 (LICENSE.txt) — cite CITATION.bib{(' — DOI ' + release['d
 
 - {n_specs} specifications, {n_impls} implementations ({stats['verified']} verified, {stats['verified_pct']} %)
 - Benchmark format v{service.FORMAT_VERSION} (https://llm-mvl.com/format)
-- Reference model v{GOLDEN_MODEL_VERSION} (src/golden_model.py, src/galois_field.py of the generator repository)
+- Reference model v{GOLDEN_MODEL_VERSION} (https://llm-mvl.com/format#reference-model)
 - One directory per specification: `spec.json` (parameters, operations, per-file verification
   summary, SHA-256) and the implementation files. When a language has several
   implementations the file name carries the source and id, e.g. `alu_k3_8t_gemini_106.v`.

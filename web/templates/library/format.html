@@ -18,7 +18,12 @@
         <li><code>regfile_k3_8t_r16</code> — register file with 16 registers</li>
         <li><code>cpu_k3_8t_p5</code> — 5-stage processor</li>
     </ul>
-    <p>Implementation files carry the specification name and the language extension: <code>alu_k3_8t.c</code>, <code>.py</code>, <code>.v</code>, <code>.vhd</code>.</p>
+    <p>
+        Each implementation file carries the name of its specification and the customary extension of
+        its language, so the implementations of one specification never collide. When a specification
+        has several implementations in the same language, the file name also carries their source and
+        identifier.
+    </p>
 
     <h2 id="semantics">2. Reference semantics</h2>
     <p>
@@ -58,27 +63,42 @@
 
     <h2 id="reference-model">3. Reference model (golden model)</h2>
     <p>
-        The two families above are implemented once, in plain Python, in
-        <a href="https://github.com/QianLiu301/MVLBenchmarkGenerator/blob/main/src/golden_model.py" target="_blank" rel="noopener"><code>src/golden_model.py</code></a> and
-        <a href="https://github.com/QianLiu301/MVLBenchmarkGenerator/blob/main/src/galois_field.py" target="_blank" rel="noopener"><code>src/galois_field.py</code></a>.
-        It is written directly from the definitions in §2, has no dependency on any language model, and is the only
+        The two families above are implemented once, as a small program written directly from the
+        definitions in §2 — the operation tables of GF(q) and the word-level operations of both
+        families, and nothing else. It does not use any language model, any benchmark of this library
+        or any hardware simulator, so it is independent of everything it checks, and it is the only
         oracle used in step 3 of the <a href="{{ url_for('library.review') }}">review process</a>.
+        It is versioned: a correction changes the version, and every verification record states the
+        version it was produced with.
     </p>
     <dl class="record">
         <dt>Current version</dt><dd class="mono">v{{ golden_version }}</dd>
-        <dt>SHA-256</dt><dd class="mono small">golden_model.py {{ golden_sha[:16] }}… · galois_field.py {{ field_sha[:16] }}…</dd>
+        <dt>Fingerprint</dt><dd class="mono small">SHA-256 · arithmetic {{ golden_sha[:16] }}… · field tables {{ field_sha[:16] }}…</dd>
         <dt>How it is validated</dt>
         <dd>
-            <a href="https://github.com/QianLiu301/MVLBenchmarkGenerator/blob/main/tests/test_golden_model.py" target="_blank" rel="noopener"><code>tests/test_golden_model.py</code></a> pins it to definitions that are independent of our code:
-            family M is compared exhaustively (small k<sup>n</sup>) or with 20 000 seeded pairs against Python integer arithmetic;
-            the GF(q) addition and multiplication tables are compared row by row with the independent <code>galois</code> package
-            under the same irreducible polynomial; family F word operations are compared with a separate polynomial-ring implementation;
-            and the ring/field axioms (associativity, commutativity, distributivity, identities, inverses, SUB∘ADD = id,
-            NEG = SUB(0, ·), INC = ADD(·, 1)) are checked directly. k = 2 must reproduce the ordinary binary ALU.
+            A reference model is only useful if something independent pins it down, so it is checked
+            against four things that do not come from this project:
+            <ul>
+                <li><strong>Ordinary integer arithmetic.</strong> Family M is compared with the
+                    language's own arbitrary-precision integers — exhaustively for small k<sup>n</sup>,
+                    otherwise over 20 000 seeded operand pairs.</li>
+                <li><strong>An independent Galois-field library.</strong> The addition and
+                    multiplication tables of GF(q) are compared entry by entry with the
+                    <a href="https://github.com/mhostetter/galois" target="_blank" rel="noopener">galois</a>
+                    package under the same irreducible polynomial.</li>
+                <li><strong>The algebraic axioms themselves.</strong> Associativity, commutativity,
+                    distributivity, identities and inverses are verified directly, together with the
+                    relations that tie the operations together: SUB after ADD is the identity,
+                    NEG is SUB from zero, INC is ADD of one.</li>
+                <li><strong>The binary special case.</strong> At k = 2 the model must reproduce an
+                    ordinary binary ALU, including the carry and borrow rules.</li>
+            </ul>
+            The suite runs on every change; a mismatch is a defect in the reference model, not in the
+            benchmark under test, and is fixed with a new version.
         </dd>
         <dt>Version history</dt>
         <dd>
-            <strong>v1.1</strong> (2026-09-21) — the cross-check found that polynomial reduction indexed the irreducible polynomial backwards, which only affected non-palindromic polynomials (GF(8), GF(16)); GF(4) and GF(9), the only fields used by published entries, were unaffected. Fixed; validation suite added.<br>
+            <strong>v1.1</strong> (2026-09-21) — the cross-check against the independent field library found that polynomial reduction used the irreducible polynomial in reverse order. Only non-palindromic polynomials were affected (GF(8), GF(16)); GF(4) and GF(9), the only fields behind published entries, were not. Fixed, and the validation described above was added.<br>
             <strong>v1.0</strong> — initial release with the ISMVL 2026 paper. Every verification record states the version it was produced with.
         </dd>
     </dl>
@@ -102,8 +122,15 @@ Test  2: SUB A=6560 B=1 -> R=6559 Z=0 N=1 C=0</pre>
         <tr><td>VHDL</td><td class="mono">entity mvl_alu_&lt;k&gt;_&lt;n&gt;bit with the same ports (std_logic / std_logic_vector)</td><td>the testbench entity is replaced; the harness drives <code>rst = '1'</code> for two clock periods, then applies each vector for two periods; not applicable when k<sup>n</sup> &gt; 2<sup>31</sup>−1 (32-bit integer I/O)</td></tr>
     </table></div>
 
-    <h2 id="manifest">5. Manifest (<code>manifest.json</code>)</h2>
-    <p>Submissions bundle their files with a manifest. The schema is published at <a href="{{ url_for('submit.manifest_schema') }}">/submit/manifest-schema.json</a>; a template is available on the <a href="{{ url_for('submit.form') }}">Submit page</a>.</p>
+    <h2 id="manifest">5. Manifest</h2>
+    <p>
+        A submission bundles its files with a manifest that declares the specification, the files and
+        their languages, the provenance and the license. It is validated against a
+        <a href="{{ url_for('submit.manifest_schema') }}">published JSON Schema</a> before anything else
+        runs, and the <a href="{{ url_for('submit.form') }}">Submit page</a> offers a filled template to
+        start from. The same manifest travels inside every download archive, listing the files with
+        their checksums.
+    </p>
     <pre class="bibtex">{{ template_json }}</pre>
 
     <h2 id="record">6. Verification record</h2>
