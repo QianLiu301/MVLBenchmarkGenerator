@@ -1,8 +1,9 @@
 {# A category panel: a titled box of grouped links with counts, closing with "All … (n)".
    Modelled on RevLib's Functions / Circuit Realizations boxes. #}
-{% macro category_panel(title, icon, panel, all_label, all_args) %}
+{% macro category_panel(title, icon, panel, all_label, all_args, unit) %}
 <section class="cat-panel">
-    <h2 class="cat-head"><i data-lucide="{{ icon }}" class="icon"></i> {{ title }}</h2>
+    <h2 class="cat-head"><i data-lucide="{{ icon }}" class="icon"></i> {{ title }}
+        <span class="cat-unit small muted">counts: {{ unit }}</span></h2>
     <div class="cat-body">
         {% for group in panel.groups %}
             {% if group['items'] %}

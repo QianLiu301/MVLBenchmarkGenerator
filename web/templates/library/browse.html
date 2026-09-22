@@ -38,6 +38,7 @@
         <i data-lucide="chevron-up" class="icon sel-caret"></i>
     </summary>
     <form id="selForm" method="get" action="{{ url_for('library.download_selection') }}">
+        <p class="sel-legend small muted">Each number is how many <strong>specifications</strong> match; they update as you choose. Options that cannot combine with the rest drop to zero.</p>
         <div class="sel-grid">
             {% macro selgroup(field, title, rows, labels, kind='') -%}
             <fieldset>

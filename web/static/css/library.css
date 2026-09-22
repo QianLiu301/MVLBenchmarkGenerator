@@ -490,6 +490,9 @@ details.selection:not([open]) > summary .sel-caret { transform: rotate(180deg); 
 details.selection[open] > summary { margin-bottom: 14px; }
 details.selection > summary:hover .section-title { color: var(--link-hover); }
 
+.sel-legend { margin: 0 0 12px; }
+.cat-unit { margin-left: auto; font-weight: 500; }
+
 /* Download by selection: options that cannot combine with the rest */
 label.check.zero { color: var(--text-muted); opacity: .55; cursor: not-allowed; }
 label.check.zero .n { color: var(--text-muted); }
