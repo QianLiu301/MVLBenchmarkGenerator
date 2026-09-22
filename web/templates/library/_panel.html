@@ -1,0 +1,32 @@
+{# A category panel: a titled box of grouped links with counts, closing with "All … (n)".
+   Modelled on RevLib's Functions / Circuit Realizations boxes. #}
+{% macro category_panel(title, icon, panel, all_label, all_args) %}
+<section class="cat-panel">
+    <h2 class="cat-head"><i data-lucide="{{ icon }}" class="icon"></i> {{ title }}</h2>
+    <div class="cat-body">
+        {% for group in panel.groups %}
+            {% if group['items'] %}
+            <div class="cat-group">
+                <span class="cat-group-title">{{ group.title }}</span>
+                <ul class="cat-list {{ 'inline' if group.inline }}">
+                    {% for item in group['items'] %}
+                    <li>
+                        {% if item.url_args %}
+                        <a href="{{ url_for('library.browse', **item.url_args) }}">{{ item.label }}</a>
+                        <span class="n">({{ item.count }})</span>
+                        {% else %}
+                        <span class="muted">{{ item.label }}</span>
+                        <span class="n muted">({{ item.note }})</span>
+                        {% endif %}
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+        {% endfor %}
+    </div>
+    <div class="cat-foot">
+        <a href="{{ url_for('library.browse', **all_args) }}">{{ all_label }} <span class="n">({{ panel.total }})</span></a>
+    </div>
+</section>
+{% endmacro %}

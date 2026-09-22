@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% set nav = 'about' %}
+{% block title %}Announcements — MVL Benchmark Library{% endblock %}
+{% block content %}
+<div class="prose">
+    <h1>Announcements</h1>
+    <p>
+        Release notes for the library: new data, format or reference-model versions, and changes to
+        the review rules. Additions to the collection itself are visible in the
+        <a href="{{ url_for('library.browse', sort='date') }}">library sorted by date</a>.
+    </p>
+
+    {% if news %}
+    <ul class="news-list wide">
+        {% for n in news %}
+        <li>
+            <time class="num" datetime="{{ n.date.strftime('%Y-%m-%d') }}">{{ n.date.strftime('%Y-%m-%d') }}</time>
+            {% if n.link %}<a href="{{ n.link }}">{{ n.title }}</a>{% else %}<span>{{ n.title }}</span>{% endif %}
+            {% if n.body_md %}<p class="small muted">{{ n.body_md }}</p>{% endif %}
+        </li>
+        {% endfor %}
+    </ul>
+    {% else %}
+    <p class="muted">No announcements yet.</p>
+    {% endif %}
+</div>
+{% endblock %}

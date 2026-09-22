@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% set nav = 'docs' %}
+{% block title %}Documentation — MVL Benchmark Library{% endblock %}
+{% block content %}
+<div class="prose">
+    <h1>Documentation</h1>
+    <p>
+        Everything that defines what is in the library and how it is checked. The format and the
+        reference model are versioned; the review rules are the rules the pipeline actually implements.
+    </p>
+</div>
+
+<div class="doc-grid">
+    <a class="doc-card" href="{{ url_for('library.getting_started') }}">
+        <h2><i data-lucide="play" class="icon"></i> Getting started</h2>
+        <p>Where to get the files, what an archive contains, how to compile and simulate each language,
+           and how to drive a benchmark from your own testbench.</p>
+    </a>
+    <a class="doc-card" href="{{ url_for('library.format') }}">
+        <h2><i data-lucide="file-text" class="icon"></i> Benchmark format v{{ format_version }}</h2>
+        <p>Naming, the two algebraic families and their exact operation semantics, the reference model
+           and its provenance, the test-output convention, the manifest and the archive layout.</p>
+    </a>
+    <a class="doc-card" href="{{ url_for('library.review') }}">
+        <h2><i data-lucide="shield-check" class="icon"></i> Review process</h2>
+        <p>The seven steps of the pipeline, what each one checks, what makes a submission fail,
+           the 14-day maintainer decision and what a verified badge does and does not claim.</p>
+    </a>
+    <a class="doc-card" href="{{ url_for('library.models') }}">
+        <h2><i data-lucide="bar-chart-3" class="icon"></i> Generation models</h2>
+        <p>Pass rates of the models that produced the implementations, by language, by algebraic
+           family and by failure class — all on identical specifications.</p>
+    </a>
+    <a class="doc-card" href="{{ url_for('library.api_docs') }}">
+        <h2><i data-lucide="code-2" class="icon"></i> JSON API</h2>
+        <p>Read-only endpoints for the specifications, their implementations and the verification
+           records, with the same filters as the browse page. No key required.</p>
+    </a>
+    <a class="doc-card" href="{{ url_for('library.cite') }}">
+        <h2><i data-lucide="quote" class="icon"></i> Citing the library</h2>
+        <p>BibTeX for the paper and for the archived data release, the license, and what each
+           download archive carries with it.</p>
+    </a>
+</div>
+
+<div class="prose">
+    <p class="small muted">
+        Current versions: benchmark format v{{ format_version }} · reference model v{{ golden_version }} ·
+        data release {{ release.version }}{% if release.doi %} (<a href="{{ release.doi_url }}" target="_blank" rel="noopener">doi:{{ release.doi }}</a>){% endif %}.
+    </p>
+</div>
+{% endblock %}

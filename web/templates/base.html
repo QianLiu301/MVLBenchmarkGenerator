@@ -24,7 +24,17 @@
             <nav class="site-nav" id="siteNav">
                 <a href="{{ url_for('library.browse') }}" class="{{ 'active' if nav == 'library' else '' }}">Library</a>
                 <a href="{{ url_for('submit.form') }}" class="{{ 'active' if nav == 'submit' else '' }}">Submit</a>
-                <a href="{{ url_for('generate_page') }}" class="{{ 'active' if nav == 'generate' else '' }}">Generate</a>
+                <div class="nav-drop" id="docsMenu">
+                    <a href="{{ url_for('library.docs') }}" class="{{ 'active' if nav == 'docs' else '' }}">Docs
+                        <i data-lucide="chevron-down" class="icon-sm icon drop-caret"></i></a>
+                    <div class="menu">
+                        <a href="{{ url_for('library.getting_started') }}">Getting started</a>
+                        <a href="{{ url_for('library.format') }}">Benchmark format v{{ format_version }}</a>
+                        <a href="{{ url_for('library.review') }}">Review process</a>
+                        <a href="{{ url_for('library.models') }}">Generation models</a>
+                        <a href="{{ url_for('library.api_docs') }}">API</a>
+                    </div>
+                </div>
                 <a href="{{ url_for('library.about') }}" class="{{ 'active' if nav == 'about' else '' }}">About</a>
                 <div class="user-menu" id="userMenu">
                     <button type="button" aria-haspopup="true" aria-expanded="false">
@@ -39,7 +49,7 @@
                         <a href="{{ url_for('generate_page') }}"><i data-lucide="sparkles" class="icon-sm icon"></i> Generator</a>
                         <a href="{{ url_for('auth.logout') }}"><i data-lucide="log-out" class="icon-sm icon"></i> Sign out</a>
                         {% else %}
-                        <span>Generator and review are restricted</span>
+                        <span>Generator and review queue are restricted</span>
                         <a href="{{ url_for('auth.login', next=request.path) }}"><i data-lucide="log-in" class="icon-sm icon"></i> Sign in</a>
                         {% endif %}
                     </div>
@@ -64,15 +74,16 @@
                 <a href="https://www.linkedin.com/in/qian-liu-0707482bb/" target="_blank" rel="noopener">Qian Liu</a>
             </div>
             <div class="footer-links">
-                <a href="{{ url_for('library.getting_started') }}">Getting started</a>
-                <a href="{{ url_for('library.api_docs') }}">API</a>
-                <a href="{{ url_for('library.format') }}">Format v1.0</a>
-                <a href="{{ url_for('library.review') }}">Review process</a>
-                <a href="{{ url_for('library.models') }}">Models</a>
-                <a href="{{ url_for('library.acknowledgements') }}">Acknowledgements</a>
                 <a href="{{ url_for('library.cite') }}">Cite</a>
                 <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">License (CC BY 4.0)</a>
+                <a href="{{ url_for('library.acknowledgements') }}">Acknowledgements</a>
                 <a href="#" id="legalLink">Imprint / Legal notice</a>
+            </div>
+            <div class="footer-status">
+                Release {{ site_status.release.version }}{% if site_status.release.date %} ({{ site_status.release.date }}){% endif %} ·
+                {{ site_status.benchmarks }} specification{{ '' if site_status.benchmarks == 1 else 's' }} ·
+                {{ site_status.implementations }} implementation{{ '' if site_status.implementations == 1 else 's' }} ·
+                format v{{ format_version }} · reference model v{{ golden_version }}
             </div>
         </div>
     </footer>
@@ -117,7 +128,21 @@
             const menu = document.getElementById('userMenu');
             const btn = menu.querySelector('button');
             btn.addEventListener('click', e => { e.stopPropagation(); const open = menu.classList.toggle('open'); btn.setAttribute('aria-expanded', open); });
-            document.addEventListener('click', () => { menu.classList.remove('open'); btn.setAttribute('aria-expanded', 'false'); });
+
+            // Docs: hover opens it on a mouse, the caret toggles it on touch; the label
+            // itself stays a link to the docs index so it works without JavaScript.
+            const docs = document.getElementById('docsMenu');
+            const caret = docs.querySelector('.drop-caret');
+            if (caret) {
+                caret.addEventListener('click', e => {
+                    e.preventDefault(); e.stopPropagation();
+                    docs.classList.toggle('open');
+                });
+            }
+            document.addEventListener('click', () => {
+                menu.classList.remove('open'); btn.setAttribute('aria-expanded', 'false');
+                docs.classList.remove('open');
+            });
 
             const navToggle = document.getElementById('navToggle');
             const nav = document.getElementById('siteNav');

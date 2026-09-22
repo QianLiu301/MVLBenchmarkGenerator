@@ -121,4 +121,8 @@ def test_docs_pages_render(client):
     started = client.get('/getting-started').get_data(as_text=True)
     assert 'ghdl -a --std=08' in started and 'alu_exec' in started
     home = client.get('/').get_data(as_text=True)
-    assert 'Browse by parameter' in home and 'Getting started' in home
+    assert 'What is the MVL Benchmark Library?' in home      # identity panel
+    assert 'All specifications' in home and 'All implementations' in home   # category panels
+    assert 'Getting started' in home and 'How it is verified' in home       # path cards
+    docs = client.get('/docs').get_data(as_text=True)
+    assert 'Benchmark format' in docs and 'Review process' in docs

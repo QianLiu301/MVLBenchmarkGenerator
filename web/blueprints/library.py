@@ -39,8 +39,11 @@ def home():
         modules = service.module_counts(s)
         news = list(s.execute(select(News).where(News.status == 'published')
                               .order_by(News.date.desc()).limit(3)).scalars())
+        categories = service.home_categories(s)
+        n_models = len(categories['implementations']['groups'][-1]['items'])
         return render_template('library/home.html', stats=service.stats(s),
-                               modules=modules, module=module, facets=service.facets(s),
+                               modules=modules, module=module, categories=categories,
+                               model_count=n_models, release=service.release_info(),
                                latest=service.latest_benchmarks(s, 10, module),
                                news=news, bibtex=service.citation_bibtex(), **_LABELS)
 
@@ -180,6 +183,19 @@ def download_all():
 @bp.route('/about')
 def about():
     return render_template('library/about.html')
+
+
+@bp.route('/docs')
+def docs():
+    return render_template('library/docs.html', release=service.release_info())
+
+
+@bp.route('/news')
+def news():
+    with session_scope() as s:
+        rows = list(s.execute(select(News).where(News.status == 'published')
+                              .order_by(News.date.desc())).scalars())
+        return render_template('library/news.html', news=rows)
 
 
 @bp.route('/cite')

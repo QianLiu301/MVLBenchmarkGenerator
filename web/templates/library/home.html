@@ -1,10 +1,11 @@
 {% extends "base.html" %}
+{% from "library/_panel.html" import category_panel %}
 {% set nav = 'home' %}
 {% block title %}MVL Benchmark Library — An Online Resource for Multi-Valued Logic Benchmarks{% endblock %}
 {% block content %}
-<section class="hero">
+<section class="hero hero-compact">
     <h1>An Online Resource for <span class="accent">Multi-Valued Logic</span> Benchmarks</h1>
-    <p>Reference specifications and implementations for MVL research, in C, Python, Verilog and VHDL — each checked against an independent golden model and published with a reproducible verification record.</p>
+    <p>Specifications and implementations in C, Python, Verilog and VHDL, each checked against an independent reference model.</p>
     <form class="search" action="{{ url_for('library.browse') }}" method="get" role="search">
         <i data-lucide="search" class="icon"></i>
         <input type="search" name="q" placeholder="Search by name, radix or structure, e.g. alu_k3, GF(4)[x]" aria-label="Search benchmarks">
@@ -12,62 +13,71 @@
     <div class="hero-actions">
         <a href="{{ url_for('library.browse') }}" class="btn btn-primary btn-lg"><i data-lucide="library" class="icon"></i> Browse library</a>
         <a href="{{ url_for('submit.form') }}" class="btn btn-outline btn-lg"><i data-lucide="upload" class="icon"></i> Submit a benchmark</a>
-        <a href="{{ url_for('library.browse', mode='download') }}" class="text-link"><i data-lucide="download" class="icon"></i> Download by selection</a>
     </div>
 </section>
 
-<section class="about-line">
-    <p>The MVL Benchmark Library collects specifications and reference implementations of multi-valued logic designs — starting with arithmetic-logic units over Z/kⁿZ (radix-k integer arithmetic) and GF(q)[x]/(xⁿ) (Galois-field arithmetic) — in C, Python, Verilog and VHDL. Each implementation is checked against an independent golden model and published with its verification record. <a href="{{ url_for('library.getting_started') }}">Getting started</a> · <a href="{{ url_for('library.models') }}">Compare generation models</a> · <a href="{{ url_for('library.about') }}">More about the library</a></p>
-</section>
+<div class="intro-row">
+    <section class="intro-panel">
+        <h2 class="panel-head"><i data-lucide="book-open" class="icon"></i> What is the MVL Benchmark Library?</h2>
+        <div class="panel-body">
+            <p class="lead">A reference collection of verified benchmarks for multi-valued logic design.</p>
+            <p>
+                The library collects specifications of multi-valued arithmetic — currently arithmetic-logic
+                units over the ring Z/kⁿZ (radix-k integer arithmetic with carry) and over GF(q)[x]/(xⁿ)
+                (digit-wise Galois-field arithmetic) — together with implementations of each specification
+                in C, Python, Verilog and VHDL.
+            </p>
+            <p>
+                Every implementation is compiled or simulated and compared, vector by vector, with an
+                independent reference model, and is published with the verification record that produced
+                it: tool versions, vector count, seed and file checksum. Nothing is published as correct
+                because a model or an author said so.
+                <a href="{{ url_for('library.review') }}">How it is verified</a> ·
+                <a href="{{ url_for('library.format') }}">Benchmark format</a>
+            </p>
+            <p>
+                The files are meant for anyone who needs realistic non-binary designs: authors of synthesis
+                and verification tools, researchers comparing multi-valued arithmetic, and anyone measuring
+                how well code generators handle non-binary hardware.
+            </p>
+            <p class="invite">
+                Contributions are welcome — a submission runs through the same pipeline and a maintainer
+                decides within 14 days. <a href="{{ url_for('submit.form') }}">Submit a benchmark</a>
+            </p>
+        </div>
+    </section>
 
-<section class="drilldown">
-    <h2 class="section-title">Browse by parameter</h2>
-    <div class="drill-row">
-        <div class="drill-group">
-            <span class="drill-label">Radix k</span>
-            <div class="chip-row">
-                {% for f in facets.k_value %}
-                <a href="{{ url_for('library.browse', k_value=f.value) }}" class="filter-chip">{{ f.value }} <span class="n">{{ f.specs }}</span></a>
-                {% endfor %}
-            </div>
-        </div>
-        <div class="drill-group">
-            <span class="drill-label">Digits</span>
-            <div class="chip-row">
-                {% for f in facets.bitwidth %}
-                <a href="{{ url_for('library.browse', bitwidth=f.value) }}" class="filter-chip">{{ f.value }} <span class="n">{{ f.specs }}</span></a>
-                {% endfor %}
-            </div>
-        </div>
-        <div class="drill-group">
-            <span class="drill-label">Structure</span>
-            <div class="chip-row">
-                {% for f in facets.logic_family %}
-                <a href="{{ url_for('library.browse', logic_family=f.value) }}" class="filter-chip">{{ family_labels[f.value].split(' — ')[0] }} <span class="n">{{ f.specs }}</span></a>
-                {% endfor %}
-            </div>
-        </div>
-        <div class="drill-group">
-            <span class="drill-label">Language</span>
-            <div class="chip-row">
-                {% for f in facets.language %}
-                <a href="{{ url_for('library.browse', language=f.value) }}" class="filter-chip">{{ language_labels[f.value] }} <span class="n">{{ f.impls }}</span></a>
-                {% endfor %}
-            </div>
-        </div>
-    </div>
-</section>
+    <aside class="glance-panel">
+        <h2 class="panel-head"><i data-lucide="bar-chart-3" class="icon"></i> At a glance</h2>
+        <dl class="glance">
+            <dt>Specifications</dt><dd><a href="{{ url_for('library.browse') }}">{{ stats.benchmarks }}</a></dd>
+            <dt>Implementations</dt><dd>{{ stats.implementations }}</dd>
+            <dt>Verified</dt><dd><a href="{{ url_for('library.browse', verified='1') }}">{{ stats.verified }}</a> <span class="muted small">({{ stats.verified_pct }} %)</span></dd>
+            <dt>Languages</dt><dd>{{ language_labels|length }}</dd>
+            <dt>Generation models</dt><dd><a href="{{ url_for('library.models') }}">{{ model_count }}</a></dd>
+        </dl>
+        <p class="glance-foot small">
+            Release {{ release.version }}{% if release.date %} · {{ release.date }}{% endif %}<br>
+            {% if release.doi %}<a href="{{ release.doi_url }}" target="_blank" rel="noopener">doi:{{ release.doi }}</a>{% else %}DOI pending{% endif %}
+        </p>
+    </aside>
+</div>
+
+<div class="cat-row">
+    {{ category_panel('Specifications', 'file-code-2', categories.specifications, 'All specifications', {}) }}
+    {{ category_panel('Implementations', 'layers', categories.implementations, 'All implementations', {}) }}
+</div>
 
 <section class="home-benchmarks">
     <div class="section-head">
-        <h2 class="section-title">Benchmarks</h2>
+        <h2 class="section-title">Latest benchmarks</h2>
         <div class="chip-row" role="group" aria-label="Filter by module type">
             <a href="{{ url_for('library.home') }}" class="filter-chip {{ 'active' if not module }}">All <span class="n">{{ stats.benchmarks }}</span></a>
             {% for m in modules %}
                 {% if m.specs %}
                 <a href="{{ url_for('library.home', module=m.value) }}" class="filter-chip {{ 'active' if module == m.value }}">{{ m.label }} <span class="n">{{ m.specs }}</span></a>
                 {% else %}
-                <span class="filter-chip disabled" aria-disabled="true" title="No published benchmarks yet">{{ m.label }} <span class="n">0</span></span>
+                <span class="filter-chip disabled" aria-disabled="true" title="Planned module type">{{ m.label }} <span class="n">planned</span></span>
                 {% endif %}
             {% endfor %}
         </div>
@@ -106,7 +116,7 @@
                     <div class="badges">
                     {% for lang, st in b.language_status().items() %}
                         {% set of_lang = b.published_implementations|selectattr('language', 'equalto', lang)|list %}
-                        <span class="badge {{ st }}" title="{{ language_labels[lang] }}: {{ {'verified': 'verified against the golden model', 'pending': 'pending review', 'unverified': 'did not pass the golden-model check'}[st] }}{% if of_lang|length > 1 %} · {{ of_lang|length }} implementations{% endif %}"><span class="dot"></span>{{ language_labels[lang] }}</span>
+                        <span class="badge {{ st }}" title="{{ language_labels[lang] }}: {{ {'verified': 'verified against the reference model', 'pending': 'pending review', 'unverified': 'did not pass the reference-model check'}[st] }}{% if of_lang|length > 1 %} · {{ of_lang|length }} implementations{% endif %}"><span class="dot"></span>{{ language_labels[lang] }}</span>
                     {% endfor %}
                     </div>
                 </td>
@@ -117,15 +127,33 @@
     </table>
     </div>
     <div class="table-foot">
-        <span class="legend-line"><span class="badge verified"><span class="dot"></span>Teal badge</span> verified against the golden model · <span class="badge pending"><span class="dot"></span>Amber badge</span> pending review · <span class="badge unverified"><span class="dot"></span>Grey badge</span> did not pass</span>
+        <span class="legend-line"><span class="badge verified"><span class="dot"></span>Teal badge</span> verified against the reference model · <span class="badge pending"><span class="dot"></span>Amber badge</span> pending review · <span class="badge unverified"><span class="dot"></span>Grey badge</span> did not pass</span>
         <a href="{{ url_for('library.browse', module_type=module) if module else url_for('library.browse') }}">View all benchmarks</a>
     </div>
     {% else %}
     <div class="table-wrap">
-        <div class="empty-row">No benchmarks are published yet. <a href="{{ url_for('submit.form') }}">Submit the first one</a> or <a href="{{ url_for('generate_page') }}">generate one</a>.</div>
+        <div class="empty-row">No benchmarks are published yet. <a href="{{ url_for('submit.form') }}">Submit the first one</a>.</div>
     </div>
     {% endif %}
 </section>
+
+<div class="path-row">
+    <a class="path-card" href="{{ url_for('library.getting_started') }}">
+        <h3><i data-lucide="play" class="icon"></i> Use it</h3>
+        <p>Download a benchmark, compile or simulate it, and drive it from your own testbench.</p>
+        <span class="path-more">Getting started</span>
+    </a>
+    <a class="path-card" href="{{ url_for('library.review') }}">
+        <h3><i data-lucide="shield-check" class="icon"></i> How it is verified</h3>
+        <p>The seven steps every file passes, what counts as a pass, and what the badges mean.</p>
+        <span class="path-more">Review process</span>
+    </a>
+    <a class="path-card" href="{{ url_for('submit.form') }}">
+        <h3><i data-lucide="upload" class="icon"></i> Contribute</h3>
+        <p>Send a manifest and your files; the same pipeline runs and a maintainer decides within 14 days.</p>
+        <span class="path-more">Submit a benchmark</span>
+    </a>
+</div>
 
 <div class="home-two home-bottom">
     <section>
@@ -137,13 +165,17 @@
                 {% if n.link %}<a href="{{ n.link }}">{{ n.title }}</a>{% else %}<span>{{ n.title }}</span>{% endif %}</li>
             {% endfor %}
         </ul>
+        <p class="small"><a href="{{ url_for('library.news') }}">All announcements</a></p>
         {% else %}
-        <p class="muted small">No news yet.</p>
+        <p class="muted small">No announcements yet.</p>
         {% endif %}
     </section>
     <section>
         <h2 class="section-title">Cite</h2>
-        <p class="small">If you use the library, please cite our ISMVL 2026 paper.</p>
+        <p class="small">
+            Cite the paper for the method, and release {{ release.version }}{% if release.doi %}
+            (<a href="{{ release.doi_url }}" target="_blank" rel="noopener">doi:{{ release.doi }}</a>){% endif %} for the files.
+        </p>
         <div class="cite-actions">
             <button class="btn btn-outline btn-sm" onclick="copyText('bibtex', this, 'BibTeX copied')"><i data-lucide="copy" class="icon"></i> Copy BibTeX</button>
             <a href="{{ url_for('library.cite') }}" class="small">Citation details</a>

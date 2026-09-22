@@ -442,7 +442,7 @@ def add_review_event(session, benchmark: Benchmark, action: str, detail: str = '
 # ----------------------------------------------------------------------------
 
 FILTER_FIELDS = ('module_type', 'k_value', 'bitwidth', 'logic_family')
-IMPL_FILTERS = ('language', 'source', 'verified')
+IMPL_FILTERS = ('language', 'source', 'verified', 'model')
 
 
 def _apply_filters(stmt, filters: Dict):
@@ -454,15 +454,21 @@ def _apply_filters(stmt, filters: Dict):
                 stmt = stmt.where(col == (int(val) if field in ('k_value', 'bitwidth') else val))
             except ValueError:
                 pass
-    language, source, verified = filters.get('language'), filters.get('source'), filters.get('verified')
-    if language or source or verified:
+    language, source = filters.get('language'), filters.get('source')
+    verified, model = filters.get('verified'), filters.get('model')
+    if language or source or verified or model:
         sub = select(Implementation.benchmark_id).where(Implementation.status == 'published')
         if language:
             sub = sub.where(Implementation.language == language)
         if source:
             sub = sub.where(Implementation.source == source)
-        if verified:
+        if verified in ('1', 1, True, 'true'):
             sub = sub.where(Implementation.golden_status == 'PASS')
+        elif verified in ('0', 0, 'false'):
+            # "did not pass": the spec has an implementation that failed the check
+            sub = sub.where(Implementation.golden_status != 'PASS')
+        if model:
+            sub = sub.where(Implementation.model_responded == model)
         stmt = stmt.where(Benchmark.id.in_(sub))
     q = (filters.get('q') or '').strip()
     if q:
@@ -531,8 +537,81 @@ def facets(session) -> Dict:
         select(func.count(func.distinct(Implementation.benchmark_id)), func.count())
         .join(Benchmark, Benchmark.id == Implementation.benchmark_id)
         .where(Implementation.status == 'published', pub, Implementation.golden_status == 'PASS')).one()
-    out['verified'] = [{'value': '1', 'specs': specs_v, 'impls': impls_v}]
+    specs_u, impls_u = session.execute(
+        select(func.count(func.distinct(Implementation.benchmark_id)), func.count())
+        .join(Benchmark, Benchmark.id == Implementation.benchmark_id)
+        .where(Implementation.status == 'published', pub,
+               Implementation.golden_status != 'PASS')).one()
+    out['verified'] = [{'value': '1', 'specs': specs_v, 'impls': impls_v},
+                       {'value': '0', 'specs': specs_u, 'impls': impls_u}]
+    out['model'] = [{'value': v, 'specs': sp, 'impls': im} for v, sp, im in session.execute(
+        select(Implementation.model_responded,
+               func.count(func.distinct(Implementation.benchmark_id)), func.count())
+        .join(Benchmark, Benchmark.id == Implementation.benchmark_id)
+        .where(Implementation.status == 'published', pub,
+               Implementation.model_responded.isnot(None))
+        .group_by(Implementation.model_responded)
+        .order_by(func.count().desc())).all()]
     return out
+
+
+def home_categories(session) -> Dict:
+    """The two homepage panels (RevLib-style): specifications and implementations.
+
+    Every group is a list of {label, count, url_args}; the template turns url_args
+    into a link into /library, so the panels can only offer filters that exist.
+    """
+    f = facets(session)
+    st = stats(session)
+    counts = {m['value']: m['specs'] for m in module_counts(session)}
+    by_value = lambda rows: {str(r['value']): r for r in rows}
+
+    modules = []
+    for value, label in MODULE_TYPES.items():
+        n = counts.get(value, 0)
+        modules.append({'label': label, 'count': n if n else None,
+                        'note': None if n else 'planned',
+                        'url_args': {'module_type': value} if n else None})
+
+    fam = by_value(f['logic_family'])
+    structure = [{'label': FAMILY_LABELS[key].split(' — ')[0],
+                  'count': fam.get(key, {}).get('specs', 0),
+                  'url_args': {'logic_family': key}}
+                 for key in FAMILY_LABELS if key in fam]
+
+    radix = [{'label': f"k = {r['value']}", 'count': r['specs'],
+              'url_args': {'k_value': r['value']}} for r in f['k_value']]
+    digits = [{'label': str(r['value']), 'count': r['specs'],
+               'url_args': {'bitwidth': r['value']}} for r in f['bitwidth']]
+
+    languages = [{'label': LANGUAGES.get(r['value'], r['value']), 'count': r['impls'],
+                  'url_args': {'language': r['value']}} for r in f['language']]
+    ver = by_value(f['verified'])
+    verification = [{'label': 'Verified', 'count': ver.get('1', {}).get('impls', 0),
+                     'url_args': {'verified': '1'}},
+                    {'label': 'Did not pass', 'count': ver.get('0', {}).get('impls', 0),
+                     'url_args': {'verified': '0'}}]
+    sources = [{'label': SOURCES.get(r['value'], r['value']), 'count': r['impls'],
+                'url_args': {'source': r['value']}} for r in f['source']]
+    models = [{'label': r['value'], 'count': r['impls'], 'url_args': {'model': r['value']}}
+              for r in f['model']]
+
+    return {
+        'specifications': {
+            'total': st['benchmarks'],
+            'groups': [{'title': 'Module', 'items': modules},
+                       {'title': 'Structure', 'items': structure},
+                       {'title': 'Radix k', 'items': radix, 'inline': True},
+                       {'title': 'Digits', 'items': digits, 'inline': True}],
+        },
+        'implementations': {
+            'total': st['implementations'],
+            'groups': [{'title': 'Language', 'items': languages},
+                       {'title': 'Verification', 'items': verification},
+                       {'title': 'Source', 'items': sources},
+                       {'title': 'Generation model', 'items': models}],
+        },
+    }
 
 
 def stats(session) -> Dict:

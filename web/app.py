@@ -101,10 +101,36 @@ app.register_blueprint(admin_bp)
 init_db()
 
 
+_STATUS_TTL = 300   # seconds; the footer line must not cost a query on every request
+_status_cache = {'at': 0.0, 'value': None}
+
+
+def _site_status():
+    """Collection size for the footer status line, cached so every page does not query."""
+    import time
+    from library import service
+    from library.db import session_scope
+    now = time.time()
+    if _status_cache['value'] is None or now - _status_cache['at'] > _STATUS_TTL:
+        try:
+            with session_scope() as s:
+                st = service.stats(s)
+        except Exception:                      # never let the footer break a page
+            st = {'benchmarks': 0, 'implementations': 0, 'verified': 0}
+        st['release'] = service.release_info()
+        _status_cache.update(at=now, value=st)
+    return _status_cache['value']
+
+
 @app.context_processor
 def _inject_globals():
+    from library import service
+    from library.models import GOLDEN_MODEL_VERSION
     css = Path(__file__).parent / 'static' / 'css' / 'library.css'
     return {'is_authed': is_authed(),
+            'site_status': _site_status(),
+            'format_version': service.FORMAT_VERSION,
+            'golden_version': GOLDEN_MODEL_VERSION,
             'asset_version': int(css.stat().st_mtime) if css.exists() else 0}   # cache-busting
 
 

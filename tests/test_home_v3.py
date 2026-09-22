@@ -79,7 +79,8 @@ def test_home_counts_match_library(client):
     assert m and int(m.group(1)) == total
     assert re.search(r'ALU <span class="n">3</span>', html)
     assert re.search(r'Register file <span class="n">1</span>', html)
-    assert 'Processor <span class="n">0</span>' in html and 'aria-disabled="true"' in html
+    # module types with nothing published read as planned, not as zero
+    assert 'Processor <span class="n">planned</span>' in html and 'aria-disabled="true"' in html
 
 
 def test_bibtex_identical_everywhere(client):
