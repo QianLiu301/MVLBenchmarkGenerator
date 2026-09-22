@@ -667,6 +667,57 @@ def spec_json(benchmark: Benchmark) -> str:
     }, indent=2)
 
 
+API_VERSION = 1
+
+
+def api_benchmark(benchmark: Benchmark, base_url: str = 'https://llm-mvl.com',
+                  with_implementations: bool = True) -> Dict:
+    """A benchmark as the public JSON API returns it (same fields as spec.json, plus URLs)."""
+    out = {
+        'slug': benchmark.slug,
+        'title': benchmark.title,
+        'module_type': benchmark.module_type,
+        'k_value': benchmark.k_value,
+        'bitwidth': benchmark.bitwidth,
+        'logic_family': benchmark.logic_family,
+        'structure': structure_label(benchmark.k_value, benchmark.bitwidth),
+        'mod_value': benchmark.mod_value,
+        'operations': benchmark.operations,
+        'description': benchmark.description,
+        'added': benchmark.created_at.date().isoformat() if benchmark.created_at else None,
+        'url': f"{base_url}/benchmark/{benchmark.slug}",
+        'spec_url': f"{base_url}/benchmark/{benchmark.slug}/spec.json",
+        'download_url': f"{base_url}/benchmark/{benchmark.slug}/download",
+    }
+    impls = benchmark.published_implementations
+    out['implementation_count'] = len(impls)
+    out['verified_count'] = sum(1 for i in impls if i.golden_status == 'PASS')
+    out['languages'] = sorted({i.language for i in impls})
+    if with_implementations:
+        out['implementations'] = [{
+            'id': i.id,
+            'filename': i.filename,
+            'language': i.language,
+            'source': i.source,
+            'provider': i.provider,
+            'model': i.model_responded or i.model_requested,
+            'loc': i.loc,
+            'sha256': i.sha256,
+            'simulation': i.sim_status,
+            'golden_model': i.golden_status,
+            'verified': i.golden_status == 'PASS',
+            'vectors_passed': i.golden_passed,
+            'vectors_compared': i.golden_compared,
+            'verification_strength': i.verification_strength,
+            'golden_model_version': (i.verification_meta or {}).get('golden_model'),
+            'license': i.license,
+            'code_url': f"{base_url}/benchmark/{benchmark.slug}/{i.id}",
+            'download_url': f"{base_url}/benchmark/{benchmark.slug}/{i.id}/download",
+            'log_url': f"{base_url}/benchmark/{benchmark.slug}/{i.id}/log",
+        } for i in impls]
+    return out
+
+
 def build_zip(benchmarks: Iterable[Benchmark], filters: Optional[Dict] = None,
               verified_only: bool = False, languages: Optional[set] = None) -> bytes:
     benchmarks = list(benchmarks)

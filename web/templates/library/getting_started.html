@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% set nav = 'about' %}
+{% block title %}Getting started — MVL Benchmark Library{% endblock %}
+{% block content %}
+<div class="prose">
+    <h1>Getting started</h1>
+    <p>
+        Every benchmark is a specification (what is computed) with implementations of it in C, Python,
+        Verilog and VHDL. This page shows how to get the files, what is inside them, how to run one,
+        and how to use the library from a script.
+    </p>
+
+    <h2>1. Get the files</h2>
+    <ul>
+        <li><strong>One benchmark</strong> — open its page, for example
+            <a href="{{ url_for('library.detail', slug=slug) }}">{{ slug }}</a>,
+            and use <em>Download all files</em>, or copy a single implementation from the page.</li>
+        <li><strong>A selection</strong> — <a href="{{ url_for('library.browse', mode='download') }}">Download by selection</a>
+            lets you pick radix, digits, language and verification status and returns one archive.</li>
+        <li><strong>Everything</strong> — <a href="{{ url_for('library.download_all') }}">the full library archive</a>,
+            or the citable snapshot on <a href="{{ url_for('library.cite') }}">Zenodo</a>.</li>
+        <li><strong>From a script</strong> — the <a href="{{ url_for('library.api_docs') }}">JSON API</a>.</li>
+    </ul>
+
+    <h2>2. What is in an archive</h2>
+<pre class="bibtex">{{ slug }}/
+  spec.json            parameters, operations, per-file verification record, SHA-256
+  {{ slug }}.c          implementations; several per language carry source and id
+  {{ slug }}.py           in the name, e.g. {{ slug }}_gemini_106.v
+  {{ slug }}.v
+  {{ slug }}.vhd
+LICENSE.txt            CC BY 4.0
+CITATION.bib           paper entry and data-release entry
+manifest.json          file list with SHA-256, format version, timestamp</pre>
+
+    <h2>3. Run an implementation</h2>
+    <p>
+        Each file is self-contained and prints its own test vectors in the
+        <a href="{{ url_for('library.format') }}#output">format convention</a>
+        (<code>Test N: OP A=… B=… -&gt; R=… Z=… N=… C=…</code>), so a run is a quick sanity check
+        that your toolchain agrees with ours.
+    </p>
+<pre class="bibtex"># C
+gcc -O2 -o alu {{ slug }}.c && ./alu
+
+# Python
+python {{ slug }}.py
+
+# Verilog (Icarus)
+iverilog -o alu.vvp {{ slug }}.v && vvp alu.vvp
+
+# VHDL (GHDL)
+ghdl -a --std=08 {{ slug }}.vhd
+ghdl -e --std=08 {{ entity }}_tb
+ghdl -r --std=08 {{ entity }}_tb --stop-time=10ms</pre>
+
+    <h2>4. Use one as a device under test</h2>
+    <p>
+        The HDL entries expose a fixed interface, described in the
+        <a href="{{ url_for('library.format') }}#harness">format, section 4</a>: an entity or module
+        <code>mvl_alu_&lt;k&gt;_&lt;n&gt;bit</code> with <code>clk</code>, <code>rst</code>, <code>a</code>,
+        <code>b</code>, <code>opcode[3:0]</code>, <code>result</code>, <code>zero</code>,
+        <code>negative</code>, <code>carry</code>; operands are the integer value of the word,
+        opcodes are 0 = ADD, 1 = SUB, 2 = MUL, 3 = NEG, 4 = INC, 5 = DEC. Replace the testbench
+        with your own and drive the design directly — that is exactly what our verification does.
+    </p>
+    <p>
+        The C and Python entries expose <code>alu_exec(a, b, op)</code> returning the result and the
+        Z/N/C flags, so they can serve as a software reference next to your hardware.
+    </p>
+
+    <h2>5. Know what the verification means</h2>
+    <p>
+        A teal badge means the file matched the independent
+        <a href="{{ url_for('library.format') }}#reference-model">reference model</a> on every vector,
+        both the ones it prints itself and injected golden vectors (all operand pairs when
+        k<sup>n</sup> ≤ 256, otherwise 50 seeded random pairs plus edge cases). The record on each
+        entry lists the tool versions, the vector count and the seed, so a run can be repeated.
+        Implementations that <em>failed</em> are kept when they come from the project's own LLM
+        pipeline — see <a href="{{ url_for('library.models') }}">generation models</a> — and are
+        never presented as correct.
+    </p>
+
+    <h2>6. Cite what you use</h2>
+    <p>
+        Files are CC BY 4.0: use them anywhere, including commercially, as long as you give credit.
+        The <a href="{{ url_for('library.cite') }}">Cite page</a> has the BibTeX for the paper and for
+        the archived data release; each benchmark page carries the same entry with its permanent URL.
+    </p>
+
+    <h2>Contribute</h2>
+    <p>
+        Have an implementation, a new specification, or found a mistake? The
+        <a href="{{ url_for('submit.form') }}">submission page</a> takes a manifest plus your files and
+        runs them through the same pipeline; the
+        <a href="{{ url_for('library.review') }}">review process</a> states exactly what passes.
+        Corrections to the reference model are welcome and are versioned publicly.
+    </p>
+</div>
+{% endblock %}

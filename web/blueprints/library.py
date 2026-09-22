@@ -40,7 +40,7 @@ def home():
         news = list(s.execute(select(News).where(News.status == 'published')
                               .order_by(News.date.desc()).limit(3)).scalars())
         return render_template('library/home.html', stats=service.stats(s),
-                               modules=modules, module=module,
+                               modules=modules, module=module, facets=service.facets(s),
                                latest=service.latest_benchmarks(s, 10, module),
                                news=news, bibtex=service.citation_bibtex(), **_LABELS)
 
@@ -229,3 +229,106 @@ def models():
 def api_stats():
     with session_scope() as s:
         return jsonify(service.stats(s))
+
+
+# ----------------------------------------------------------------------------
+# Public JSON API (documented at /api)
+# ----------------------------------------------------------------------------
+
+API_MAX_LIMIT = 200
+
+
+def _api_base() -> str:
+    return request.url_root.rstrip('/')
+
+
+@bp.route('/api')
+def api_docs():
+    """Docs; the example payload is rendered from a real benchmark so it cannot go stale."""
+    with session_scope() as s:
+        b = service.get_benchmark(s, 'alu_k3_8t')
+        if b is None or b.status != 'published':
+            rows = service.latest_benchmarks(s, 1)
+            b = rows[0] if rows else None
+        sample = service.api_benchmark(b, 'https://llm-mvl.com', with_implementations=False) if b else None
+        impl = None
+        if b is not None and b.published_implementations:
+            full = service.api_benchmark(b, 'https://llm-mvl.com')
+            impls = full['implementations']
+            impl = next((i for i in impls if i['language'] == 'verilog' and i['verified']),
+                        next((i for i in impls if i['verified']), impls[0]))
+    return render_template('library/api.html', sample=sample, sample_impl=impl,
+                           api_version=service.API_VERSION, page_size=service.PAGE_SIZE,
+                           max_limit=API_MAX_LIMIT, languages=LANGUAGES, **_LABELS)
+
+
+@bp.route('/api/v1/benchmarks')
+def api_benchmarks():
+    """Filterable list. Same filter names as /library; `full=1` includes implementations."""
+    filters = _current_filters()
+    sort = request.args.get('sort', 'name')
+    if sort not in service.SORT_OPTIONS:
+        sort = 'name'
+    try:
+        limit = min(max(int(request.args.get('limit', service.PAGE_SIZE)), 1), API_MAX_LIMIT)
+    except ValueError:
+        limit = service.PAGE_SIZE
+    try:
+        offset = max(int(request.args.get('offset', 0)), 0)
+    except ValueError:
+        offset = 0
+    full = request.args.get('full') in ('1', 'true', 'yes')
+    base = _api_base()
+    with session_scope() as s:
+        rows, total = service.list_benchmarks(s, filters, sort=sort, page=None)
+        window = rows[offset:offset + limit]
+        items = [service.api_benchmark(b, base, with_implementations=full) for b in window]
+    return jsonify({
+        'api_version': service.API_VERSION,
+        'total': total, 'limit': limit, 'offset': offset, 'count': len(items),
+        'filters': filters, 'sort': sort,
+        'license': 'CC-BY-4.0', 'citation_url': f"{base}/citation.bib",
+        'benchmarks': items,
+    })
+
+
+@bp.route('/api/v1/benchmarks/<slug>')
+def api_benchmark_detail(slug):
+    with session_scope() as s:
+        b = service.get_benchmark(s, slug)
+        if b is None or b.status != 'published':
+            return jsonify({'error': 'not found', 'slug': slug}), 404
+        data = service.api_benchmark(b, _api_base())
+    data['api_version'] = service.API_VERSION
+    return jsonify(data)
+
+
+@bp.route('/api/v1/stats')
+def api_v1_stats():
+    base = _api_base()
+    with session_scope() as s:
+        data = service.stats(s)
+        data['facets'] = service.facets(s)
+        data['models'] = [{k: m[k] for k in ('label', 'provider', 'total', 'verified', 'pct')}
+                          for m in service.model_matrix(s)['models']]
+    data['api_version'] = service.API_VERSION
+    data['release'] = service.release_info()
+    data['format_version'] = service.FORMAT_VERSION
+    data['golden_model_version'] = GOLDEN_MODEL_VERSION
+    data['docs_url'] = f"{base}/api"
+    return jsonify(data)
+
+
+@bp.route('/getting-started')
+def getting_started():
+    """The examples all use one spec; alu_k3_8t unless it is gone, then the newest one."""
+    with session_scope() as s:
+        b = service.get_benchmark(s, 'alu_k3_8t')
+        if b is None or b.status != 'published':
+            rows = service.latest_benchmarks(s, 1)
+            b = rows[0] if rows else None
+        slug = b.slug if b is not None else 'alu_k3_8t'
+        k = b.k_value if b is not None else 3
+        n = b.bitwidth if b is not None else 8
+        return render_template('library/getting_started.html', b=b, slug=slug,
+                               entity=f"mvl_alu_{k}_{n}bit", **_LABELS)

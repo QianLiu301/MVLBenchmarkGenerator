@@ -406,6 +406,13 @@ pre.bibtex { background: var(--bg); border: 1px solid var(--border); border-radi
 .outcome-ok { border-left-color: var(--ok-fg); }
 .outcome-warn { border-left-color: var(--warn-fg); }
 .outcome-err { border-left-color: var(--err-fg); }
+/* Home: browse by parameter */
+.drilldown { margin: 28px 0 8px; }
+.drill-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px 28px; margin-top: 12px; }
+.drill-group { min-width: 0; }
+.drill-label { display: block; font-size: .78rem; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); margin-bottom: 8px; }
+.drill-group .chip-row { display: flex; flex-wrap: wrap; gap: 6px; }
+
 /* Models page */
 table.models { min-width: 640px; }
 table.models td.ok { color: var(--ok-fg); font-weight: 600; }

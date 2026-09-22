@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% set nav = 'about' %}
+{% block title %}API — MVL Benchmark Library{% endblock %}
+{% block content %}
+<div class="prose">
+    <h1>JSON API <span class="muted" style="font-weight:500">v{{ api_version }}</span></h1>
+    <p>
+        Read-only, no key, no rate limit beyond ordinary fair use, CORS open. Everything the library
+        publishes is reachable as JSON, so a script can select benchmarks, read verification records
+        and fetch source files. Files are CC BY 4.0 — cite the entry in
+        <a href="{{ url_for('library.citation_file') }}">CITATION.bib</a>.
+    </p>
+
+    <h2>Endpoints</h2>
+    <div class="table-wrap">
+    <table class="bench">
+        <thead><tr><th>Endpoint</th><th>Returns</th></tr></thead>
+        <tbody>
+            <tr><td class="mono">GET /api/v1/benchmarks</td><td>Filterable list of specifications</td></tr>
+            <tr><td class="mono">GET /api/v1/benchmarks/&lt;slug&gt;</td><td>One specification with all its implementations</td></tr>
+            <tr><td class="mono">GET /api/v1/stats</td><td>Counts, facet values, model pass rates, release and version info</td></tr>
+            <tr><td class="mono">GET /benchmark/&lt;slug&gt;/spec.json</td><td>The same specification as it ships inside archives</td></tr>
+            <tr><td class="mono">GET /benchmark/&lt;slug&gt;/&lt;id&gt;/download</td><td>One implementation's source file (plain text)</td></tr>
+            <tr><td class="mono">GET /benchmark/&lt;slug&gt;/&lt;id&gt;/log</td><td>Its simulator log (plain text)</td></tr>
+            <tr><td class="mono">GET /benchmark/&lt;slug&gt;/download</td><td>ZIP with every file of that specification</td></tr>
+            <tr><td class="mono">GET /library/download-all</td><td>ZIP of the whole library; accepts the same filters</td></tr>
+        </tbody>
+    </table>
+    </div>
+
+    <h2>Parameters of <code>/api/v1/benchmarks</code></h2>
+    <div class="table-wrap">
+    <table class="bench">
+        <thead><tr><th>Name</th><th>Values</th><th>Meaning</th></tr></thead>
+        <tbody>
+            <tr><td class="mono">k_value</td><td>2, 3, 4, 5, 6, 7</td><td>Radix</td></tr>
+            <tr><td class="mono">bitwidth</td><td>8, 10, 12, 14</td><td>Digits per operand</td></tr>
+            <tr><td class="mono">logic_family</td><td><code>modular</code>, <code>field</code></td><td>Z/k<sup>n</sup>Z or GF(q)[x]/(x<sup>n</sup>)</td></tr>
+            <tr><td class="mono">module_type</td><td><code>alu</code></td><td>Module kind</td></tr>
+            <tr><td class="mono">language</td><td>{% for c in languages %}<code>{{ c }}</code>{{ ', ' if not loop.last }}{% endfor %}</td><td>Has an implementation in this language</td></tr>
+            <tr><td class="mono">source</td><td><code>llm-generated</code>, <code>human-authored</code>, <code>reference</code></td><td>Provenance</td></tr>
+            <tr><td class="mono">verified</td><td><code>1</code></td><td>Only specs with a verified implementation</td></tr>
+            <tr><td class="mono">q</td><td>free text</td><td>Search name, structure, description</td></tr>
+            <tr><td class="mono">sort</td><td><code>name</code>, <code>k</code>, <code>digits</code>, <code>date</code></td><td>Order (default <code>name</code>)</td></tr>
+            <tr><td class="mono">limit, offset</td><td>1 … {{ max_limit }}, ≥ 0</td><td>Paging (default limit {{ page_size }})</td></tr>
+            <tr><td class="mono">full</td><td><code>1</code></td><td>Include the implementation list in each item</td></tr>
+        </tbody>
+    </table>
+    </div>
+
+    <h2>Example</h2>
+<pre class="bibtex">curl "https://llm-mvl.com/api/v1/benchmarks?k_value={{ sample.k_value }}&amp;language=vhdl&amp;verified=1"</pre>
+<pre class="bibtex">{
+  "api_version": {{ api_version }},
+  "total": 4, "limit": {{ page_size }}, "offset": 0, "count": 4,
+  "license": "CC-BY-4.0",
+  "benchmarks": [
+    {
+      "slug": "{{ sample.slug }}",
+      "title": "{{ sample.title }}",
+      "k_value": {{ sample.k_value }}, "bitwidth": {{ sample.bitwidth }},
+      "logic_family": "{{ sample.logic_family }}", "structure": "{{ sample.structure }}",
+      "mod_value": {{ sample.mod_value }},
+      "operations": {{ sample.operations | tojson }},
+      "languages": {{ sample.languages | tojson }},
+      "implementation_count": {{ sample.implementation_count }}, "verified_count": {{ sample.verified_count }},
+      "url": "{{ sample.url }}",
+      "spec_url": "{{ sample.spec_url }}",
+      "download_url": "{{ sample.download_url }}"
+    }
+  ]
+}</pre>
+
+    {% if sample_impl %}
+    <p>With <code>full=1</code> (or on a single benchmark) each item also carries its implementations:</p>
+<pre class="bibtex">{
+  "id": {{ sample_impl.id }}, "filename": "{{ sample_impl.filename }}", "language": "{{ sample_impl.language }}",
+  "source": "{{ sample_impl.source }}", "provider": {{ sample_impl.provider | tojson }}, "model": {{ sample_impl.model | tojson }},
+  "loc": {{ sample_impl.loc }}, "sha256": "{{ sample_impl.sha256[:16] }}…",
+  "simulation": "{{ sample_impl.simulation }}", "golden_model": "{{ sample_impl.golden_model }}", "verified": {{ sample_impl.verified | tojson }},
+  "vectors_passed": {{ sample_impl.vectors_passed }}, "vectors_compared": {{ sample_impl.vectors_compared }},
+  "verification_strength": "{{ sample_impl.verification_strength }}",
+  "golden_model_version": {{ sample_impl.golden_model_version | tojson }},
+  "code_url": "…", "download_url": "…", "log_url": "…"
+}</pre>
+    {% endif %}
+
+    <h2>Fetch every verified VHDL file</h2>
+<pre class="bibtex">import requests, pathlib
+
+api = "https://llm-mvl.com/api/v1/benchmarks"
+rows = requests.get(api, params={"language": "vhdl", "full": 1, "limit": 200}).json()
+
+for b in rows["benchmarks"]:
+    for i in b["implementations"]:
+        if i["language"] == "vhdl" and i["verified"]:
+            code = requests.get(i["download_url"]).text
+            pathlib.Path(i["filename"]).write_text(code, encoding="utf-8")
+            print(b["slug"], i["model"] or i["source"], i["verification_strength"])</pre>
+
+    <h2>Notes</h2>
+    <ul>
+        <li>The library changes when submissions are approved; <code>/api/v1/stats</code> reports the
+            current counts and the release version. For a fixed dataset use the archived release on
+            <a href="{{ url_for('library.cite') }}">Zenodo</a>, not the API.</li>
+        <li>Implementations that failed verification are included with <code>"verified": false</code>
+            and their failure status; filter on that field if you only want correct designs.</li>
+        <li><code>sha256</code> is over the file's exact bytes, so a download can be checked against
+            the record.</li>
+        <li>Breaking changes get a new prefix (<code>/api/v2/…</code>); fields may be added to existing
+            responses without notice.</li>
+    </ul>
+</div>
+{% endblock %}
