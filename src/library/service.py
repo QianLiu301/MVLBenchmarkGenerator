@@ -649,7 +649,9 @@ def contributors(session) -> Dict:
                Implementation.submitter_name.isnot(None))
         .group_by(Implementation.submitter_name, Implementation.submitter_affiliation)
         .order_by(Implementation.submitter_name)).all()
-    people = [{'name': n, 'affiliation': a, 'count': c} for n, a, c in rows]
+    own = {a.strip().lower() for a in release_info()['authors']}
+    people = [{'name': n, 'affiliation': a, 'count': c} for n, a, c in rows
+              if (n or '').strip().lower() not in own]
     models = session.execute(
         select(Implementation.provider, Implementation.model_responded, func.count())
         .join(Benchmark, Benchmark.id == Implementation.benchmark_id)

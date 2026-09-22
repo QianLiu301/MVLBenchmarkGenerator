@@ -416,6 +416,9 @@ pre.bibtex { background: var(--bg); border: 1px solid var(--border); border-radi
 .nav-drop .menu a:hover { background: var(--bg); text-decoration: none; }
 @media (hover: hover) and (min-width: 861px) {
     .nav-drop:hover .menu { display: block; }
+    /* invisible bridge over the gap: without it the pointer leaves .nav-drop
+       on its way to the menu and the menu closes before it can be clicked */
+    .nav-drop::after { content: ''; position: absolute; left: 0; right: 0; top: 100%; height: 14px; }
 }
 
 /* Home: identity panel + at a glance */

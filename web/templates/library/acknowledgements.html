@@ -10,16 +10,14 @@
         reporting problems, or improving the tooling.
     </p>
 
-    <h2>Contributors</h2>
     {% if contributors.people %}
+    <h2>Contributors</h2>
     <ul>
         {% for p in contributors.people %}
         <li><strong>{{ p.name }}</strong>{% if p.affiliation %} — {{ p.affiliation }}{% endif %}
             <span class="muted small">({{ p.count }} implementation{{ '' if p.count == 1 else 's' }})</span></li>
         {% endfor %}
     </ul>
-    {% else %}
-    <p>No external contributions have been published yet — <a href="{{ url_for('submit.form') }}">be the first</a>.</p>
     {% endif %}
 
     <h2>Generation models</h2>
