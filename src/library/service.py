@@ -67,6 +67,8 @@ def release_info() -> Dict:
     return {
         'version': data.get('version') or FORMAT_VERSION,
         'date': data.get('date') or '',
+        # the library's authors; the paper's author list lives in citation.bib
+        'authors': data.get('authors') or [_citation_field('author')],
         'doi': doi,
         'doi_url': f"https://doi.org/{doi}" if doi else '',
         'zenodo_url': (data.get('zenodo_url') or '').strip(),
@@ -79,7 +81,7 @@ def dataset_bibtex() -> str:
     year = r['date'][:4] or _citation_field('year')
     lines = [
         f"@misc{{mvlbenchmarklibrary{year},",
-        f"  author    = {{{_citation_field('author')}}},",
+        f"  author    = {{{' and '.join(r['authors'])}}},",
         f"  title     = {{MVL Benchmark Library, release {r['version']}}},",
         f"  year      = {{{year}}},",
         "  publisher = {Zenodo},",

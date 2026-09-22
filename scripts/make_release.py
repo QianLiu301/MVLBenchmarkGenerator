@@ -102,7 +102,8 @@ def main():
     meta = {
         'upload_type': 'dataset',
         'title': f"MVL Benchmark Library — release {release['version']}",
-        'creators': [{'name': 'Drechsler, Rolf', 'affiliation': 'University of Bremen / DFKI'}],
+        'creators': [{'name': 'Drechsler, Rolf', 'affiliation': 'University of Bremen / DFKI'},
+                     {'name': 'Liu, Qian', 'affiliation': 'University of Bremen'}],
         'description': (
             'Reference specifications and implementations of multi-valued logic designs '
             '(arithmetic-logic units over Z/k^nZ and GF(q)[x]/(x^n)) in C, Python, Verilog and VHDL, '
