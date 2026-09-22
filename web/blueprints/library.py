@@ -42,7 +42,7 @@ def home():
         return render_template('library/home.html', stats=service.stats(s),
                                modules=modules, module=module,
                                latest=service.latest_benchmarks(s, 10, module),
-                               news=news, bibtex=service.bibtex(), **_LABELS)
+                               news=news, bibtex=service.citation_bibtex(), **_LABELS)
 
 
 @bp.route('/library')
@@ -184,7 +184,9 @@ def about():
 
 @bp.route('/cite')
 def cite():
-    return render_template('library/cite.html', bibtex=service.bibtex(), citation_text=service.citation_text())
+    return render_template('library/cite.html', bibtex=service.citation_bibtex(),
+                           citation_text=service.citation_text(),
+                           dataset_bibtex=service.dataset_bibtex(), release=service.release_info())
 
 
 @bp.route('/citation.bib')

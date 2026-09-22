@@ -16,6 +16,24 @@
         <a href="{{ url_for('library.citation_file') }}" class="btn btn-outline btn-sm"><i data-lucide="download" class="icon"></i> CITATION.bib</a>
     </div>
 
+    <h2>Data release</h2>
+    <p>
+        To cite the benchmark files themselves, cite the archived release
+        {% if release.doi %}
+        <strong>{{ release.version }}</strong> ({{ release.date }}), permanently archived on Zenodo under
+        <a href="{{ release.doi_url }}" target="_blank" rel="noopener">doi:{{ release.doi }}</a>.
+        {% else %}
+        <strong>{{ release.version }}</strong> ({{ release.date }}); its Zenodo DOI is being registered and will appear here.
+        {% endif %}
+        The release archive contains every published implementation with <code>spec.json</code>,
+        the verification records, <code>LICENSE.txt</code> and <code>CITATION.bib</code>.
+    </p>
+    <pre class="bibtex wrap" id="bibtex-data">{{ dataset_bibtex }}</pre>
+    <div class="cite-actions">
+        <button class="btn btn-outline btn-sm" onclick="copyText('bibtex-data', this, 'BibTeX copied')"><i data-lucide="copy" class="icon"></i> Copy BibTeX</button>
+        {% if release.doi %}<a href="{{ release.doi_url }}" class="btn btn-outline btn-sm" target="_blank" rel="noopener"><i data-lucide="archive" class="icon"></i> Zenodo record</a>{% endif %}
+    </div>
+
     <h2>Paper</h2>
     <p>
         {{ citation_text }}

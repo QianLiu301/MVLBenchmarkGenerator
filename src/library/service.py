@@ -54,6 +54,42 @@ def citation_text() -> str:
             f"{_citation_field('booktitle')}, {_citation_field('year')}.")
 
 
+RELEASE_FILE = PROJECT_ROOT / 'config' / 'release.json'
+
+
+def release_info() -> Dict:
+    """The data release (version, date, DOI) from config/release.json; DOI may be empty until minted."""
+    try:
+        data = json.loads(RELEASE_FILE.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        data = {}
+    doi = (data.get('doi') or '').strip()
+    return {
+        'version': data.get('version') or FORMAT_VERSION,
+        'date': data.get('date') or '',
+        'doi': doi,
+        'doi_url': f"https://doi.org/{doi}" if doi else '',
+        'zenodo_url': (data.get('zenodo_url') or '').strip(),
+    }
+
+
+def dataset_bibtex() -> str:
+    """BibTeX for citing the data release itself (the Zenodo record), as opposed to the paper."""
+    r = release_info()
+    year = r['date'][:4] or _citation_field('year')
+    lines = [
+        f"@misc{{mvlbenchmarklibrary{year},",
+        f"  author    = {{{_citation_field('author')}}},",
+        f"  title     = {{MVL Benchmark Library, release {r['version']}}},",
+        f"  year      = {{{year}}},",
+        "  publisher = {Zenodo},",
+    ]
+    if r['doi']:
+        lines.append(f"  doi       = {{{r['doi']}}},")
+    lines.append("  url       = {https://llm-mvl.com}")
+    return '\n'.join(lines) + '\n}\n'
+
+
 LICENSE_NOTICE = (
     "MVL Benchmark Library — https://llm-mvl.com\n"
     "Licensed under Creative Commons Attribution 4.0 International (CC BY 4.0).\n"
@@ -602,10 +638,11 @@ def bump_downloads(session, benchmark: Benchmark = None, impl: Implementation = 
 # ----------------------------------------------------------------------------
 
 def bibtex(benchmark: Optional[Benchmark] = None) -> str:
-    """config/citation.bib verbatim; for a benchmark page a `note` with its permanent URL is added."""
+    """config/citation.bib verbatim; for a benchmark page a `note` with its permanent URL is added.
+    Archives (benchmark=None) also carry the data-release entry, with its DOI once minted."""
     text = citation_bibtex()
     if benchmark is None:
-        return text
+        return text + '\n' + dataset_bibtex()
     note = f"  note      = {{Benchmark {benchmark.slug}, https://llm-mvl.com/benchmark/{benchmark.slug}}}"
     body = text.rstrip().rstrip('}').rstrip()
     return body + ',\n' + note + '\n}\n'

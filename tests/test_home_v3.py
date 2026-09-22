@@ -89,12 +89,15 @@ def test_bibtex_identical_everywhere(client):
     home = client.get('/').get_data(as_text=True)
     cite = client.get('/cite').get_data(as_text=True)
     assert file_text.strip() in home and file_text.strip() in cite
-    assert client.get('/citation.bib').get_data(as_text=True) == file_text
+    # CITATION.bib (download and archives) = paper entry verbatim + the data-release entry
+    both = file_text + '\n' + service.dataset_bibtex()
+    assert client.get('/citation.bib').get_data(as_text=True) == both
+    assert '@misc{mvlbenchmarklibrary' in both and 'publisher = {Zenodo}' in both
     with session_scope() as s:
         rows, _ = service.list_benchmarks(s, {}, page=None)
         data = service.build_zip(rows)
     with zipfile.ZipFile(io.BytesIO(data)) as zf:
-        assert zf.read('CITATION.bib').decode('utf-8') == file_text
+        assert zf.read('CITATION.bib').decode('utf-8') == both
         manifest = json.loads(zf.read('manifest.json'))
         assert manifest['format_version'] == '1.0'
         assert all('sha256' in f for f in manifest['files'])
