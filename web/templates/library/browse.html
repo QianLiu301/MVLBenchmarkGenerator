@@ -43,8 +43,10 @@
             <fieldset>
                 <legend>{{ title }}</legend>
                 {% for r in rows %}
-                <label class="check"><input type="checkbox" name="{{ field }}" value="{{ r.value }}" {{ 'checked' if selection.get(field) and (r.value|string) in selection.get(field) }}>
-                    {%- if kind == 'k' %} k = {{ r.value }}{% elif kind == 'digits' %} {{ r.value }} digits{% else %} {{ labels.get(r.value, r.value) }}{% endif %}
+                {% set full = labels.get(r.value, r.value) %}
+                <label class="check" data-field="{{ field }}" data-value="{{ r.value }}"{% if kind == 'family' %} title="{{ full }}"{% endif %}>
+                    <input type="checkbox" name="{{ field }}" value="{{ r.value }}" {{ 'checked' if selection.get(field) and (r.value|string) in selection.get(field) }}>
+                    {%- if kind == 'k' %} k = {{ r.value }}{% elif kind == 'digits' %} {{ r.value }} digits{% elif kind == 'family' %} {{ full.split(' — ')[0] }}{% else %} {{ full }}{% endif %}
                     <span class="n">{{ r.specs }}</span></label>
                 {% endfor %}
             </fieldset>
@@ -52,7 +54,7 @@
             {{ selgroup('module_type', 'Module', facets.module_type, module_labels) }}
             {{ selgroup('k_value', 'Radix k', facets.k_value, {}, kind='k') }}
             {{ selgroup('bitwidth', 'Digits', facets.bitwidth, {}, kind='digits') }}
-            {{ selgroup('logic_family', 'Structure', facets.logic_family, family_labels) }}
+            {{ selgroup('logic_family', 'Structure', facets.logic_family, family_labels, kind='family') }}
             {{ selgroup('language', 'Language', facets.language, language_labels) }}
             <fieldset>
                 <legend>Verification</legend>
@@ -63,6 +65,7 @@
         <div class="sel-foot">
             <span id="selCount" class="small" aria-live="polite">{{ summary.specs }} specs, {{ summary.files }} files, ≈ {{ '%.1f'|format(summary.bytes / 1048576) }} MB</span>
             <span id="selError" class="small" style="color:var(--err-fg)" hidden></span>
+            <button type="button" class="btn btn-outline btn-sm" id="selClear" hidden>Clear selection</button>
             <button class="btn btn-primary" type="submit" id="selBtn"><i data-lucide="download" class="icon"></i> Download selection (.zip)</button>
         </div>
         <p class="small muted" style="margin-top:8px">The archive contains <span class="mono">manifest.json</span> (filters, spec IDs, SHA-256 per file, format version, timestamp), <span class="mono">CITATION.bib</span> and <span class="mono">LICENSE.txt</span>. At most {{ summary.limit }} specs per request.</p>
@@ -197,16 +200,42 @@
             if (!form.querySelector('input[name=verified_only][type=checkbox]').checked) p.set('verified_only', '0');
             return p;
         }
+        const clear = document.getElementById('selClear');
         async function refresh() {
             try {
                 const r = await fetch('/api/library/selection?' + params().toString());
                 const d = await r.json();
                 count.textContent = `${d.specs} specs, ${d.files} files, ≈ ${(d.bytes / 1048576).toFixed(1)} MB`;
+                // per-option counts: an option that cannot combine with the rest shows 0
+                // and is disabled, so an empty selection cannot be built by accident
+                if (d.facets) {
+                    form.querySelectorAll('label.check[data-field]').forEach(l => {
+                        const counts = d.facets[l.dataset.field];
+                        if (!counts) return;
+                        const n = counts[l.dataset.value] || 0;
+                        const box = l.querySelector('input');
+                        l.querySelector('.n').textContent = n;
+                        const off = n === 0 && !box.checked;
+                        l.classList.toggle('zero', off);
+                        box.disabled = off;
+                    });
+                }
                 const over = d.specs > d.limit;
-                err.hidden = !over; err.textContent = over ? `Selection exceeds the limit of ${d.limit} specs.` : '';
-                btn.disabled = over || d.specs === 0;
+                const empty = d.specs === 0;
+                err.hidden = !(over || empty);
+                err.textContent = over ? `Selection exceeds the limit of ${d.limit} specs.`
+                                       : (empty ? 'No specifications match this selection.' : '');
+                clear.hidden = !empty;
+                btn.disabled = over || empty;
             } catch (e) { /* keep last value */ }
         }
+        clear.addEventListener('click', () => {
+            form.querySelectorAll('input[type=checkbox]').forEach(c => {
+                c.disabled = false;
+                c.checked = c.name === 'verified_only';
+            });
+            refresh();
+        });
         form.addEventListener('change', () => { clearTimeout(timer); timer = setTimeout(refresh, 150); });
         form.addEventListener('submit', e => { e.preventDefault(); location.href = form.action + '?' + params().toString(); });
         refresh();

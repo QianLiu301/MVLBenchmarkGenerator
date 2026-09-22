@@ -480,7 +480,11 @@ pre.bibtex { background: var(--bg); border: 1px solid var(--border); border-radi
     .nav-drop .drop-caret { display: none; }
 }
 
-/* Models page *//* Models page */
+/* Download by selection: options that cannot combine with the rest */
+label.check.zero { color: var(--text-muted); opacity: .55; cursor: not-allowed; }
+label.check.zero .n { color: var(--text-muted); }
+
+/* Models page */
 table.models { min-width: 640px; }
 table.models td.ok { color: var(--ok-fg); font-weight: 600; }
 .rate { display: flex; align-items: center; gap: 8px; min-width: 120px; }

@@ -73,10 +73,12 @@ def browse():
 
 @bp.route('/api/library/selection')
 def api_selection():
-    """Live counter for the download-by-selection panel."""
+    """Live counter and per-option counts for the download-by-selection panel."""
     sel = service.normalize_selection(request.args)
     with session_scope() as s:
-        return jsonify(service.selection_summary(s, sel))
+        data = service.selection_summary(s, sel)
+        data['facets'] = service.selection_facets(s, sel)
+    return jsonify(data)
 
 
 @bp.route('/library/download-selection')

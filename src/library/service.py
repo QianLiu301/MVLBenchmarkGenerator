@@ -870,19 +870,76 @@ def _selection_stmt(sel: Dict):
     return stmt.where(Benchmark.id.in_(sub)).order_by(Benchmark.k_value, Benchmark.bitwidth)
 
 
+# Columns the selection panel needs, in one flat row per implementation. The panel
+# refreshes on every checkbox click, so both helpers below run a single query each
+# instead of walking the ORM relationships (which is one query per benchmark).
+_SEL_COLS = (Implementation.benchmark_id, Benchmark.module_type, Benchmark.k_value,
+             Benchmark.bitwidth, Benchmark.logic_family, Implementation.language,
+             Implementation.golden_status)
+_SEL_FIELD_COL = {'module_type': 1, 'k_value': 2, 'bitwidth': 3, 'logic_family': 4, 'language': 5}
+
+
+def _selection_rows(session):
+    stmt = (select(*_SEL_COLS).join(Benchmark, Benchmark.id == Implementation.benchmark_id)
+            .where(Implementation.status == 'published', Benchmark.status == 'published'))
+    return session.execute(stmt).all()
+
+
+def _sel_wanted(sel: Dict) -> Dict:
+    return {f: {str(v) for v in sel[f]} for f in _SEL_FIELD_COL if sel.get(f)}
+
+
 def selection_summary(session, sel: Dict) -> Dict:
-    rows = list(session.execute(_selection_stmt(sel)).scalars())
-    n_files = 0
-    n_bytes = 0
-    for b in rows:
-        for i in b.published_implementations:
-            if sel.get('language') and i.language not in sel['language']:
+    wanted = _sel_wanted(sel)
+    verified_only = bool(sel.get('verified_only'))
+    specs, n_files = set(), 0
+    sizes = None
+    for r in _selection_rows(session):
+        if verified_only and r[6] != 'PASS':
+            continue
+        if any(str(r[idx]) not in vals for f, vals in wanted.items() for idx in (_SEL_FIELD_COL[f],)):
+            continue
+        specs.add(r[0])
+        n_files += 1
+    if n_files:
+        # file sizes in one aggregate rather than loading every source file
+        stmt = (select(func.sum(func.length(Implementation.code)))
+                .join(Benchmark, Benchmark.id == Implementation.benchmark_id)
+                .where(Implementation.status == 'published', Benchmark.status == 'published'))
+        for f, vals in wanted.items():
+            col = (Benchmark.module_type, Benchmark.k_value, Benchmark.bitwidth,
+                   Benchmark.logic_family, Implementation.language)[list(_SEL_FIELD_COL).index(f)]
+            stmt = stmt.where(col.in_([int(v) for v in vals] if f in ('k_value', 'bitwidth') else list(vals)))
+        if verified_only:
+            stmt = stmt.where(Implementation.golden_status == 'PASS')
+        sizes = session.execute(stmt).scalar()
+    return {'specs': len(specs), 'files': n_files, 'bytes': int(sizes or 0),
+            'limit': MAX_SELECTION_SPECS}
+
+
+def selection_facets(session, sel: Dict) -> Dict:
+    """How many specs each option would still match, given the rest of the selection.
+
+    Standard faceted counting: for the field being counted, that field's own choices are
+    ignored. An option at 0 is a combination that cannot exist — k = 2 together with
+    GF(q)[x]/(xⁿ), for instance — and the page greys it out instead of letting the visitor
+    build an empty archive.
+    """
+    rows = _selection_rows(session)
+    wanted = _sel_wanted(sel)
+    verified_only = bool(sel.get('verified_only'))
+    out = {}
+    for field in SELECTION_FIELDS:
+        others = {f: vals for f, vals in wanted.items() if f != field}
+        seen: Dict[str, set] = {}
+        for r in rows:
+            if verified_only and r[6] != 'PASS':
                 continue
-            if sel.get('verified_only') and i.golden_status != 'PASS':
+            if any(str(r[_SEL_FIELD_COL[f]]) not in vals for f, vals in others.items()):
                 continue
-            n_files += 1
-            n_bytes += len(i.code.encode('utf-8'))
-    return {'specs': len(rows), 'files': n_files, 'bytes': n_bytes, 'limit': MAX_SELECTION_SPECS}
+            seen.setdefault(str(r[_SEL_FIELD_COL[field]]), set()).add(r[0])
+        out[field] = {value: len(ids) for value, ids in seen.items()}
+    return out
 
 
 def selection_zip(session, sel: Dict) -> Tuple[Optional[bytes], Optional[str]]:
