@@ -22,27 +22,21 @@
         <div class="panel-body">
             <p class="lead">A reference collection of verified benchmarks for multi-valued logic design.</p>
             <p>
-                The library collects specifications of multi-valued arithmetic — currently arithmetic-logic
-                units over the ring Z/kⁿZ (radix-k integer arithmetic with carry) and over GF(q)[x]/(xⁿ)
-                (digit-wise Galois-field arithmetic) — together with implementations of each specification
-                in C, Python, Verilog and VHDL.
+                It collects specifications of multi-valued arithmetic — currently arithmetic-logic units
+                over Z/kⁿZ and GF(q)[x]/(xⁿ) — with implementations of each in C, Python, Verilog and
+                VHDL, for anyone who needs realistic non-binary designs: authors of synthesis and
+                verification tools, and anyone measuring how code generators handle them.
             </p>
             <p>
                 Every implementation is compiled or simulated and compared, vector by vector, with an
-                independent reference model, and is published with the verification record that produced
-                it: tool versions, vector count, seed and file checksum. Nothing is published as correct
-                because a model or an author said so.
+                independent reference model, and published with the record that produced it: tool
+                versions, vector count, seed and checksum.
                 <a href="{{ url_for('library.review') }}">How it is verified</a> ·
                 <a href="{{ url_for('library.format') }}">Benchmark format</a>
             </p>
-            <p>
-                The files are meant for anyone who needs realistic non-binary designs: authors of synthesis
-                and verification tools, researchers comparing multi-valued arithmetic, and anyone measuring
-                how well code generators handle non-binary hardware.
-            </p>
             <p class="invite">
-                Contributions are welcome — a submission runs through the same pipeline and a maintainer
-                decides within 14 days. <a href="{{ url_for('submit.form') }}">Submit a benchmark</a>
+                Contributions are welcome — the same pipeline runs and a maintainer decides within
+                14 days. <a href="{{ url_for('submit.form') }}">Submit a benchmark</a>
             </p>
         </div>
     </section>
@@ -55,12 +49,36 @@
             <dt>Verified</dt><dd><a href="{{ url_for('library.browse', verified='1') }}">{{ stats.verified }}</a> <span class="muted small">({{ stats.verified_pct }} %)</span></dd>
             <dt>Languages</dt><dd>{{ language_labels|length }}</dd>
             <dt>Generation models</dt><dd><a href="{{ url_for('library.models') }}">{{ model_count }}</a></dd>
+            {% if stats.benchmarks %}
+            <dt>Radix k</dt><dd>{{ stats.k_min }} – {{ stats.k_max }}</dd>
+            <dt>Digits</dt><dd>{{ stats.digits_min }} – {{ stats.digits_max }}</dd>
+            {% endif %}
+            <dt>Format</dt><dd><a href="{{ url_for('library.format') }}">v{{ format_version }}</a></dd>
+            <dt>Reference model</dt><dd><a href="{{ url_for('library.format') }}#reference-model">v{{ golden_version }}</a></dd>
         </dl>
         <p class="glance-foot small">
             Release {{ release.version }}{% if release.date %} · {{ release.date }}{% endif %}<br>
             {% if release.doi %}<a href="{{ release.doi_url }}" target="_blank" rel="noopener">doi:{{ release.doi }}</a>{% else %}DOI pending{% endif %}
         </p>
     </aside>
+</div>
+
+<div class="path-row">
+    <a class="path-card" href="{{ url_for('library.getting_started') }}">
+        <h3><i data-lucide="play" class="icon"></i> Use it</h3>
+        <p>Download a benchmark, compile or simulate it, drive it from your own testbench.</p>
+        <span class="path-more">Getting started</span>
+    </a>
+    <a class="path-card" href="{{ url_for('library.review') }}">
+        <h3><i data-lucide="shield-check" class="icon"></i> How it is verified</h3>
+        <p>The seven steps every file passes, and what a badge does and does not claim.</p>
+        <span class="path-more">Review process</span>
+    </a>
+    <a class="path-card" href="{{ url_for('submit.form') }}">
+        <h3><i data-lucide="upload" class="icon"></i> Contribute</h3>
+        <p>Send a manifest and your files; a maintainer decides within 14 days.</p>
+        <span class="path-more">Submit a benchmark</span>
+    </a>
 </div>
 
 <div class="cat-row">
@@ -136,24 +154,6 @@
     </div>
     {% endif %}
 </section>
-
-<div class="path-row">
-    <a class="path-card" href="{{ url_for('library.getting_started') }}">
-        <h3><i data-lucide="play" class="icon"></i> Use it</h3>
-        <p>Download a benchmark, compile or simulate it, and drive it from your own testbench.</p>
-        <span class="path-more">Getting started</span>
-    </a>
-    <a class="path-card" href="{{ url_for('library.review') }}">
-        <h3><i data-lucide="shield-check" class="icon"></i> How it is verified</h3>
-        <p>The seven steps every file passes, what counts as a pass, and what the badges mean.</p>
-        <span class="path-more">Review process</span>
-    </a>
-    <a class="path-card" href="{{ url_for('submit.form') }}">
-        <h3><i data-lucide="upload" class="icon"></i> Contribute</h3>
-        <p>Send a manifest and your files; the same pipeline runs and a maintainer decides within 14 days.</p>
-        <span class="path-more">Submit a benchmark</span>
-    </a>
-</div>
 
 <div class="home-two home-bottom">
     <section>

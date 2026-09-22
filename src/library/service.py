@@ -623,10 +623,11 @@ def stats(session) -> Dict:
                                  .where(Implementation.status == 'published',
                                         Implementation.golden_status == 'PASS')).scalar_one()
     kmin, kmax = session.execute(select(func.min(Benchmark.k_value), func.max(Benchmark.k_value)).where(pub)).one()
+    dmin, dmax = session.execute(select(func.min(Benchmark.bitwidth), func.max(Benchmark.bitwidth)).where(pub)).one()
     return {
         'benchmarks': n_bm, 'implementations': n_impl, 'verified': n_verified,
         'verified_pct': round(100 * n_verified / n_impl) if n_impl else 0,
-        'k_min': kmin, 'k_max': kmax,
+        'k_min': kmin, 'k_max': kmax, 'digits_min': dmin, 'digits_max': dmax,
     }
 
 
