@@ -85,6 +85,12 @@ def test_filters(client):
     assert client.get('/api/v1/benchmarks?logic_family=field').get_json()['benchmarks'][0]['slug'] == 'alu_k4_8t'
     assert client.get('/api/v1/benchmarks?language=c').get_json()['count'] == 1
     assert client.get('/api/v1/benchmarks?k_value=99').get_json()['count'] == 0
+    # both verification states and the per-model filter
+    assert client.get('/api/v1/benchmarks?verified=1').get_json()['count'] == 2
+    failed = client.get('/api/v1/benchmarks?verified=0').get_json()
+    assert failed['count'] == 1 and failed['benchmarks'][0]['slug'] == 'alu_k3_8t'
+    assert client.get('/api/v1/benchmarks?model=codestral-latest').get_json()['count'] == 1
+    assert client.get('/api/v1/benchmarks?model=nope').get_json()['count'] == 0
 
 
 def test_full_and_detail_carry_verification(client):
