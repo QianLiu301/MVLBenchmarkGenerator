@@ -31,12 +31,12 @@
     {% endif %}
 {%- endmacro %}
 
-{% if download_mode %}
-<section class="card selection" id="selection">
-    <div class="section-head">
+<details class="card selection" id="selection" open>
+    <summary class="sel-summary">
         <h2 class="section-title"><i data-lucide="package" class="icon"></i> Download by selection</h2>
-        <a href="{{ url_for('library.browse') }}" class="small">Back to browsing</a>
-    </div>
+        <span class="sel-hint small muted" id="selHint">{{ summary.specs }} specs, {{ summary.files }} files selected</span>
+        <i data-lucide="chevron-up" class="icon sel-caret"></i>
+    </summary>
     <form id="selForm" method="get" action="{{ url_for('library.download_selection') }}">
         <div class="sel-grid">
             {% macro selgroup(field, title, rows, labels, kind='') -%}
@@ -68,10 +68,9 @@
             <button type="button" class="btn btn-outline btn-sm" id="selClear" hidden>Clear selection</button>
             <button class="btn btn-primary" type="submit" id="selBtn"><i data-lucide="download" class="icon"></i> Download selection (.zip)</button>
         </div>
-        <p class="small muted" style="margin-top:8px">The archive contains <span class="mono">manifest.json</span> (filters, spec IDs, SHA-256 per file, format version, timestamp), <span class="mono">CITATION.bib</span> and <span class="mono">LICENSE.txt</span>. At most {{ summary.limit }} specs per request.</p>
+        <p class="small muted" style="margin-top:8px">The archive contains the manifest (filters, spec IDs, SHA-256 per file, format version, timestamp), the citation and the license. At most {{ summary.limit }} specs per request.</p>
     </form>
-</section>
-{% endif %}
+</details>
 
 <div class="toolbar">
     <button class="btn btn-outline btn-sm filter-toggle" id="filterToggle"><i data-lucide="sliders-horizontal" class="icon"></i> Filters</button>
@@ -88,7 +87,6 @@
         {% endfor %}
     </select>
     <a href="{{ url_for('library.download_all', **current) if current else url_for('library.download_all') }}" class="btn btn-outline btn-sm"><i data-lucide="download" class="icon"></i> Download {{ 'these' if current else 'all' }}</a>
-    {% if not download_mode %}<a href="{{ url_for('library.browse', mode='download') }}" class="btn btn-outline btn-sm"><i data-lucide="package" class="icon"></i> Download by selection</a>{% endif %}
 </div>
 
 <div class="drawer-backdrop" id="drawerBackdrop"></div>
@@ -206,6 +204,7 @@
                 const r = await fetch('/api/library/selection?' + params().toString());
                 const d = await r.json();
                 count.textContent = `${d.specs} specs, ${d.files} files, ≈ ${(d.bytes / 1048576).toFixed(1)} MB`;
+                hint.textContent = `${d.specs} specs, ${d.files} files selected`;
                 // per-option counts: an option that cannot combine with the rest shows 0
                 // and is disabled, so an empty selection cannot be built by accident
                 if (d.facets) {
@@ -229,6 +228,21 @@
                 btn.disabled = over || empty;
             } catch (e) { /* keep last value */ }
         }
+        const panel = document.getElementById('selection');
+        const hint = document.getElementById('selHint');
+        const KEY = 'mvl.selection.open';
+        {% if not download_mode %}
+        try {
+            const stored = localStorage.getItem(KEY);
+            // collapsed by default on a phone, where an open panel would push the
+            // benchmark table off the screen; the visitor's own choice wins
+            if (stored === '0' || (stored === null && window.innerWidth < 860)) panel.open = false;
+        } catch (e) { /* private mode */ }
+        {% endif %}
+        panel.addEventListener('toggle', () => {
+            try { localStorage.setItem(KEY, panel.open ? '1' : '0'); } catch (e) { /* private mode */ }
+        });
+
         clear.addEventListener('click', () => {
             form.querySelectorAll('input[type=checkbox]').forEach(c => {
                 c.disabled = false;

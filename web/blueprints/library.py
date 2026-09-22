@@ -58,13 +58,14 @@ def browse():
         page = max(int(request.args.get('page', 1)), 1)
     except ValueError:
         page = 1
+    # the selection panel is always rendered; mode=download only forces it open
     download_mode = request.args.get('mode') == 'download'
     with session_scope() as s:
         benchmarks, total = service.list_benchmarks(s, current, sort=sort, page=page)
         pages = max(math.ceil(total / service.PAGE_SIZE), 1)
         facets = service.facets(s)
-        selection = service.normalize_selection(request.args) if download_mode else None
-        summary = service.selection_summary(s, selection) if download_mode else None
+        selection = service.normalize_selection(request.args)
+        summary = service.selection_summary(s, selection)
         return render_template('library/browse.html', benchmarks=benchmarks, total=total,
                                page=page, pages=pages, sort=sort, current=current,
                                facets=facets, download_mode=download_mode,

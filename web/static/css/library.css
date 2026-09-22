@@ -480,6 +480,16 @@ pre.bibtex { background: var(--bg); border: 1px solid var(--border); border-radi
     .nav-drop .drop-caret { display: none; }
 }
 
+/* Download by selection: collapsible panel */
+details.selection > summary.sel-summary { display: flex; align-items: center; gap: 12px; cursor: pointer; list-style: none; }
+details.selection > summary.sel-summary::-webkit-details-marker { display: none; }
+details.selection > summary .section-title { margin: 0; }
+details.selection > summary .sel-hint { margin-left: auto; }
+details.selection > summary .sel-caret { color: var(--text-muted); transition: transform .15s; }
+details.selection:not([open]) > summary .sel-caret { transform: rotate(180deg); }
+details.selection[open] > summary { margin-bottom: 14px; }
+details.selection > summary:hover .section-title { color: var(--link-hover); }
+
 /* Download by selection: options that cannot combine with the rest */
 label.check.zero { color: var(--text-muted); opacity: .55; cursor: not-allowed; }
 label.check.zero .n { color: var(--text-muted); }
