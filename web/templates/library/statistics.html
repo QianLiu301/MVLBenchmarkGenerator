@@ -1,0 +1,180 @@
+{% extends "base.html" %}
+{% set nav = 'docs' %}
+{% block title %}Statistics — MVL Benchmark Library{% endblock %}
+{% block content %}
+<div class="prose wide">
+    <h1>Statistics</h1>
+    <p>
+        What the collection contains, how it is spread over the parameters, and how much of it is
+        backed by a passing check. Counts are live. How each generation model fares on the same
+        specifications is on the <a href="{{ url_for('library.models') }}">generation models</a> page.
+    </p>
+
+    <h2>Coverage</h2>
+    <p>
+        One cell per specification: radix down, digits per operand across. The figure is how many of
+        the {{ language_labels|length }} languages have an implementation that passed.
+    </p>
+    <div class="table-wrap">
+    <table class="bench matrix">
+        <thead>
+            <tr><th>k</th>{% for n in stats.digits %}<th class="num">{{ n }} digits</th>{% endfor %}</tr>
+        </thead>
+        <tbody>
+            {% for row in stats.matrix %}
+            <tr>
+                <th scope="row">{{ row.k }} <span class="muted small">{{ radix_names[row.k] }}</span></th>
+                {% for c in row.cells %}
+                    {% if c %}
+                    <td class="cell {{ 'full' if c.verified == c.total else ('none' if c.verified == 0 else 'part') }}">
+                        <a href="{{ url_for('library.detail', slug=c.slug) }}">{{ c.slug }}</a>
+                        <span class="cell-n">{{ c.verified }}/{{ c.total }}</span>
+                    </td>
+                    {% else %}
+                    <td class="cell empty"><span class="muted small">—</span></td>
+                    {% endif %}
+                {% endfor %}
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+    <p class="small muted">
+        {{ stats.pairs_verified }} of {{ stats.pairs_total }} specification/language pairs have a verified
+        implementation.
+    </p>
+
+    <h2>By language</h2>
+    <div class="table-wrap">
+    <table class="bench">
+        <thead><tr><th>Language</th><th class="num">Specifications</th><th class="num">Implementations</th><th class="num">Verified</th><th>Rate</th></tr></thead>
+        <tbody>
+            {% for l in stats.languages %}
+            <tr>
+                <td><a href="{{ url_for('library.browse', language=l.code) }}">{{ l.label }}</a></td>
+                <td class="num">{{ l.specs }}</td>
+                <td class="num">{{ l.total }}</td>
+                <td class="num">{{ l.verified }}</td>
+                <td><div class="rate"><span class="rate-track"><span class="rate-bar" style="width: {{ l.pct }}%"></span></span><span class="rate-num">{{ l.pct }} %</span></div></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+    <p class="small muted">
+        C and Python are software references and pass almost always; the hardware description
+        languages are where implementations fail, which is what makes them the interesting part of
+        the collection.
+    </p>
+
+    <h2>By algebraic family, radix and digit count</h2>
+    <div class="stat-cols">
+        <div class="table-wrap">
+        <table class="bench">
+            <thead><tr><th>Family</th><th class="num">Specs</th><th class="num">Verified</th><th class="num">Rate</th></tr></thead>
+            <tbody>
+                {% for f in stats.families %}
+                <tr>
+                    <td><a href="{{ url_for('library.browse', logic_family=f.key) }}">{{ f.label }}</a></td>
+                    <td class="num">{{ f.specs }}</td>
+                    <td class="num">{{ f.verified }}/{{ f.total }}</td>
+                    <td class="num">{{ f.pct }} %</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        </div>
+        <div class="table-wrap">
+        <table class="bench">
+            <thead><tr><th>Radix k</th><th class="num">Specs</th><th class="num">Verified</th><th class="num">Rate</th></tr></thead>
+            <tbody>
+                {% for r in stats.by_k %}
+                <tr>
+                    <td><a href="{{ url_for('library.browse', k_value=r.k) }}">k = {{ r.k }}</a></td>
+                    <td class="num">{{ r.specs }}</td>
+                    <td class="num">{{ r.verified }}/{{ r.total }}</td>
+                    <td class="num">{{ r.pct }} %</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        </div>
+        <div class="table-wrap">
+        <table class="bench">
+            <thead><tr><th>Digits</th><th class="num">Specs</th><th class="num">Verified</th><th class="num">Rate</th></tr></thead>
+            <tbody>
+                {% for r in stats.by_digits %}
+                <tr>
+                    <td><a href="{{ url_for('library.browse', bitwidth=r.digits) }}">{{ r.digits }}</a></td>
+                    <td class="num">{{ r.specs }}</td>
+                    <td class="num">{{ r.verified }}/{{ r.total }}</td>
+                    <td class="num">{{ r.pct }} %</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        </div>
+    </div>
+
+    <h2>Strength of the checks</h2>
+    <p>
+        A verified badge is only as strong as the comparison behind it. Of the
+        {{ stats.strength.exhaustive + stats.strength.random + stats.strength['self-reported'] + stats.strength.none }}
+        verified implementations:
+    </p>
+    <ul>
+        <li><strong>{{ stats.strength.exhaustive }}</strong> were compared on <strong>every operand pair</strong>
+            (possible when k<sup>n</sup> ≤ 256).</li>
+        <li><strong>{{ stats.strength.random }}</strong> were compared on the injected vector set —
+            50 seeded random pairs plus the edge cases — on top of the vectors the file prints itself.</li>
+        {% if stats.strength['self-reported'] or stats.strength.none %}
+        <li><strong>{{ stats.strength['self-reported'] + stats.strength.none }}</strong> rest on the
+            file's own test output alone, because the injected-vector harness does not apply.</li>
+        {% endif %}
+    </ul>
+    <p class="small muted">The exact strength of a single file is on its benchmark page, next to the tool versions and the seed.</p>
+
+    <h2>Growth</h2>
+    <div class="table-wrap">
+    <table class="bench">
+        <thead><tr><th>Month</th><th class="num">Implementations added</th><th>Share</th></tr></thead>
+        <tbody>
+            {% set top = stats.growth | map(attribute='implementations') | max %}
+            {% for g in stats.growth %}
+            <tr>
+                <td class="mono">{{ g.month }}</td>
+                <td class="num">{{ g.implementations }}</td>
+                <td><div class="rate"><span class="rate-track"><span class="rate-bar" style="width: {{ (100 * g.implementations / top) | round | int }}%"></span></span></div></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+
+    <h2>Where the collection is thin</h2>
+    {% if stats.gaps %}
+    <p>
+        These specification and language pairs have nothing that passes yet. An implementation for
+        one of them is the most useful thing to contribute — the
+        <a href="{{ url_for('submit.form') }}">submission page</a> runs it through the same checks.
+    </p>
+    <div class="table-wrap">
+    <table class="bench">
+        <thead><tr><th>Specification</th><th>Structure</th><th>Missing</th><th>Tried but failed</th></tr></thead>
+        <tbody>
+            {% for g in stats.gaps %}
+            <tr>
+                <td><a href="{{ url_for('library.detail', slug=g.slug) }}" class="slug">{{ g.slug }}</a></td>
+                <td>{{ g.structure }}</td>
+                <td>{% for m in g.missing %}<span class="chip">{{ m }}</span>{% endfor %}</td>
+                <td>{% if g.has_attempt %}{% for m in g.has_attempt %}<span class="chip">{{ m }}</span>{% endfor %}{% else %}<span class="muted small">—</span>{% endif %}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+    {% else %}
+    <p>Every specification has a verified implementation in every language.</p>
+    {% endif %}
+</div>
+{% endblock %}

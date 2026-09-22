@@ -57,6 +57,7 @@
             <dt>Reference model</dt><dd><a href="{{ url_for('library.format') }}#reference-model">v{{ golden_version }}</a></dd>
         </dl>
         <p class="glance-foot small">
+            <a href="{{ url_for('library.statistics') }}">Full statistics</a><br>
             Release {{ release.version }}{% if release.date %} · {{ release.date }}{% endif %}<br>
             {% if release.doi %}<a href="{{ release.doi_url }}" target="_blank" rel="noopener">doi:{{ release.doi }}</a>{% else %}DOI pending{% endif %}
         </p>

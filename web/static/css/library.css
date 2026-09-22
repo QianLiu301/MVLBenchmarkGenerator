@@ -498,6 +498,18 @@ details.selection > summary:hover .section-title { color: var(--link-hover); }
 label.check.zero { color: var(--text-muted); opacity: .55; cursor: not-allowed; }
 label.check.zero .n { color: var(--text-muted); }
 
+/* Statistics: coverage matrix */
+table.matrix { min-width: 720px; }
+table.matrix th[scope="row"] { white-space: nowrap; }
+table.matrix td.cell { font-size: .84rem; white-space: nowrap; }
+table.matrix td.cell a { font-family: var(--mono); font-size: .8rem; }
+table.matrix td.cell .cell-n { display: inline-block; margin-left: 6px; padding: 1px 6px; border-radius: 999px; font-variant-numeric: tabular-nums; font-size: .76rem; }
+table.matrix td.full .cell-n { background: var(--ok-bg); color: var(--ok-fg); }
+table.matrix td.part .cell-n { background: var(--warn-bg); color: var(--warn-fg); }
+table.matrix td.none .cell-n { background: var(--bg); color: var(--text-muted); }
+.stat-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; align-items: start; }
+.stat-cols table.bench { min-width: 0; }
+
 /* Models page */
 table.models { min-width: 640px; }
 table.models td.ok { color: var(--ok-fg); font-weight: 600; }

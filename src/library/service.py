@@ -787,6 +787,101 @@ def model_matrix(session) -> Dict:
             'statuses': STATUS_CLASSES}
 
 
+def library_statistics(session) -> Dict:
+    """Everything the statistics page shows, from two queries.
+
+    Answers what the browse page cannot: how the collection is spread over the
+    parameters, how each language and each model fares, how strong the verification
+    behind a badge is, how the library grew, and — the useful one for contributors —
+    which (specification, language) pairs still have nothing that passes.
+    """
+    specs = list(session.execute(
+        select(Benchmark).where(Benchmark.status == 'published')
+        .order_by(Benchmark.k_value, Benchmark.bitwidth)).scalars())
+    rows = session.execute(
+        select(Implementation.benchmark_id, Implementation.language, Implementation.golden_status,
+               Implementation.verification_strength, Implementation.model_responded,
+               Implementation.source, Implementation.created_at, Benchmark.slug,
+               Benchmark.k_value, Benchmark.bitwidth, Benchmark.logic_family)
+        .join(Benchmark, Benchmark.id == Implementation.benchmark_id)
+        .where(Implementation.status == 'published', Benchmark.status == 'published')).all()
+
+    ks = sorted({b.k_value for b in specs})
+    digits = sorted({b.bitwidth for b in specs})
+    by_cell = {(b.k_value, b.bitwidth): b for b in specs}
+    verified_pairs = {(r[0], r[1]) for r in rows if r[2] == 'PASS'}
+    have_pairs = {(r[0], r[1]) for r in rows}
+
+    # (k x digits) coverage: one cell per specification, with its verified share
+    matrix = []
+    for k in ks:
+        line = []
+        for n in digits:
+            b = by_cell.get((k, n))
+            if b is None:
+                line.append(None)
+                continue
+            langs = [l for l in LANGUAGES if (b.id, l) in have_pairs]
+            ok = [l for l in LANGUAGES if (b.id, l) in verified_pairs]
+            line.append({'slug': b.slug, 'structure': b.logic_type,
+                         'languages': len(langs), 'verified': len(ok),
+                         'total': len(LANGUAGES)})
+        matrix.append({'k': k, 'cells': line})
+
+    def rate(items):
+        total = len(items)
+        ok = sum(1 for i in items if i[2] == 'PASS')
+        return {'total': total, 'verified': ok, 'pct': round(100 * ok / total) if total else 0}
+
+    languages = [{'code': code, 'label': label,
+                  'specs': len({r[0] for r in rows if r[1] == code}),
+                  **rate([r for r in rows if r[1] == code])}
+                 for code, label in LANGUAGES.items()]
+
+    families = [{'key': key, 'label': FAMILY_LABELS[key].split(' — ')[0],
+                 'specs': len({b.id for b in specs if b.logic_family == key}),
+                 **rate([r for r in rows if r[10] == key])}
+                for key in FAMILY_LABELS]
+
+    by_k = [{'k': k, 'specs': sum(1 for b in specs if b.k_value == k),
+             **rate([r for r in rows if r[8] == k])} for k in ks]
+    by_digits = [{'digits': n, 'specs': sum(1 for b in specs if b.bitwidth == n),
+                  **rate([r for r in rows if r[9] == n])} for n in digits]
+
+    # how strong the check behind a verified badge actually was
+    strength = {'exhaustive': 0, 'random': 0, 'self-reported': 0, 'none': 0}
+    for r in rows:
+        if r[2] != 'PASS':
+            continue
+        label = (r[3] or '').split('(')[0] or 'none'
+        strength[label if label in strength else 'none'] += 1
+
+    # growth by month of first publication
+    months: Dict[str, int] = {}
+    for r in rows:
+        if r[6]:
+            months[r[6].strftime('%Y-%m')] = months.get(r[6].strftime('%Y-%m'), 0) + 1
+    growth = [{'month': m, 'implementations': n} for m, n in sorted(months.items())]
+
+    # the gap list: specification x language with nothing verified
+    gaps = []
+    for b in specs:
+        missing = [LANGUAGES[l] for l in LANGUAGES if (b.id, l) not in verified_pairs]
+        if missing:
+            gaps.append({'slug': b.slug, 'structure': b.logic_type, 'missing': missing,
+                         'has_attempt': [LANGUAGES[l] for l in LANGUAGES
+                                         if (b.id, l) in have_pairs and (b.id, l) not in verified_pairs]})
+
+    return {
+        'ks': ks, 'digits': digits, 'matrix': matrix,
+        'languages': languages, 'families': families,
+        'by_k': by_k, 'by_digits': by_digits,
+        'strength': strength, 'growth': growth, 'gaps': gaps,
+        'pairs_total': len(specs) * len(LANGUAGES),
+        'pairs_verified': len(verified_pairs),
+    }
+
+
 def bump_downloads(session, benchmark: Benchmark = None, impl: Implementation = None):
     if benchmark is not None:
         benchmark.download_count = (benchmark.download_count or 0) + 1

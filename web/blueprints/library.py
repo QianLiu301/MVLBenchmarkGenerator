@@ -238,6 +238,13 @@ def acknowledgements():
                                contributors=service.contributors(s), **_LABELS)
 
 
+@bp.route('/statistics')
+def statistics():
+    with session_scope() as s:
+        return render_template('library/statistics.html',
+                               stats=service.library_statistics(s), **_LABELS)
+
+
 @bp.route('/models')
 def models():
     with session_scope() as s:
