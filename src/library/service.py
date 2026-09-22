@@ -883,10 +883,16 @@ def library_statistics(session) -> Dict:
 
 
 def bump_downloads(session, benchmark: Benchmark = None, impl: Implementation = None):
-    if benchmark is not None:
-        benchmark.download_count = (benchmark.download_count or 0) + 1
-    if impl is not None:
-        impl.download_count = (impl.download_count or 0) + 1
+    """Best effort: the database shipped with the application can be read-only, and a
+    download counter is never worth failing a download for."""
+    try:
+        if benchmark is not None:
+            benchmark.download_count = (benchmark.download_count or 0) + 1
+        if impl is not None:
+            impl.download_count = (impl.download_count or 0) + 1
+        session.flush()
+    except Exception:
+        session.rollback()
 
 
 # ----------------------------------------------------------------------------

@@ -1,15 +1,23 @@
 """Database engine and session factory.
 
-DATABASE_URL set   -> Postgres (Neon in production). Render's disk is ephemeral, so
-                      the library must live off-box; code files are small text and
-                      are stored in the database itself (no object storage needed).
-DATABASE_URL unset -> SQLite at data/library.db for local development.
+DATABASE_URL set   -> Postgres (a hosted database). Connections are NOT pooled: a
+                      serverless Postgres only suspends its compute while nothing is
+                      connected, and a pool held open by a long-running web process
+                      keeps it awake around the clock. That is what exhausted the Neon
+                      free allowance on 2026-09-22 — the traffic was negligible, the
+                      idle connection was not.
+DATABASE_URL unset -> SQLite at data/library.db. The file ships with the application,
+                      which suits a read-mostly library: browsing, downloads and the
+                      API need no writes. Writes (submissions, approvals, download
+                      counters) live only until the next deploy, because the container
+                      filesystem is replaced.
 """
 import os
 from contextlib import contextmanager
 from pathlib import Path
 
 from sqlalchemy import create_engine
+from sqlalchemy.pool import NullPool
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 Base = declarative_base()
@@ -38,6 +46,10 @@ def get_engine():
         kwargs = {'pool_pre_ping': True, 'future': True}
         if url.startswith('sqlite'):
             kwargs['connect_args'] = {'check_same_thread': False}
+        else:
+            # no idle connections, so a serverless Postgres can suspend between requests
+            kwargs['poolclass'] = NullPool
+            kwargs['connect_args'] = {'connect_timeout': 10}
         _engine = create_engine(url, **kwargs)
         _Session = sessionmaker(bind=_engine, expire_on_commit=False, future=True)
         backend = 'postgres' if url.startswith('postgresql') else 'sqlite'

@@ -31,5 +31,6 @@ Thumbs.db
 # Claude Code local launch config
 .claude/launch.json
 
-# Local SQLite library database
-data/
+# data/ is scratch, except the published library database that ships with the app
+data/*
+!data/library.db
