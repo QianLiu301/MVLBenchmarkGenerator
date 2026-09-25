@@ -10,7 +10,7 @@ INLINE = [
     ('HS:2000',     '[Hoos & Stuetzle, SATLIB, SAT 2000]'),
     ('R:1991',      '[Reinelt, TSPLIB, ORSA J. Computing 1991]'),
     ('TB:05',       '[Teng & Bolton, CCECE 2005]'),
-    ('XX:2024',     '[synthesis paper -- still to be chosen]'),
+    ('XX:2024',     '[Abd-El-Barr & Khan, Int. J. Electronics 2014]'),
     ('BBMG:2025',   '[Bos et al., REBEL-6, ISMVL 2025]'),
     ('D:2026',      '[Drechsler, ISMVL 2026]'),
 ]
@@ -50,29 +50,30 @@ own record, not reconstructed from memory.
    are often used for performance analysis of MVL circuits."
 
 [Bos et al., REBEL-6, ISMVL 2025]
-   S. Bos, V. Bodahl, O. C. Moholth and H. Gundersen, "REBEL-6: A 32-Trit Balanced Ternary
-   Instruction Set Architecture with R2R Compiler Pipeline for C", 55th International
-   Symposium on Multiple-Valued Logic (ISMVL 2025), Montreal, Canada, 2025.
-   Title and authors taken from the ISMVL 2025 programme; page numbers not yet checked.
+   S. Bos, V. Bodahl, O. C. Moholth and H. Gundersen, "REBEL-6: A 32-trit balanced ternary
+   instruction set architecture with R2R compiler pipeline for C", 2025 IEEE 55th
+   International Symposium on Multiple-Valued Logic (ISMVL), Montreal, QC, Canada, 2025,
+   pp. 98-103, doi:10.1109/ISMVL64713.2025.00028.
    The authors are the Ternary Research Group at USN Kongsberg, the host of ISMVL 2027.
+
+[Abd-El-Barr & Khan, Int. J. Electronics 2014]
+   M. I. Abd-El-Barr and E. A. Khan, "Improved direct cover heuristic algorithms for synthesis
+   of multiple-valued logic functions", International Journal of Electronics, vol. 101, no. 2,
+   pp. 271-286, 2014, doi:10.1080/00207217.2013.780296.
+   It states: "The first consists of 50,000 2-variable 4-valued randomly generated functions
+   and the second consists of 50,000 2-variable 5-valued randomly generated functions", and
+   calls them "our benchmarks". No seed is given and the set is not distributed. The paper
+   compares against Besslich (1986), Dueck and Miller (1987) and Yang and Wang (1990) by
+   running them on its own set, which is sound within the paper; what cannot be done is
+   comparing its averages with those published elsewhere on a different 50,000 functions.
 
 Still open
 
 [BF:85], [BD:99], [BK:1999]
-   your own keys from the LLM-MVL story line, kept unchanged. I have not resolved which
-   papers they point to; your bibliography settles them.
+   your own keys from the LLM-MVL story line, kept unchanged.
 
 [Drechsler, ISMVL 2026]
    R. Drechsler, "LLM-based Generation of High-Level Benchmarks for MVL Designs", ISMVL 2026.
-   Taken from the paper you sent earlier, not re-checked against the published record.
-
-[synthesis paper]
-   the de-facto benchmark of the direct-cover synthesis literature is 50,000 randomly
-   generated two-variable four-valued functions, regenerated per paper without a seed and not
-   distributed. Two candidates: Applied Computing and Informatics 20(1-2), 2024 (open access;
-   its own benchmark description and the algorithms it compares against were confirmed), or
-   Int. J. Electronics 101(2), 2014, which reads more as the established practice than as one
-   author's choice. Neither has been read in full yet.
 '''
 
 root = 'D:/DE/MVLBenchmark'
