@@ -34,3 +34,6 @@ Thumbs.db
 # data/ is scratch, except the published library database that ships with the app
 data/*
 !data/library.db
+
+# Generated artefacts: release archives, verification runs, seed logs, zip cache
+output/
