@@ -2,7 +2,7 @@
 
 ## Introduction
 
-multi-valued logic is pursued because it promises higher information density, fewer interconnects and lower power consumption than binary logic \cite{REV:2024}
+multi-valued logic is pursued because it promises higher information density, fewer interconnects and lower power consumption than binary logic \cite{S:81}
 
 every such promise is a comparative claim, and it can be checked only on designs that everyone can obtain
 
@@ -12,7 +12,9 @@ for binary logic such common sets have been available since the early 80s \cite{
 
 other domains established such a resource as well, for reversible circuits \cite{WGT+:2008}, satisfiability \cite{HS:2000} and the traveling salesman problem \cite{R:1991}
 
-for multi-valued logic none of the three demands is met, although the field is active; ISMVL 2025 alone had more than 40 papers on synthesis, decision diagrams, architectures, emerging devices and security
+for multi-valued logic none of the three demands is met; that no standard benchmark functions are available for comparing MVL designs was stated twenty years ago \cite{TB:05}, and it is still the case
+
+this is not for lack of activity; ISMVL 2025 alone had more than 40 papers on synthesis, decision diagrams, architectures, emerging devices and security
 
 each community evaluates on its own material: randomly generated two-variable functions in synthesis \cite{XX:2024}, encoded binary circuits for decision diagrams \cite{BK:1999}, self-designed cells at device level, and a binary ISA as the reference for a 32-trit ternary architecture \cite{BBMG:2025}
 

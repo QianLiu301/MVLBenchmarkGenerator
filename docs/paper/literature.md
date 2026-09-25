@@ -111,3 +111,40 @@ ternary.
 - dblp and IEEE Xplore were not reachable from here; ISMVL 2024 and 2026 have not been
   censused. ISMVL 2025 was obtained from the conference program page.
 - Check whether MVSIS (Berkeley) ships a benchmark set, and whether it is still available.
+
+---
+
+## Confirmed references (read from the source, 2026-09-25)
+
+**\cite{S:81}** — K. C. Smith, "The Prospects for Multivalued Logic: A Technology and
+Applications View," *IEEE Transactions on Computers*, vol. C-30, no. 9, 1981. The canonical
+statement of why multi-valued logic is pursued. ISMVL 2025 held a K. C. Smith memorial special
+session, so the community knows it well.
+
+**\cite{TB:05}** — D. H. Y. Teng and R. J. Bolton, "Performance evaluation of multiple-valued
+logic circuits using statistical approach," *Canadian Conference on Electrical and Computer
+Engineering*, Saskatoon, 2005, pp. 300-303, doi:10.1109/CCECE.2005.1556932.
+
+The sentence we were looking for is verbatim, and it opens the abstract:
+
+> "Since there are no standard benchmark functions available for comparing multiple-valued
+> logic (MVL) designs, benchmark functions for binary logic design are often used for
+> performance analysis of MVL circuits."
+
+Section 2 states it again and gives the reason the authors reject structured benchmarks:
+
+> "However, up to now, there are no standard benchmark functions available for MVL.
+> Implementation of specific functions such as adders and multipliers involves architecture and
+> algorithm. Different architectures and algorithms result in different circuits, which makes a
+> fair comparison very difficult."
+
+**This objection is worth answering rather than ignoring.** Teng and Bolton turned to random
+functions precisely because an adder can be built in many ways. Our format removes their
+reason: the entry fixes the function exhaustively --- the algebra, every operation and every
+flag --- and leaves the implementation free. Different architectures for one specification are
+then comparable *because* the function is pinned, which is what they wanted and could not get.
+The paper should make this point where the format is introduced.
+
+Still open: a citation for the synthesis community's 50,000 random two-variable functions
+(\cite{XX:2024}), and the exact keys for SATLIB (Hoos and Stützle) and TSPLIB (Reinelt).
+ScienceDirect is behind a captcha from here and was not needed after all.
