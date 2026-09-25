@@ -18,7 +18,7 @@ producing meaningful MVL designs by hand is expensive, but recently it has been 
 
 designs alone, however, are not benchmarks: what a design computes has to be stated, and that it computes it has to be established
 
-in MVL the name of a design does not determine its function: an "8-trit ALU over GF(3)" may denote the ring Z/3^8 Z, the field GF(3^8) or digit-wise arithmetic in GF(3)[x]/(x^8), ternary designs are built on unbalanced as well as on balanced digits \cite{BBMG:2025}, and there is no convention for the status flags as there is for two's complement
+in MVL the name of a design does not determine its function: a ternary ALU may be built on unbalanced digits 0, 1, 2 or on balanced digits -1, 0, 1 \cite{BBMG:2025}, and there is no convention for its status flags as there is for two's complement
 
 and a generated design comes with its own testbench which it passes, so its test output is no evidence of correctness
 
