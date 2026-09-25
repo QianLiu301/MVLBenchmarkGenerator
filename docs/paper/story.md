@@ -6,25 +6,19 @@ multi-valued logic is pursued because it promises higher information density, fe
 
 whether these promises hold is decided by comparison, and a comparison is only as good as the designs it is carried out on
 
-for binary logic common benchmark sets have been available since the early 80s \cite{BF:85,BD:99}; proposed for testing algorithms, they were later used intensively for synthesis and verification as well
-
-other domains built such a resource as well, for reversible circuits \cite{WGT+:2008}, satisfiability \cite{HS:2000} and the traveling salesman problem \cite{R:1991}
+for binary logic common benchmark sets have been available since the early 80s \cite{BF:85,BD:99}, and other domains built such a resource as well, for reversible circuits \cite{WGT+:2008}, satisfiability \cite{HS:2000} and the traveling salesman problem \cite{R:1991}
 
 for multi-valued logic no such resource exists; that no standard benchmark functions are available for comparing MVL designs was stated twenty years ago \cite{TB:05}, and it is still the case
 
-instead each community evaluates on its own material: randomly generated two-variable functions in synthesis \cite{XX:2024}, encoded binary circuits for decision diagrams \cite{BK:1999}, self-designed cells at device level, and a binary ISA as the reference for a 32-trit ternary architecture \cite{BBMG:2025}
+instead each community evaluates on its own material: randomly generated two-variable functions in synthesis \cite{XX:2024}, encoded binary circuits for decision diagrams \cite{BK:1999}, and a binary ISA as the reference for a 32-trit ternary architecture \cite{BBMG:2025}
 
 this material is rarely distributed, so published comparisons rest on designs that other researchers cannot obtain
 
-a shared resource, however, requires a body of designs, and producing meaningful MVL designs by hand is expensive
+producing meaningful MVL designs by hand is expensive, but recently it has been shown that they can be generated with very low effort using LLMs \cite{D:2026}
 
-recently it has been shown that meaningful MVL designs can be generated with very low effort using LLMs \cite{D:2026}, which removes this obstacle
+designs alone, however, are not benchmarks: what a design computes has to be stated, and that it computes it has to be established
 
-but designs alone are not benchmarks: what a design computes has to be stated, and that it computes it has to be established
-
-in MVL the name of a design does not determine its function: an "8-trit ALU over GF(3)" may denote the ring Z/3^8 Z, the field GF(3^8), or digit-wise arithmetic in GF(3)[x]/(x^8), and ternary designs are built on unbalanced as well as on balanced digits \cite{BBMG:2025}
-
-also there is no convention for the status flags, as there is for negative numbers in two's complement
+in MVL the name of a design does not determine its function: an "8-trit ALU over GF(3)" may denote the ring Z/3^8 Z, the field GF(3^8) or digit-wise arithmetic in GF(3)[x]/(x^8), ternary designs are built on unbalanced as well as on balanced digits \cite{BBMG:2025}, and there is no convention for the status flags as there is for two's complement
 
 and a generated design comes with its own testbench which it passes, so its test output is no evidence of correctness
 
