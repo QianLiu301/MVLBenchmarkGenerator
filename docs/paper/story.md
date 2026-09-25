@@ -4,31 +4,31 @@
 
 benchmarking is highly relevant for the evaluation and comparison of newly proposed EDA algorithms
 
-evaluation on random functions is not sufficient, but structures occurring in designs, like adders, multipliers or {\em Arithmetic Logical Units} (ALUs) should be considered
+what makes a benchmark useful is not that it exists, but that different groups use the same one; only then are published results comparable
 
-for binary logic such benchmark sets have been available since the early 80s \cite{BF:85,BD:99}
+for binary logic such common sets have been available since the early 80s \cite{BF:85,BD:99}; originally proposed for testing algorithms, they were later used intensively for synthesis and verification as well
 
-originally proposed for testing algorithms, they were later used intensively for synthesis and verification as well, so a benchmark set is used for purposes it was not built for
+also in other domains common resources were established and became the reference for a whole community, like reversible circuits \cite{WGT+:2008}
 
-also in other domains benchmarks are established, like reversible circuits \cite{WGT+:2008}
+such a resource is more than a collection of files: it fixes what each entry means, it can be cited, and it can be extended by others
 
-for multi-valued logic circuits very few benchmark sets are available; often binary circuits have been used with encodings, but these do not reflect the MVL nature \cite{BK:1999}
+for multi-valued logic no comparable resource exists; results are reported on examples that are described informally and are rarely available, so they can neither be reproduced nor compared
 
-in \cite{RS:2018} an approach based on DDs was proposed; this allows for circuit generation, but on very low levels only
+often encoded binary circuits have been used instead, but these do not reflect the MVL nature \cite{BK:1999}, and the DD-based generation of \cite{RS:2018} yields circuits on very low levels only
 
-recently it has been shown that based on LLMs meaningful MVL benchmarks can be generated with very low effort \cite{D:2026}, following the use of LLMs in other fields of EDA \cite{JHQ+:2025,FFKR:2024}
+recently it has been shown that meaningful MVL designs can be generated with very low effort using LLMs \cite{D:2026}, so the shortage of designs is no longer the obstacle
 
-however, a generated design is not yet a benchmark: to be used by others it has to be unambiguous, and its correctness has to be established
+however, a generated design is not yet a benchmark: what it computes has to be stated, and that it computes it has to be established
 
-in MVL the name of a design does not determine its function: an "8-trit ALU over GF(3)" may denote the ring Z/3^8 Z, the field GF(3^8), or digit-wise arithmetic in GF(3)[x]/(x^8)
-
-also there is no convention for the status flags, as there is for negative numbers in two's complement
+in MVL the name of a design does not determine its function: an "8-trit ALU over GF(3)" may denote the ring Z/3^8 Z, the field GF(3^8), or digit-wise arithmetic in GF(3)[x]/(x^8), and there is no convention for the status flags as there is for two's complement
 
 moreover, a generated design comes with its own testbench which it passes, so its test output is no evidence of correctness
 
 in this paper we present the MVL Benchmark Library, an online resource in which every entry states the algebra it computes in, and carries the record of its verification against an independent reference model
 
-currently 56 specifications with 654 implementations in C, Python, Verilog and VHDL are provided, of which 65% are verified; the model that produced an implementation is recorded, and implementations that do not pass are kept as well
+currently 56 specifications with 654 implementations in C, Python, Verilog and VHDL are provided, of which 65% are verified; implementations that do not pass are kept with their reports, and the model that produced an implementation is recorded
+
+the library is versioned, archived under a DOI and open to submissions that are checked by the same procedure, so it can be cited and can grow
 
 ## The paper then contains
 
