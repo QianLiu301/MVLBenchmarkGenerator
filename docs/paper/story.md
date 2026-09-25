@@ -16,7 +16,7 @@ instead each community evaluates on its own material: randomly generated two-var
 
 this material is mostly not distributed --- the random sets are regenerated per paper without a seed --- so published comparisons rest on sets that are not the same set
 
-the reason is not a lack of interest but cost: producing meaningful MVL designs by hand is expensive, so the field made do with what was cheap
+what these substitutes have in common is that they are cheap to obtain; a common resource instead requires a body of designs, and producing meaningful MVL designs by hand is expensive
 
 recently it has been shown that meaningful MVL designs can be generated with very low effort using LLMs \cite{D:2026}, which removes exactly this obstacle
 
@@ -31,6 +31,8 @@ and while designs were expensive, their cost was itself a filter on quality; a g
 in this paper we present the MVL Benchmark Library, an online resource in which every entry states the algebra it computes in, and carries the record of its verification against an independent reference model
 
 currently 56 specifications with 654 implementations in C, Python, Verilog and VHDL are provided, of which 65% are verified; implementations that do not pass are kept with their reports, and the model that produced an implementation is recorded
+
+all entries of a specification share one interface and are judged by one reference model, so a single testbench drives any of them, the radix can be varied with everything else held fixed, and four description languages of one specification can be compared
 
 a file format, a reference model, a submission procedure and a JSON API are part of the resource, and the library is versioned and archived under a DOI, so it can be cited and can grow
 
