@@ -37,23 +37,31 @@ the resource itself: 56 specifications over radices 2 to 9 and 8 to 14 digits, 6
 ## The paper then contains
 
 The MVL Benchmark Library
-  a parameterised family rather than a fixed list: module type x radix k x digit count n x algebraic family
-  currently one module type, the ALU, with the six operations ADD, SUB, MUL, NEG, INC and DEC, for k = 2 to 9 and n = 8 to 14 digits
-  names are derived from the parameters, so adding a radix or a width adds entries without changing anything else
-  how an entry is obtained and cited: browsing and filtering, per-entry and whole-library archives, a JSON API, a DOI-archived release, CC BY 4.0
+  an entry is not picked but addressed: its name is its parameters, so alu_k3_8t is the ALU with three logic values and eight digits
+  the library currently holds one module type, the ALU, with the operations ADD, SUB, MUL, NEG, INC and DEC
+  the radix runs from k = 2 to k = 9 and the operand width from n = 8 to n = 14 digits, which gives 56 specifications
+  each specification is implemented in C, Python, Verilog and VHDL by several producers, which gives 654 implementations
+  because only one parameter changes between neighbouring entries, the radix can be varied while the operations, the width and the reference model stay fixed; a list of hand-built circuits cannot offer this
+  an entry is obtained by browsing and filtering, as a per-entry or whole-library archive, or through a JSON API, and the release is archived under a DOI and licensed CC BY 4.0
 
 Benchmark format
-  family M, the ring Z/k^n Z: radix-k integers, arithmetic modulo k^n, carry and borrow defined, and the negative flag defined explicitly as result >= k^n / 2, since MVL has no two's complement to inherit a convention from
-  family F, the ring GF(q)[x]/(x^n): every digit an element of GF(q), the operations digit-wise, multiplication the polynomial product truncated to n digits under an irreducible polynomial fixed per q, hence no carry between digits and no negative flag
-  the formula of every operation and the rule for every status flag are part of the entry, because the two families share the same informal names
+  how the n digits of an operand relate to one another is not fixed by the radix alone, and no single rule covers k = 2 to 9
+  a field GF(k) exists only when k is a prime power: for k = 6 there is none, so the digits can only be read as one integer in base 6
+  for k = 4, 8 and 9 a field does exist, and its addition and multiplication are not arithmetic modulo k --- in GF(4), 1 + 1 = 0 rather than 2
+  one family can therefore not cover the whole range, and the library defines two, with every entry stating which one it belongs to
+  family M, the ring Z/k^n Z: the n digits form one number in base k, addition carries from digit to digit, the result is taken modulo k^n, carry and borrow are defined, and the negative flag is defined explicitly as result >= k^n / 2, since MVL inherits no convention from two's complement
+  family F, the ring GF(q)[x]/(x^n): each of the n digits is an element of GF(q), the operations act on each digit separately so that no carry ever crosses a digit boundary, multiplication is the polynomial product truncated to n digits under an irreducible polynomial fixed per q, and there is no negative flag
+  the difference is not notational: for a two-digit quaternary ALU, ADD(9, 7) is 0 with the carry set in family M and 14 with the carry clear in family F
+  the formula of every operation and the rule for every status flag are therefore part of the entry, not of the prose around it
 
 Verification
-  the reference model is derived from the definitions of the format; it uses no language model, no entry of the library and no simulator, it is versioned, and every record names the version it was produced with
+  a generated file contains both the design and the test that judges it, so its own test output cannot establish that it is correct
+  the reference model is derived from the definitions of the format; it uses no language model, no entry of the library and no simulator, it is versioned, and every record names the version used
   it is validated against four things from outside the project: arbitrary-precision integer arithmetic; an independent Galois field package, table by table, under the same irreducible polynomial; the ring and field axioms directly, including SUB after ADD = identity and NEG = SUB(0, .); and the requirement that k = 2 reproduce an ordinary binary ALU
   this validation found a defect of our own: the polynomial reduction used the irreducible polynomial in reverse order, which affects GF(8) and GF(16), and the library contains k = 8
-  first comparison: every vector the implementation prints itself is recomputed by the reference model and compared, result and all flags
-  second comparison: the implementation's test section is replaced by a generated driver fed with reference vectors, exhaustively over all operand pairs where k^n <= 256, otherwise a seeded sample together with every edge case
-  both have to agree completely; the first alone proves nothing, as 24 implementations once passed it while their injected driver had silently failed to build
+  the first comparison recomputes every vector the file prints itself and checks the result and every status flag against the reference model; the file chose those vectors, so passing it proves little
+  the second comparison removes the file's test section and replaces it with a driver we generate, fed with vectors from the reference model, so that the file has no say in what it is asked: every operand pair where k^n <= 256, otherwise a seeded sample together with every edge case
+  both have to agree completely, because 24 implementations once passed the first while the driver for the second had silently failed to build, so nothing independent had ever run them
   the record published with an entry names the tool versions, the vectors compared and passed per comparison, the strength of the check, the file checksum and the reference model version, so that anyone can repeat it
 
 Using the library --- the common interface of the HDL entries, browsing, archives, API, DOI, and the submission process
