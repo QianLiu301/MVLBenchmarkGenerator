@@ -6,29 +6,33 @@ benchmarking is highly relevant for the evaluation and comparison of newly propo
 
 what makes a benchmark useful is not that it exists, but that different groups use the same one; only then are published results comparable
 
-for binary logic such common sets have been available since the early 80s \cite{BF:85,BD:99}; originally proposed for testing algorithms, they were later used intensively for synthesis and verification as well
+for binary logic such common sets have been available since the early 80s \cite{BF:85,BD:99}; proposed for testing algorithms, they were later used intensively for synthesis and verification as well
 
-also in other domains common resources were established and became the reference for a whole community, like reversible circuits \cite{WGT+:2008}
+also in other domains a common resource became the reference for a whole community, like reversible circuits \cite{WGT+:2008}, satisfiability \cite{HS:2000} and the traveling salesman problem \cite{R:1991}
 
-such a resource is more than a collection of files: it fixes what each entry means, it can be cited, and it can be extended by others
+for multi-valued logic no such resource exists, although the field is active; ISMVL 2025 alone had more than 40 papers on synthesis, decision diagrams, architectures, emerging devices and security
 
-for multi-valued logic no comparable resource exists; results are reported on examples that are described informally and are rarely available, so they can neither be reproduced nor compared
+instead each community evaluates on its own material: randomly generated two-variable functions in synthesis \cite{XX:2024}, encoded binary circuits for decision diagrams \cite{BK:1999}, self-designed cells at device level, and a binary ISA as the reference for a 32-trit ternary architecture \cite{BBMG:2025}
 
-often encoded binary circuits have been used instead, but these do not reflect the MVL nature \cite{BK:1999}, and the DD-based generation of \cite{RS:2018} yields circuits on very low levels only
+this material is mostly not distributed --- the random sets are regenerated per paper without a seed --- so published comparisons rest on sets that are not the same set
 
-recently it has been shown that meaningful MVL designs can be generated with very low effort using LLMs \cite{D:2026}, so the shortage of designs is no longer the obstacle
+the reason is not a lack of interest but cost: producing meaningful MVL designs by hand is expensive, so the field made do with what was cheap
 
-however, a generated design is not yet a benchmark: what it computes has to be stated, and that it computes it has to be established
+recently it has been shown that meaningful MVL designs can be generated with very low effort using LLMs \cite{D:2026}, which removes exactly this obstacle
 
-in MVL the name of a design does not determine its function: an "8-trit ALU over GF(3)" may denote the ring Z/3^8 Z, the field GF(3^8), or digit-wise arithmetic in GF(3)[x]/(x^8), and there is no convention for the status flags as there is for two's complement
+however, cheap production alone does not create a shared resource: what a design computes has to be stated, and that it computes it has to be established
 
-moreover, a generated design comes with its own testbench which it passes, so its test output is no evidence of correctness
+in MVL the name of a design does not determine its function: an "8-trit ALU over GF(3)" may denote the ring Z/3^8 Z, the field GF(3^8), or digit-wise arithmetic in GF(3)[x]/(x^8), and ternary designs are built on unbalanced as well as on balanced digits \cite{BBMG:2025}
+
+also there is no convention for the status flags, as there is for negative numbers in two's complement
+
+and while designs were expensive, their cost was itself a filter on quality; a generated design passes no such filter, and it comes with its own testbench which it passes, so its test output is no evidence of correctness
 
 in this paper we present the MVL Benchmark Library, an online resource in which every entry states the algebra it computes in, and carries the record of its verification against an independent reference model
 
 currently 56 specifications with 654 implementations in C, Python, Verilog and VHDL are provided, of which 65% are verified; implementations that do not pass are kept with their reports, and the model that produced an implementation is recorded
 
-the library is versioned, archived under a DOI and open to submissions that are checked by the same procedure, so it can be cited and can grow
+a file format, a reference model, a submission procedure and a JSON API are part of the resource, and the library is versioned and archived under a DOI, so it can be cited and can grow
 
 ## The paper then contains
 
