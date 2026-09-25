@@ -109,7 +109,7 @@ for line in body.splitlines():
     elif t.startswith('## '):
         out += ['', t[3:], '']
     elif t:
-        out.append(t)
+        out.append(('  ' + t) if line.startswith('  ') else t)
     else:
         out.append('')
 txt = '\n'.join(out)
