@@ -8,6 +8,8 @@ evaluation on random functions is not sufficient, but structures occurring in de
 
 for binary logic such benchmark sets have been available since the early 80s \cite{BF:85,BD:99}
 
+originally proposed for testing algorithms, they were later used intensively for synthesis and verification as well, so a benchmark set is used for purposes it was not built for
+
 also in other domains benchmarks are established, like reversible circuits \cite{WGT+:2008}
 
 for multi-valued logic circuits very few benchmark sets are available; often binary circuits have been used with encodings, but these do not reflect the MVL nature \cite{BK:1999}
