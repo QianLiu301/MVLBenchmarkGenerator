@@ -2,9 +2,11 @@
 
 ## Introduction
 
-progress in EDA is measured by comparison: a new method is accepted because it does better than a known method on a known input
+multi-valued logic is pursued because it promises higher information density, fewer interconnects and lower power consumption than binary logic \cite{REV:2024}
 
-this puts three demands on that input --- everyone has to use the same one, it has to be described precisely enough to be reproduced, and it has to be correct itself
+every such promise is a comparative claim, and it can be checked only on designs that everyone can obtain
+
+this puts three demands on those designs --- everyone has to use the same ones, they have to be described precisely enough to be reproduced, and they have to be correct themselves
 
 for binary logic such common sets have been available since the early 80s \cite{BF:85,BD:99}; proposed for testing algorithms, they were later used intensively for synthesis and verification as well
 
