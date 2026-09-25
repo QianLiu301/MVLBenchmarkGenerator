@@ -10,7 +10,7 @@ for binary logic common benchmark sets have been available since the early 80s \
 
 for multi-valued logic no such resource exists; that no standard benchmark functions are available for comparing MVL designs was stated twenty years ago \cite{TB:05}, and it is still the case
 
-instead each community evaluates on its own material: randomly generated two-variable functions in synthesis \cite{XX:2024}, encoded binary circuits for decision diagrams \cite{BK:1999}, and a binary ISA as the reference for a 32-trit ternary architecture \cite{BBMG:2025}
+instead each community evaluates on its own material: randomly generated two-variable functions in synthesis \cite{XX:2024}, binary circuits with grouped and encoded variables, which do not reflect the MVL nature \cite{BK:1999}, and a binary ISA as the reference for a 32-trit ternary architecture \cite{BBMG:2025}
 
 this material is rarely distributed, so published comparisons rest on designs that other researchers cannot obtain
 

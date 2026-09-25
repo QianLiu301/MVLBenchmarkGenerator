@@ -3,9 +3,9 @@ import io, os
 BS = chr(92)
 
 INLINE = [
-    ('BF:85,BD:99', '[BF:85, BD:99]'),
+    ('BF:85,BD:99', '[Brglez & Fujiwara, ISCAS 1985; Brglez & Drechsler, ISCAS 1999]'),
     ('S:81',        '[Smith, IEEE Trans. Computers 1981]'),
-    ('BK:1999',     '[BK:1999]'),
+    ('BK:1999',     '[Brayton & Khatri, VLSI Design 1999]'),
     ('WGT+:2008',   '[Wille et al., RevLib, ISMVL 2008]'),
     ('HS:2000',     '[Hoos & Stuetzle, SATLIB, SAT 2000]'),
     ('R:1991',      '[Reinelt, TSPLIB, ORSA J. Computing 1991]'),
@@ -67,10 +67,28 @@ own record, not reconstructed from memory.
    running them on its own set, which is sound within the paper; what cannot be done is
    comparing its averages with those published elsewhere on a different 50,000 functions.
 
-Still open
+[Brglez & Fujiwara, ISCAS 1985]
+   F. Brglez and H. Fujiwara, "A neutral netlist of 10 combinational circuits and a target
+   translator in Fortran", Int'l Symp. on Circuits and Systems, Special Session on ATPG and
+   Fault Simulation, 1985, pp. 663-698.
+   Not held by IEEE Xplore or dblp -- ISCAS 1985 predates their coverage -- so no publisher
+   record exists to check it against. Google Scholar records the same page range. The entry is
+   yours and is the standard form; it is not a conventional paper but a reference to the tape
+   distributed at that special session, which is why page ranges differ across citations.
 
-[BF:85], [BD:99], [BK:1999]
-   your own keys from the LLM-MVL story line, kept unchanged.
+[Brglez & Drechsler, ISCAS 1999]
+   F. Brglez and R. Drechsler, "Design of experiments in CAD: context and new data sets for
+   ISCAS'99", 1999 IEEE International Symposium on Circuits and Systems (ISCAS), Orlando, FL,
+   USA, 1999, pp. 424-427 vol. 6, doi:10.1109/ISCAS.1999.780185.
+
+[Brayton & Khatri, VLSI Design 1999]
+   R. K. Brayton and S. P. Khatri, "Multi-valued logic synthesis", Proceedings Twelfth
+   International Conference on VLSI Design, Goa, India, 1999, pp. 196-205,
+   doi:10.1109/ICVD.1999.745148.
+   A survey of multi-valued synthesis, not of decision diagrams; the story line now cites it
+   for encoded binary variables, which is what it supports and how you used the key.
+
+Still open
 
 [Drechsler, ISMVL 2026]
    R. Drechsler, "LLM-based Generation of High-Level Benchmarks for MVL Designs", ISMVL 2026.
