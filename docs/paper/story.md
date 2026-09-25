@@ -30,11 +30,15 @@ and while designs were expensive, their cost was itself a filter on quality; a g
 
 in this paper we present the MVL Benchmark Library, an online resource in which every entry states the algebra it computes in, and carries the record of its verification against an independent reference model
 
-currently 56 specifications with 654 implementations in C, Python, Verilog and VHDL are provided, of which 65% are verified; implementations that do not pass are kept with their reports, and the model that produced an implementation is recorded
+## Contributions
 
-all entries of a specification share one interface and are judged by one reference model, so a single testbench drives any of them, the radix can be varied with everything else held fixed, and four description languages of one specification can be compared
+a format in which a multi-valued benchmark is unambiguous: the algebra, the formula of every operation and the rule for every status flag are part of the entry, so that two entries carrying the same name denote the same function
 
-a file format, a reference model, a submission procedure and a JSON API are part of the resource, and the library is versioned and archived under a DOI, so it can be cited and can grow
+a reference model independent of whoever produced an implementation, and validated itself against arbitrary-precision integer arithmetic, a third-party Galois field library, the ring and field axioms, and the binary special case --- a validation that found a real defect in our own polynomial reduction
+
+a verification record published with every entry: the implementation is compared to the reference model both on the vectors it prints itself and on injected vectors after its test section has been replaced, exhaustively where the operand space allows, and the record names the tool versions, vector counts, seed and checksum, so that anyone can repeat it
+
+the resource itself: 56 specifications over radices 2 to 9 and 8 to 14 digits, 654 implementations in C, Python, Verilog and VHDL of which 65% are verified, implementations that do not pass kept with their reports and the model that produced them, all entries of a specification sharing one interface and one reference model, archived under a DOI and open to submissions checked by the same procedure
 
 ## The paper then contains
 
