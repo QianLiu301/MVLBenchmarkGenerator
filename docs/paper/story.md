@@ -4,33 +4,29 @@
 
 multi-valued logic is pursued because it promises higher information density, fewer interconnects and lower power consumption than binary logic \cite{S:81}
 
-every such promise is a comparative claim, and it can be checked only on designs that everyone can obtain
+whether these promises hold is decided by comparison, and a comparison is only as good as the designs it is carried out on
 
-this puts three demands on those designs --- everyone has to use the same ones, they have to be described precisely enough to be reproduced, and they have to be correct themselves
+for binary logic common benchmark sets have been available since the early 80s \cite{BF:85,BD:99}; proposed for testing algorithms, they were later used intensively for synthesis and verification as well
 
-for binary logic such common sets have been available since the early 80s \cite{BF:85,BD:99}; proposed for testing algorithms, they were later used intensively for synthesis and verification as well
+other domains built such a resource as well, for reversible circuits \cite{WGT+:2008}, satisfiability \cite{HS:2000} and the traveling salesman problem \cite{R:1991}
 
-other domains established such a resource as well, for reversible circuits \cite{WGT+:2008}, satisfiability \cite{HS:2000} and the traveling salesman problem \cite{R:1991}
+for multi-valued logic no such resource exists; that no standard benchmark functions are available for comparing MVL designs was stated twenty years ago \cite{TB:05}, and it is still the case
 
-for multi-valued logic none of the three demands is met; that no standard benchmark functions are available for comparing MVL designs was stated twenty years ago \cite{TB:05}, and it is still the case
+instead each community evaluates on its own material: randomly generated two-variable functions in synthesis \cite{XX:2024}, encoded binary circuits for decision diagrams \cite{BK:1999}, self-designed cells at device level, and a binary ISA as the reference for a 32-trit ternary architecture \cite{BBMG:2025}
 
-this is not for lack of activity; ISMVL 2025 alone had more than 40 papers on synthesis, decision diagrams, architectures, emerging devices and security
+this material is rarely distributed, so published comparisons rest on designs that other researchers cannot obtain
 
-each community evaluates on its own material: randomly generated two-variable functions in synthesis \cite{XX:2024}, encoded binary circuits for decision diagrams \cite{BK:1999}, self-designed cells at device level, and a binary ISA as the reference for a 32-trit ternary architecture \cite{BBMG:2025}
+a shared resource, however, requires a body of designs, and producing meaningful MVL designs by hand is expensive
 
-and that material is mostly not distributed --- the random sets are regenerated per paper without a seed --- so published comparisons rest on sets that are not the same set
+recently it has been shown that meaningful MVL designs can be generated with very low effort using LLMs \cite{D:2026}, which removes this obstacle
 
-what these substitutes have in common is that they are cheap to obtain; a common resource instead requires a body of designs, and producing meaningful MVL designs by hand is expensive
-
-recently it has been shown that meaningful MVL designs can be generated with very low effort using LLMs \cite{D:2026}, which removes exactly this obstacle
-
-however, cheap production alone does not create a shared resource: what a design computes has to be stated, and that it computes it has to be established
+but designs alone are not benchmarks: what a design computes has to be stated, and that it computes it has to be established
 
 in MVL the name of a design does not determine its function: an "8-trit ALU over GF(3)" may denote the ring Z/3^8 Z, the field GF(3^8), or digit-wise arithmetic in GF(3)[x]/(x^8), and ternary designs are built on unbalanced as well as on balanced digits \cite{BBMG:2025}
 
 also there is no convention for the status flags, as there is for negative numbers in two's complement
 
-and while designs were expensive, their cost was itself a filter on quality; a generated design passes no such filter, and it comes with its own testbench which it passes, so its test output is no evidence of correctness
+and a generated design comes with its own testbench which it passes, so its test output is no evidence of correctness
 
 in this paper we present the MVL Benchmark Library, an online resource in which every entry states the algebra it computes in, and carries the record of its verification against an independent reference model
 
