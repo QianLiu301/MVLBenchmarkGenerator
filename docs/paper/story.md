@@ -2,19 +2,19 @@
 
 ## Introduction
 
-benchmarking is highly relevant for the evaluation and comparison of newly proposed EDA algorithms
+progress in EDA is measured by comparison: a new method is accepted because it does better than a known method on a known input
 
-what makes a benchmark useful is not that it exists, but that different groups use the same one; only then are published results comparable
+this puts three demands on that input --- everyone has to use the same one, it has to be described precisely enough to be reproduced, and it has to be correct itself
 
 for binary logic such common sets have been available since the early 80s \cite{BF:85,BD:99}; proposed for testing algorithms, they were later used intensively for synthesis and verification as well
 
-also in other domains a common resource became the reference for a whole community, like reversible circuits \cite{WGT+:2008}, satisfiability \cite{HS:2000} and the traveling salesman problem \cite{R:1991}
+other domains established such a resource as well, for reversible circuits \cite{WGT+:2008}, satisfiability \cite{HS:2000} and the traveling salesman problem \cite{R:1991}
 
-for multi-valued logic no such resource exists, although the field is active; ISMVL 2025 alone had more than 40 papers on synthesis, decision diagrams, architectures, emerging devices and security
+for multi-valued logic none of the three demands is met, although the field is active; ISMVL 2025 alone had more than 40 papers on synthesis, decision diagrams, architectures, emerging devices and security
 
-instead each community evaluates on its own material: randomly generated two-variable functions in synthesis \cite{XX:2024}, encoded binary circuits for decision diagrams \cite{BK:1999}, self-designed cells at device level, and a binary ISA as the reference for a 32-trit ternary architecture \cite{BBMG:2025}
+each community evaluates on its own material: randomly generated two-variable functions in synthesis \cite{XX:2024}, encoded binary circuits for decision diagrams \cite{BK:1999}, self-designed cells at device level, and a binary ISA as the reference for a 32-trit ternary architecture \cite{BBMG:2025}
 
-this material is mostly not distributed --- the random sets are regenerated per paper without a seed --- so published comparisons rest on sets that are not the same set
+and that material is mostly not distributed --- the random sets are regenerated per paper without a seed --- so published comparisons rest on sets that are not the same set
 
 what these substitutes have in common is that they are cheap to obtain; a common resource instead requires a body of designs, and producing meaningful MVL designs by hand is expensive
 
