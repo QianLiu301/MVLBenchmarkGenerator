@@ -147,7 +147,7 @@ class MVLGenerator:
                 # 以下三家同在 GWDG Academic Cloud（同端点、同 key、同推理栈）
                 'qwen': QwenProvider3,      # qwen3-coder-next（取代原 DashScope Qwen）
                 'gptoss': GptOssProvider,   # openai-gpt-oss-120b（≠ api.openai.com）
-                'glm': GlmProvider,         # glm-4.7
+                'glm': GlmProvider,         # glm-5.3-flash
                 'dashscope': QwenProvider,  # legacy Alibaba DashScope endpoint
                 'mistral': MistralProvider,
                 'together': TogetherProvider,  # Llama 3.3 70B

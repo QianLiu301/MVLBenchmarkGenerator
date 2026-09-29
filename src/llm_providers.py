@@ -2464,9 +2464,32 @@ class GptOssProvider(AcademicCloudProvider):
 
 
 class GlmProvider(AcademicCloudProvider):
-    """智谱 GLM-4.7。"""
+    """智谱 GLM（GWDG）。两处与其他 academic-cloud 模型不同。
+
+    模型名是 glm-5.3-flash：GWDG 不提供 glm-4.7，而网关遇到未知模型名返回的是
+    HTTP 500 而不是 404，读起来像服务端故障。
+
+    而且这个模型的阻塞式端点不会返回——10 个 token 的回复等 240 秒仍未到达——
+    但流式端点 0.2 秒就开始吐字。所以阻塞调用改走流式再把分片拼起来。
+    """
     CONFIG_KEY = "glm"
-    DEFAULT_MODEL = "glm-4.7"
+    DEFAULT_MODEL = "glm-5.3-flash"
+
+    # _call_api_stream 失败时会回落到 _call_api；若不设哨兵，这里的覆写会与它
+    # 互相调用形成死循环。
+    _in_stream_fallback = False
+
+    def _call_api(self, prompt: str, max_tokens: int = 4000,
+                  system_prompt: str = None) -> str:
+        if self._in_stream_fallback:
+            raise RuntimeError(
+                f"{self.model}: streaming failed and the blocking endpoint "
+                f"does not answer for this model")
+        self._in_stream_fallback = True
+        try:
+            return ''.join(self._call_api_stream(prompt, max_tokens, system_prompt))
+        finally:
+            self._in_stream_fallback = False
 
 
 # ========== FACTORY ==========
@@ -2488,7 +2511,7 @@ class LLMFactory:
             'dashscope': QwenProvider,    # legacy Alibaba DashScope endpoint
             'gptoss': GptOssProvider,     # openai-gpt-oss-120b via GWDG
             'gpt-oss': GptOssProvider,
-            'glm': GlmProvider,           # glm-4.7 via GWDG
+            'glm': GlmProvider,           # glm-5.3-flash via GWDG
             'zhipu': GlmProvider,
             'tongyi': QwenProvider,
             'local': LocalLLMProvider,
