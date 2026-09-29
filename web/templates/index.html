@@ -1746,10 +1746,27 @@
             }
         }
 
+        // Every endpoint on this page answers with JSON. When the session has
+        // expired the request is redirected to the sign-in page and the body is
+        // HTML, so response.json() fails on the first '<' and reports
+        // "Unexpected token '<'" -- the real cause, being signed out, never
+        // reaches the user. Read every response through this instead.
+        async function readJson(response) {
+            const type = response.headers.get('content-type') || '';
+            if (!type.includes('application/json')) {
+                const signedOut = response.status === 401 || response.status === 403
+                                  || (response.redirected && /\/login/.test(response.url));
+                throw new Error(signedOut
+                    ? 'your session has expired — please sign in again'
+                    : `the server answered with ${response.status} instead of JSON`);
+            }
+            return response.json();
+        }
+
         async function checkTools() {
             try {
                 const response = await fetch('/api/check-tools');
-                const data = await response.json();
+                const data = await readJson(response);
 
                 const container = document.getElementById('tools-status');
                 container.innerHTML = '';
@@ -2301,7 +2318,7 @@
                     signal: controller.signal
                 });
 
-                const data = await response.json();
+                const data = await readJson(response);
 
                 if (!data.success) {
                     throw new Error(data.error || `Generation failed for ${requestBody.language}`);
@@ -2335,7 +2352,7 @@
                 });
 
                 if (!response.ok) {
-                    const errData = await response.json();
+                    const errData = await readJson(response);
                     throw new Error(errData.error || 'Stream request failed');
                 }
 
@@ -2574,7 +2591,7 @@
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ file_path: r.file_path, language: r.language })
                     });
-                    const data = await response.json();
+                    const data = await readJson(response);
                     simResults[lang] = data;
                 } catch (e) {
                     simResults[lang] = {
@@ -2709,7 +2726,7 @@
             statusEl.textContent = 'Scanning for installed tools...';
             try {
                 const resp = await fetch('/api/tools', { method: 'POST' });
-                const data = await resp.json();
+                const data = await readJson(resp);
                 const items = [];
                 if (data.c_available) items.push('C (gcc/clang)');
                 if (data.python_available) items.push('Python');
@@ -2982,7 +2999,7 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload),
                 });
-                const data = await resp.json();
+                const data = await readJson(resp);
                 const result = { strategy_a: data };
                 valResultsPerLang[payload.language] = { mode: 'A', data: result };
                 renderValResults(result, 'A');
@@ -3000,7 +3017,7 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload),
                 });
-                const data = await resp.json();
+                const data = await readJson(resp);
                 const result = { strategy_b: data };
                 valResultsPerLang[payload.language] = { mode: 'B', data: result };
                 renderValResults(result, 'B');
@@ -3018,7 +3035,7 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload),
                 });
-                const data = await resp.json();
+                const data = await readJson(resp);
                 if (!data.success) throw new Error(data.error || 'Validation failed');
                 valReportFiles.json = data.report_file || null;
                 valReportFiles.csv = data.csv_file || null;
