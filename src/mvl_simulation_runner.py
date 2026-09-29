@@ -1090,20 +1090,31 @@ class MVLSimulationRunner:
 
         try:
             start = time.time()
-            # A testbench applies one vector every 20 ns, so twenty of them are
-            # done after 400 ns and even two hundred after 4 us. 1 ms leaves a
-            # factor of well over a thousand, and anything still running then is
-            # not a slow design but a testbench that never stops: the clock
-            # process keeps toggling after the last vector, and GHDL has to
-            # simulate every remaining cycle.
+            # Both testbenches that reach this point stop their own clock after
+            # the last vector, so a well-formed run ends by itself and the stop
+            # time is only a ceiling for files that still carry a free-running
+            # clock (every VHDL entry generated before the template was fixed).
             #
-            # Scaling this with the data width, as it used to, made that case
-            # worse rather than better. Width does not change how long a
-            # testbench runs, only how slow each cycle is to evaluate, so the
-            # widest designs were given the most cycles to spin through — which
-            # is where "Simulation timeout (90s, stop-time=50ms)" came from.
-            stop_time = '1ms'
-            proc_timeout = 30
+            # It is set from the work requested: 20 ns per vector, doubled for
+            # margin, never below 1 ms. The file's own testbench applies about
+            # twenty vectors (under 1 us); the injected one can apply 393,216
+            # when the operand space is exhausted (7.9 ms), which a flat 1 ms
+            # would have cut off silently.
+            #
+            # It used to scale with the data width instead, which is backwards:
+            # width makes each cycle slower to evaluate but does not add cycles,
+            # so the widest designs got the most cycles to spin through after
+            # their last vector -- "Simulation timeout (90s, stop-time=50ms)".
+            n_vectors = 0
+            if vector_file:
+                try:
+                    with open(vector_file, 'r', encoding='utf-8', errors='replace') as fh:
+                        n_vectors = int(fh.readline().split()[0])
+                except (OSError, ValueError, IndexError):
+                    n_vectors = 400_000          # the exhaustive maximum
+            stop_ns = max((n_vectors * 20 + 100) * 2, 1_000_000)
+            stop_time = f'{stop_ns}ns'
+            proc_timeout = 120 if vector_file else 30
 
             run_cmd = [
                 ghdl_cmd, '-r',
@@ -1155,13 +1166,16 @@ class MVLSimulationRunner:
                     result['test_results']['failed'] = 0
 
         except subprocess.TimeoutExpired:
-            # Naming the cause: a testbench that applies its vectors and then
-            # stops finishes in microseconds, so reaching this point means the
-            # clock process is still toggling after the last vector.
+            # The wall clock ran out before the simulation reached its stop
+            # time, so the simulator was still busy, not merely idling to the
+            # end. With a clock that stops after the last vector that leaves the
+            # design itself: an operation that is very slow to evaluate, or a
+            # combinational loop that keeps it cycling through delta steps.
             result['errors'].append(
-                f'Testbench did not terminate: still running after {stop_time} of '
-                f'simulated time ({proc_timeout}s wall clock). A testbench that '
-                f'stops its clock after the last vector finishes in microseconds.')
+                f'Simulation did not finish within {proc_timeout}s of wall-clock time '
+                f'(simulated-time limit {stop_time}). Either the clock keeps running '
+                f'after the last vector, or the design is very slow to evaluate each '
+                f'cycle, for example because of a combinational loop.')
         except Exception as e:
             result['errors'].append(f'Simulation error: {str(e)}')
 
