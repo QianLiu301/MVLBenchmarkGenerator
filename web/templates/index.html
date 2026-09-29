@@ -466,6 +466,16 @@
             font-weight: 600;
         }
 
+        /* A language that failed has no file to show, so its tab is inert. */
+        .lang-tab.failed {
+            cursor: default;
+            opacity: 0.65;
+        }
+
+        .lang-tab.failed:hover {
+            color: var(--text-secondary);
+        }
+
         .tab-status {
             display: inline-block;
             font-size: 0.7rem;
@@ -2197,10 +2207,11 @@
             container.style.display = 'flex';
 
             generatedLanguages.forEach(lang => {
-                const tab = document.createElement('span');
-                tab.className = 'lang-tab' + (lang === activeResultLang ? ' active' : '');
-
                 const status = langStatus[lang] || 'pending';
+                const tab = document.createElement('span');
+                tab.className = 'lang-tab' + (lang === activeResultLang ? ' active' : '')
+                                           + (status === 'error' ? ' failed' : '');
+
                 const statusIcon = status === 'done' ? '✓' :
                                    status === 'generating' ? '●' :
                                    status === 'error' ? '✗' : '○';
@@ -2400,8 +2411,10 @@
                 document.getElementById('download-code-btn').textContent = 'Download Code';
             }
 
-            // Update tabs with final status
-            generatedLanguages = languages;
+            // generatedLanguages keeps every language that was requested, set when
+            // generation started. It is deliberately not narrowed to the ones that
+            // succeeded: a language that failed stays in the tab bar with its own
+            // duration, which is how long it ran before giving up.
             renderResultTabs();
             showResultForLang(activeResultLang);
         }
@@ -2458,8 +2471,10 @@
             document.getElementById('stat-k').textContent = data.k_value;
             document.getElementById('stat-bits').textContent = data.bitwidth;
             document.getElementById('stat-mod').textContent = data.mod_value.toLocaleString();
-            // Show all generated languages, not just the active tab
-            document.getElementById('stat-lang').textContent = generatedLanguages.map(l => l.toUpperCase()).join(', ');
+            // Every language that produced a file, not just the active tab. A
+            // language that failed is listed in the tabs but has nothing to count.
+            document.getElementById('stat-lang').textContent = generatedLanguages
+                .filter(l => currentResults[l]).map(l => l.toUpperCase()).join(', ');
 
             renderModelInfo(data);
 
