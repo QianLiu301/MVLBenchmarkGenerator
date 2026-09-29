@@ -1647,6 +1647,12 @@ Generate the complete Verilog module with testbench now:
         """Build the VHDL architecture requirements section, conditional on algebraic structure."""
         import math
         bits_per_digit = math.ceil(math.log2(k)) if k > 1 else 1
+        # Widths the width-matching rule below refers to: an add needs one bit
+        # more than an operand and a multiply twice as many, which is where the
+        # mismatch against the data_width-bit result comes from.
+        data_width_plus1 = data_width + 1
+        data_width_dbl = data_width * 2
+        mod_minus_1 = mod - 1
 
         common_rules = f"""⚠️ VHDL CRITICAL RULES — violating ANY of these causes GHDL compilation/simulation failure:
 
@@ -1694,7 +1700,26 @@ RULE 9 — NO "wait;" IN SENSITIZED PROCESSES:
    process(clk, rst) CANNOT contain any wait statement.
    Only unsensitized processes (no sensitivity list) may use wait.
 
-RULE 10 — USE VARIABLES (NOT SIGNALS) INSIDE PROCESS for intermediate results."""
+RULE 10 — USE VARIABLES (NOT SIGNALS) INSIDE PROCESS for intermediate results.
+
+RULE 11 — UNSIGNED ASSIGNMENT WIDTHS MUST MATCH EXACTLY (most common failure):
+   Both sides of an unsigned assignment must have the same number of bits.
+   A mismatch COMPILES CLEANLY and then stops the simulation at run time with
+   "bound check failure", so the compiler will not warn you about it.
+   "mod" keeps the width of its LEFT operand — it does NOT shrink to the modulus:
+   WRONG:   variable sum_tmp : unsigned({data_width} downto 0);  -- {data_width_plus1} bits
+            v_result := sum_tmp mod MOD_VAL;        -- {data_width_plus1} bits into {data_width} bits
+   CORRECT: v_result := resize(sum_tmp mod MOD_VAL, {data_width});
+   The same applies to "*": {data_width} bits times {data_width} bits is {data_width_dbl} bits wide.
+   WRONG:   v_result := mul_tmp mod MOD_VAL;
+   CORRECT: v_result := resize(mul_tmp mod MOD_VAL, {data_width});
+   Whenever the right-hand side can be wider than the target, wrap it in
+   resize(..., {data_width}). resize() to the width it already has costs nothing.
+
+RULE 12 — NO BARE INTEGER ON THE RIGHT OF AN UNSIGNED ASSIGNMENT:
+   An integer literal has no array type and is rejected outright.
+   WRONG:   v_result := {mod_minus_1};
+   CORRECT: v_result := to_unsigned({mod_minus_1}, {data_width});"""
 
         if is_extension:
             p = logic_info['p']
