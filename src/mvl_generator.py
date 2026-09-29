@@ -1719,7 +1719,22 @@ RULE 11 — UNSIGNED ASSIGNMENT WIDTHS MUST MATCH EXACTLY (most common failure):
 RULE 12 — NO BARE INTEGER ON THE RIGHT OF AN UNSIGNED ASSIGNMENT:
    An integer literal has no array type and is rejected outright.
    WRONG:   v_result := {mod_minus_1};
-   CORRECT: v_result := to_unsigned({mod_minus_1}, {data_width});"""
+   CORRECT: v_result := to_unsigned({mod_minus_1}, {data_width});
+
+RULE 13 — THE TESTBENCH MUST STOP ITSELF:
+   A clock process that toggles forever keeps the simulation running long after
+   the last vector, and the run is killed as "testbench did not terminate".
+   Use a flag that the stimulus process sets when it is done:
+   signal sim_done : boolean := false;
+   clk_proc: process
+   begin
+       while not sim_done loop
+           clk_sig <= '0'; wait for CLK_PERIOD / 2;
+           clk_sig <= '1'; wait for CLK_PERIOD / 2;
+       end loop;
+       wait;
+   end process;
+   The stimulus process ends with:  sim_done <= true; wait;"""
 
         if is_extension:
             p = logic_info['p']
