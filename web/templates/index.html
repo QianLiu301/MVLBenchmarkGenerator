@@ -477,6 +477,14 @@
         .tab-status.error { color: var(--error); }
         .tab-status.pending { color: var(--text-muted); }
 
+        /* Per-language duration, so the four tabs can be compared at a glance. */
+        .tab-time {
+            display: inline-block;
+            margin-left: 4px;
+            font-size: 0.68rem;
+            color: var(--text-muted);
+        }
+
         @keyframes pulse {
             0%, 100% { opacity: 1; }
             50% { opacity: 0.4; }
@@ -2132,12 +2140,14 @@
             // LLM request, so wall time is max(lang) instead of sum(lang).
             // The preview shows whichever tab is active; click a tab to follow it.
             streamBuffers = {};
+            langStats = {};
             languages.forEach(l => { langStatus[l] = 'generating'; streamBuffers[l] = ''; });
             renderResultTabs();
             startProgressTicker(languages);
 
             await Promise.all(languages.map(async (lang) => {
                 const requestBody = { ...baseRequest, language: lang };
+                const startedAt = Date.now();
                 try {
                     if (streamOutput) {
                         await generateStreamOne(requestBody);
@@ -2150,6 +2160,7 @@
                     langStatus[lang] = 'error';
                     errors.push(`${lang.toUpperCase()}: ${error.message}`);
                 }
+                recordLangStats(lang, startedAt);
                 renderResultTabs();
             }));
             stopProgressTicker();
@@ -2194,7 +2205,10 @@
                                    status === 'generating' ? '●' :
                                    status === 'error' ? '✗' : '○';
 
-                tab.innerHTML = `${lang.toUpperCase()} <span class="tab-status ${status}">${statusIcon}</span>`;
+                const stats = langStats[lang];
+                const timing = (stats && status !== 'generating')
+                    ? `<span class="tab-time">${stats.secs}s</span>` : '';
+                tab.innerHTML = `${lang.toUpperCase()} <span class="tab-status ${status}">${statusIcon}</span>${timing}`;
 
                 if (status === 'done') {
                     tab.onclick = () => switchResultTab(lang);
@@ -2210,9 +2224,10 @@
         let streamBuffers = {};
         let progressTimer = null;
         let progressStart = 0;
-        // Elapsed time and character count of the run that just finished, so the
-        // header can keep showing them once the live ticker has stopped.
-        let lastGenStats = null;
+        // { lang: {secs, chars} } for the run that just finished. Languages are
+        // requested concurrently, so they share a start instant and their
+        // durations can be compared with one another.
+        let langStats = {};
 
         function renderStreamPreview(lang) {
             const preview = document.getElementById('code-preview');
@@ -2243,22 +2258,24 @@
 
         function stopProgressTicker() {
             if (progressTimer) { clearInterval(progressTimer); progressTimer = null; }
-            if (progressStart) {
-                lastGenStats = {
-                    secs: Math.max(1, Math.round((Date.now() - progressStart) / 1000)),
-                    chars: Object.values(streamBuffers).reduce((n, t) => n + t.length, 0),
-                };
-                progressStart = 0;
-            }
+            progressStart = 0;
         }
 
-        // " • 11s • 1,277 chars" for the result header. With streaming off no text
-        // arrives incrementally, so fall back to the length of the finished files.
-        function genStatsSuffix() {
-            if (!lastGenStats) return '';
-            const chars = lastGenStats.chars || Object.values(currentResults)
-                .reduce((n, r) => n + ((r && r.code) ? r.code.length : 0), 0);
-            return ` • ${lastGenStats.secs}s • ${chars.toLocaleString()} chars`;
+        // How long this one language took and how much came back. With streaming
+        // off nothing arrives incrementally, so fall back to the finished file.
+        function recordLangStats(lang, startedAt) {
+            const streamed = (streamBuffers[lang] || '').length;
+            const result = currentResults[lang];
+            langStats[lang] = {
+                secs: Math.max(1, Math.round((Date.now() - startedAt) / 1000)),
+                chars: streamed || ((result && result.code) ? result.code.length : 0),
+            };
+        }
+
+        // " • 31s • 9,102 chars" for the result header.
+        function langStatsSuffix(lang) {
+            const s = langStats[lang];
+            return s ? ` • ${s.secs}s • ${s.chars.toLocaleString()} chars` : '';
         }
 
         async function generateNormalOne(requestBody) {
@@ -2373,22 +2390,12 @@
             document.getElementById('gen-result-icon').textContent = '✓';
             document.getElementById('gen-result-title').textContent = 'Generation Complete';
 
+            // The subtitle is written by showResultForLang below, which runs for
+            // whichever tab is active and keeps describing that one file.
             if (isMulti) {
-                const first = currentResults[languages[0]] || {};
-                const llm = first.llm || '';
-                document.getElementById('gen-result-subtitle').textContent =
-                    `${languages.length} files generated • ${llm.toUpperCase()}` +
-                    (first.response_model ? ` • ${first.response_model}` : '') +
-                    genStatsSuffix();
-
                 document.getElementById('download-all-btn').style.display = '';
                 document.getElementById('download-code-btn').textContent = 'Download This File';
             } else {
-                const data = currentResults[languages[0]];
-                document.getElementById('gen-result-subtitle').textContent =
-                    `${data.filename} • ${data.llm.toUpperCase()}` +
-                    (data.response_model ? ` • ${data.response_model}` : '') +
-                    genStatsSuffix();
                 document.getElementById('download-all-btn').style.display = 'none';
                 document.getElementById('download-code-btn').textContent = 'Download Code';
             }
@@ -2436,6 +2443,17 @@
             if (!data) return;
 
             currentResult = data;
+
+            // The subtitle always describes the file being shown, so switching
+            // tabs switches the timing and size with it. With several languages
+            // it is prefixed with the file's position, which the tabs alone do
+            // not make obvious once one of them has failed.
+            const position = generatedLanguages.length > 1
+                ? `${generatedLanguages.indexOf(lang) + 1} of ${generatedLanguages.length} • ` : '';
+            document.getElementById('gen-result-subtitle').textContent =
+                position + `${data.filename} • ${data.llm.toUpperCase()}` +
+                (data.response_model ? ` • ${data.response_model}` : '') +
+                langStatsSuffix(lang);
 
             document.getElementById('stat-k').textContent = data.k_value;
             document.getElementById('stat-bits').textContent = data.bitwidth;
