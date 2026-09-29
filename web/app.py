@@ -335,6 +335,8 @@ def api_generate_stream():
                 ):
                     if event_type == "chunk":
                         yield f"data: {json.dumps({'type': 'chunk', 'content': event_data})}\n\n"
+                    elif event_type == "repair":
+                        yield f"data: {json.dumps({'type': 'repair', 'repair': event_data})}\n\n"
                     elif event_type == "done":
                         yield f"data: {json.dumps({'type': 'done', 'result': event_data})}\n\n"
                     elif event_type == "error":

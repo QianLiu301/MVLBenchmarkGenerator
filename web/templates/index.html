@@ -2168,6 +2168,7 @@
             // The preview shows whichever tab is active; click a tab to follow it.
             streamBuffers = {};
             langStats = {};
+            langRepair = {};
             languages.forEach(l => { langStatus[l] = 'generating'; streamBuffers[l] = ''; });
             renderResultTabs();
             startProgressTicker(languages);
@@ -2256,6 +2257,9 @@
         // requested concurrently, so they share a start instant and their
         // durations can be compared with one another.
         let langStats = {};
+        // { lang: {round, max_rounds, compiler} } while the model is correcting a
+        // file the compiler rejected; shown in the progress line.
+        let langRepair = {};
 
         function renderStreamPreview(lang) {
             const preview = document.getElementById('code-preview');
@@ -2278,7 +2282,11 @@
                 const chars = Object.values(streamBuffers).reduce((n, t) => n + t.length, 0);
                 const pending = languages.filter(l => langStatus[l] === 'generating').length;
                 const which = languages.length > 1 ? ` (${languages.length - pending}/${languages.length} done)` : '';
-                title.textContent = `Generating...${which} ${secs}s · ${chars.toLocaleString()} chars`;
+                const repairing = Object.entries(langRepair)
+                    .map(([l, r]) => `${l.toUpperCase()} fixing compile errors (round ${r.round}/${r.max_rounds})`)
+                    .join(', ');
+                title.textContent = `Generating...${which} ${secs}s · ${chars.toLocaleString()} chars`
+                                    + (repairing ? ` · ${repairing}` : '');
             };
             tick();
             progressTimer = setInterval(tick, 1000);
@@ -2371,8 +2379,13 @@
                             streamBuffers[lang] = (streamBuffers[lang] || '') + eventData.content;
                             if (lang === activeResultLang) renderStreamPreview(lang);
 
+                        } else if (eventData.type === 'repair') {
+                            // The compiler rejected the file and the model is fixing it.
+                            langRepair[lang] = eventData.repair;
+
                         } else if (eventData.type === 'done') {
                             currentResults[requestBody.language] = eventData.result;
+                            delete langRepair[lang];
 
                         } else if (eventData.type === 'error') {
                             console.error(`Stream error for ${requestBody.language}:`, eventData.error);
@@ -2480,10 +2493,19 @@
             // not make obvious once one of them has failed.
             const position = generatedLanguages.length > 1
                 ? `${generatedLanguages.indexOf(lang) + 1} of ${generatedLanguages.length} • ` : '';
+            // How many rounds of compiler-guided correction the file needed; a
+            // file the compiler accepted first time says nothing.
+            const rounds = data.repair_rounds || 0;
+            const log = data.repair_log || [];
+            const stillFailing = log.length && log[log.length - 1].after;
+            const noun = rounds === 1 ? 'round' : 'rounds';
+            const repaired = !rounds ? ''
+                : stillFailing ? ` • still not compiling after ${rounds} repair ${noun}`
+                : ` • compiles after ${rounds} repair ${noun}`;
             document.getElementById('gen-result-subtitle').textContent =
                 position + `${data.filename} • ${data.llm.toUpperCase()}` +
                 (data.response_model ? ` • ${data.response_model}` : '') +
-                langStatsSuffix(lang);
+                langStatsSuffix(lang) + repaired;
 
             document.getElementById('stat-k').textContent = data.k_value;
             document.getElementById('stat-bits').textContent = data.bitwidth;

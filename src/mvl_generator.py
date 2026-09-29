@@ -219,6 +219,167 @@ class MVLGenerator:
         return (f'LLM "{self.llm_provider_name}" (model {call_state.get("requested_model")}) '
                 f'did not return a real answer: {reason}')
 
+    # ------------------------------------------------------------------
+    # Compiler-guided repair
+    # ------------------------------------------------------------------
+    # After generation the file is compiled (or, for VHDL, analysed) without
+    # being run. If the compiler rejects it, the model is shown its own file and
+    # the compiler's report and asked for a corrected version, for at most
+    # REPAIR_MAX_ROUNDS rounds.
+    #
+    # Only the compiler is consulted. It reports whether the file is well
+    # formed and knows nothing about what the file ought to compute, so no
+    # expected result can reach the model through this loop. The reference
+    # model is not involved here at all; it judges the outcome afterwards
+    # exactly as it judges a file that needed no rounds. Every round is
+    # recorded (repair_rounds, repair_log) so an entry can say how it was
+    # obtained, and "first attempt" and "after repair" stay separately
+    # countable.
+    REPAIR_MAX_ROUNDS = 2
+    # First line of the testbench _build_vhdl_testbench appends; the repair loop
+    # cuts the file here so the model never sees the reference values below it.
+    _VHDL_TB_MARK = '-- Testbench (deterministically generated)'
+    _FENCE = {'c': 'c', 'python': 'python', 'verilog': 'verilog', 'vhdl': 'vhdl'}
+    _EXT = {'c': '.c', 'python': '.py', 'verilog': '.v', 'vhdl': '.vhd'}
+
+    def _syntax_runner(self):
+        """A simulation runner used only for its compile-only check (cached)."""
+        if getattr(self, '_syntax_runner_obj', None) is None:
+            import io as _io
+            import contextlib as _contextlib
+            from mvl_simulation_runner import MVLSimulationRunner
+            with _contextlib.redirect_stdout(_io.StringIO()):
+                self._syntax_runner_obj = MVLSimulationRunner(project_root=str(self.project_root))
+        return self._syntax_runner_obj
+
+    def _compile_report(self, code: str, language: str) -> Optional[str]:
+        """The compiler's complaint about `code`, or None if it is well formed
+        or no compiler for the language is installed."""
+        import shutil as _shutil
+        import tempfile as _tempfile
+        lang = language.lower()
+        runner = self._syntax_runner()
+        if lang not in self._EXT or not runner.can_run(lang):
+            return None
+        work = Path(_tempfile.mkdtemp(prefix='mvl_syntax_'))
+        try:
+            name = 'design' + self._EXT[lang]
+            src = work / name
+            src.write_text(code, encoding='utf-8')
+            res = runner.check_syntax(str(src), lang)
+            if res['ok'] or not res['checked']:
+                return None
+            # show the model its file under a neutral name, not a temp path
+            report = res['errors']
+            for form in (str(src), str(src).replace('\\', '/'), str(src.resolve())):
+                report = report.replace(form, name)
+            return report
+        finally:
+            _shutil.rmtree(work, ignore_errors=True)
+
+    @staticmethod
+    def _trim_compiler_report(report: str, max_lines: int = 40, max_chars: int = 4000) -> str:
+        """Keep the head of a compiler report: the first errors carry the cause,
+        later ones are mostly consequences of it."""
+        lines = [l.rstrip() for l in report.strip().splitlines() if l.strip()]
+        text = '\n'.join(lines[:max_lines])
+        if len(lines) > max_lines:
+            text += f'\n... ({len(lines) - max_lines} more lines)'
+        return text[:max_chars]
+
+    def _repair_prompt(self, code: str, report: str, language: str,
+                       k_value: int, bitwidth: int, architecture_only: bool) -> str:
+        fence = self._FENCE.get(language.lower(), '')
+        if architecture_only:
+            scope = (f"The library/entity header and the testbench at the end of the file are "
+                     f"generated automatically and will be attached again, so do not return them. "
+                     f"Return only the corrected architecture of mvl_alu_{k_value}_{bitwidth}bit.")
+        else:
+            scope = "Return the complete corrected file."
+        return (f"The {language.upper()} file below does not compile. The compiler reported:\n\n"
+                f"{report}\n\n"
+                f"Fix what the compiler reports and keep the behaviour of every operation "
+                f"unchanged. {scope} Put the code in a single ```{fence} block and add no "
+                f"explanation.\n\n"
+                f"```{fence}\n{code}\n```\n")
+
+    def _repair_with_compiler(self, code: str, language: str, module_type: Optional[str],
+                              k_value: int, bitwidth: int, mod_value: int,
+                              logic_info: Dict):
+        """Let the model correct its own file from the compiler's report.
+
+        Yields ('repair', info) once per round, then ('result', (code, rounds,
+        log)). The last round's code is kept even if it still does not compile,
+        so the record shows what the model produced rather than quietly
+        reverting to an earlier attempt. A round whose call falls back to
+        template text ends the loop and keeps the model's previous answer.
+        """
+        architecture_only = language.lower() == 'vhdl' and module_type in ('alu', None)
+        system_prompt = ("You are an expert programmer. Correct the code so that it compiles. "
+                         "Output only the code, without explanations.")
+
+        def model_part(text: str) -> str:
+            """What the model wrote, without anything the reference model computed.
+
+            For a VHDL ALU the assembled file ends with our testbench, whose
+            expected values come from the reference model. Showing it would hand
+            the model 21 reference answers, so it is cut off before compiling and
+            before building the prompt. It follows the architecture, so the
+            compiler's line numbers are unchanged; it is attached again after
+            each round by _assemble_vhdl.
+            """
+            if architecture_only:
+                return text.split(self._VHDL_TB_MARK)[0].rstrip() + '\n'
+            return text
+
+        rounds, log = 0, []
+        while True:
+            report = self._compile_report(model_part(code), language)
+            if report is None or rounds >= self.REPAIR_MAX_ROUNDS:
+                if report is not None:
+                    log.append({'round': rounds, 'after': True,
+                                'compiler': self._trim_compiler_report(report, 12, 1500)})
+                break
+            rounds += 1
+            excerpt = self._trim_compiler_report(report)
+            entry = {'round': rounds, 'compiler': excerpt}
+            log.append(entry)
+            print(f"   🔁 Compiler rejected the file; repair round {rounds}/{self.REPAIR_MAX_ROUNDS}")
+            yield ('repair', {'round': rounds, 'max_rounds': self.REPAIR_MAX_ROUNDS,
+                              'compiler': excerpt.splitlines()[0][:200] if excerpt else ''})
+
+            self.llm._reset_call_state()
+            try:
+                response = self.llm._call_api(
+                    self._repair_prompt(model_part(code), excerpt, language, k_value, bitwidth,
+                                        architecture_only),
+                    max_tokens=16384, system_prompt=system_prompt)
+            # On the three exits below the round produced nothing usable, so the
+            # file kept is the one this round's report is about: still not
+            # compiling. 'after' marks the entry that describes the final file.
+            except Exception as e:
+                entry.update(outcome=f'model call failed: {e}', after=True)
+                break
+            if getattr(self.llm, 'fallback_used', False):
+                entry.update(outcome='model did not answer: '
+                             + str(getattr(self.llm, 'last_error', '') or 'no response'),
+                             after=True)
+                break
+            entry['response_model'] = getattr(self.llm, 'last_response_model', None)
+
+            new = self._extract_code(response or '', language)
+            if not new:
+                entry.update(outcome='no code in the answer', after=True)
+                break
+            if architecture_only:
+                new = self._assemble_vhdl(new, k_value, bitwidth, mod_value, logic_info)
+            new = self._fix_code(new, language)
+            new = self._enhance_test_coverage(new, language, k_value, bitwidth, mod_value)
+            code = new
+            entry['outcome'] = 'replaced'
+
+        yield ('result', (code, rounds, log))
+
     def _setup_output_dir(self, output_dir: Optional[str], project_root: Optional[str]) -> Path:
         """Setup output directory"""
         if output_dir:
@@ -614,6 +775,13 @@ class MVLGenerator:
             # Auto-enhance test coverage if too low
             code = self._enhance_test_coverage(code, language, k_value, bitwidth, mod_value)
 
+            # Compiler-guided repair (see _repair_with_compiler)
+            repair_rounds, repair_log = 0, []
+            for ev, data in self._repair_with_compiler(code, language, module_type, k_value,
+                                                       bitwidth, mod_value, logic_info):
+                if ev == 'result':
+                    code, repair_rounds, repair_log = data
+
             # Validate generated code quality
             validation_warnings = self._validate_code(code, language, k_value, bitwidth, mod_value, logic_info=logic_info)
 
@@ -625,6 +793,8 @@ class MVLGenerator:
 
             return {
                 'success': True,
+                'repair_rounds': repair_rounds,
+                'repair_log': repair_log,
                 'code': code,
                 'file_path': str(file_path),
                 'filename': file_path.name,
@@ -740,6 +910,16 @@ class MVLGenerator:
             # Auto-enhance test coverage if too low
             code = self._enhance_test_coverage(code, language, k_value, bitwidth, mod_value)
 
+            # Compiler-guided repair (see _repair_with_compiler); each round is
+            # announced so the page can say why it is still busy
+            repair_rounds, repair_log = 0, []
+            for ev, data in self._repair_with_compiler(code, language, module_type, k_value,
+                                                       bitwidth, mod_value, logic_info):
+                if ev == 'repair':
+                    yield ("repair", data)
+                elif ev == 'result':
+                    code, repair_rounds, repair_log = data
+
             # Validate generated code quality
             validation_warnings = self._validate_code(code, language, k_value, bitwidth, mod_value)
 
@@ -750,6 +930,8 @@ class MVLGenerator:
 
             yield ("done", {
                 'success': True,
+                'repair_rounds': repair_rounds,
+                'repair_log': repair_log,
                 'code': code,
                 'file_path': str(file_path),
                 'filename': file_path.name,
@@ -1908,7 +2090,7 @@ Generate the architecture now:
 
         tests_body = '\n'.join(test_lines)
 
-        tb = f"""-- Testbench (deterministically generated)
+        tb = f"""{MVLGenerator._VHDL_TB_MARK}
 library IEEE;
 use IEEE.STD_LOGIC_1164.ALL;
 use IEEE.NUMERIC_STD.ALL;
