@@ -8,6 +8,7 @@ import subprocess
 import shutil
 import os
 import re
+import sys
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, Optional
@@ -442,6 +443,85 @@ class MVLSimulationRunner:
             return self.tools.get('ghdl')
         return False
 
+    def _env_with_tool_dir(self, command: str) -> Dict[str, str]:
+        """Environment with the tool's own directory first on PATH.
+
+        A MSYS2 gcc loads its runtime DLLs from the directory it sits in, and
+        without that directory on PATH it exits 1 and prints nothing at all, so
+        a perfectly good file looks like a compilation failure. The detected
+        command is usually a bare name, which os.path.exists cannot resolve —
+        hence shutil.which before taking the directory.
+        """
+        env = os.environ.copy()
+        resolved = shutil.which(command) if command else None
+        if resolved:
+            # Prepended unconditionally, even when the directory is already on
+            # PATH: what matters is that it comes first. Here D:\soft\Git\
+            # mingw64\bin precedes the MSYS2 directory and offers its own
+            # incompatible runtime DLLs, so gcc picked those up and died
+            # silently while sitting on a PATH that looked correct.
+            tool_dir = os.path.dirname(os.path.abspath(resolved))
+            if tool_dir:
+                env['PATH'] = tool_dir + os.pathsep + env.get('PATH', '')
+        return env
+
+    def check_syntax(self, file_path: str, language: str) -> Dict:
+        """Compile or analyse a file without running it.
+
+        Returns {'ok': bool, 'errors': str, 'checked': bool}. 'checked' is False
+        when the toolchain for that language is not installed, so a caller can
+        tell "nothing was wrong" apart from "nothing was examined".
+
+        This reports only whether the file is well formed. It says nothing about
+        whether it computes the right function, which matters because its output
+        is fed back to the model: a compiler cannot leak the expected results,
+        and the reference model is never consulted here.
+        """
+        path = Path(file_path)
+        lang = (language or '').lower()
+        out = {'ok': False, 'errors': '', 'checked': True}
+
+        if not self.can_run(lang):
+            return {'ok': True, 'errors': '', 'checked': False}
+
+        try:
+            if lang == 'c':
+                cc = self.tools.get('gcc_cmd') or self.tools.get('clang_cmd') or 'gcc'
+                proc = subprocess.run([cc, '-fsyntax-only', str(path)],
+                                      capture_output=True, timeout=30,
+                                      env=self._env_with_tool_dir(cc))
+            elif lang == 'python':
+                py = self.tools.get('python_cmd') or sys.executable
+                cmd = [py, '-m', 'py_compile', str(path)]
+                proc = subprocess.run(cmd, capture_output=True, timeout=30)
+            elif lang == 'verilog':
+                work_dir = path.parent / ('_syntax_' + path.stem)
+                work_dir.mkdir(parents=True, exist_ok=True)
+                cmd = [self.tools.get('iverilog_cmd', 'iverilog'),
+                       '-o', str(work_dir / 'a.out'), str(path)]
+                proc = subprocess.run(cmd, capture_output=True, timeout=30,
+                                      env=self.tools.get('iverilog_env', os.environ.copy()))
+            else:  # vhdl
+                work_dir = path.parent / ('_syntax_' + path.stem)
+                work_dir.mkdir(parents=True, exist_ok=True)
+                cmd = [self.tools.get('ghdl_cmd', 'ghdl'), '-a', '--std=08',
+                       '--workdir=' + str(work_dir), str(path)]
+                proc = subprocess.run(cmd, capture_output=True, timeout=30,
+                                      shell=self.tools.get('ghdl_needs_shell', False),
+                                      env=self.tools.get('ghdl_env', os.environ.copy()))
+
+            out['ok'] = proc.returncode == 0
+            if not out['ok']:
+                out['errors'] = (self._decode_output(proc.stderr)
+                                 or self._decode_output(proc.stdout)
+                                 or f'returncode={proc.returncode}')
+        except subprocess.TimeoutExpired:
+            out['errors'] = f'{lang} syntax check timed out after 30s'
+        except Exception as e:
+            out['errors'] = f'{lang} syntax check could not run: {e}'
+
+        return out
+
     def run_simulation(self, file_path: str, language: str = None,
                         stdin_data: str = None, vector_file: str = None) -> Dict:
         """
@@ -565,11 +645,7 @@ class MVLSimulationRunner:
         # Select compiler (use detected command name for MSYS2/MinGW compatibility)
         compiler = self.tools.get('gcc_cmd', 'gcc')
 
-        # Build environment with compiler's DLL directory in PATH
-        c_env = os.environ.copy()
-        compiler_dir = os.path.dirname(os.path.abspath(compiler)) if os.path.exists(compiler) else ''
-        if compiler_dir and compiler_dir not in c_env.get('PATH', ''):
-            c_env['PATH'] = compiler_dir + os.pathsep + c_env.get('PATH', '')
+        c_env = self._env_with_tool_dir(compiler)
 
         # Step 1: Compile
         try:
@@ -1014,26 +1090,20 @@ class MVLSimulationRunner:
 
         try:
             start = time.time()
-            # Scale simulation time and timeout based on design complexity.
-            # Larger data widths (e.g. GF(4)^10 = 20-bit) need more sim time
-            # because testbenches have more test vectors and longer operations.
-            stop_time = '10ms'
-            proc_timeout = 60
-            try:
-                source_text = file_path.read_text(encoding='utf-8', errors='replace')
-                # Detect data width from port declarations like "19 downto 0"
-                import re as _re
-                dw_match = _re.search(r'(\d+)\s+downto\s+0', source_text)
-                if dw_match:
-                    data_width = int(dw_match.group(1)) + 1
-                    if data_width >= 16:
-                        stop_time = '100ms'
-                        proc_timeout = 120
-                    elif data_width >= 10:
-                        stop_time = '50ms'
-                        proc_timeout = 90
-            except Exception:
-                pass  # fall back to defaults
+            # A testbench applies one vector every 20 ns, so twenty of them are
+            # done after 400 ns and even two hundred after 4 us. 1 ms leaves a
+            # factor of well over a thousand, and anything still running then is
+            # not a slow design but a testbench that never stops: the clock
+            # process keeps toggling after the last vector, and GHDL has to
+            # simulate every remaining cycle.
+            #
+            # Scaling this with the data width, as it used to, made that case
+            # worse rather than better. Width does not change how long a
+            # testbench runs, only how slow each cycle is to evaluate, so the
+            # widest designs were given the most cycles to spin through — which
+            # is where "Simulation timeout (90s, stop-time=50ms)" came from.
+            stop_time = '1ms'
+            proc_timeout = 30
 
             run_cmd = [
                 ghdl_cmd, '-r',
@@ -1085,7 +1155,13 @@ class MVLSimulationRunner:
                     result['test_results']['failed'] = 0
 
         except subprocess.TimeoutExpired:
-            result['errors'].append(f'Simulation timeout ({proc_timeout}s, stop-time={stop_time})')
+            # Naming the cause: a testbench that applies its vectors and then
+            # stops finishes in microseconds, so reaching this point means the
+            # clock process is still toggling after the last vector.
+            result['errors'].append(
+                f'Testbench did not terminate: still running after {stop_time} of '
+                f'simulated time ({proc_timeout}s wall clock). A testbench that '
+                f'stops its clock after the last vector finishes in microseconds.')
         except Exception as e:
             result['errors'].append(f'Simulation error: {str(e)}')
 
