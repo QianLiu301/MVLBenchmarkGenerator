@@ -22,7 +22,13 @@ class MVLSimulationRunner:
 
         print(f"🔧 MVL Simulation Runner initialized")
         print(f"   Project root: {self.project_root}")
-        print(f"   Tools: {self.tools}")
+        # self.tools carries *_env entries holding the whole process environment,
+        # which on the server means every API key, the secret key and the
+        # database password. Printing the dict wrote all of them into the
+        # application log, so only the availability flags are reported here.
+        available = sorted(name for name, value in self.tools.items()
+                           if value is True)
+        print(f"   Tools available: {', '.join(available) if available else 'none'}")
 
     def _check_tools(self) -> Dict[str, bool]:
         """Check available simulation tools"""
