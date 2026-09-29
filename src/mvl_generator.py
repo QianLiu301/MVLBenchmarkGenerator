@@ -298,103 +298,6 @@ class MVLGenerator:
         return resolve_logic_type(k_value)
 
     @staticmethod
-    def _compute_gf_test_values(k: int, bits: int, logic_info: Dict) -> Dict:
-        """Compute expected ALU test results using GF(p^n) digit-wise operations.
-
-        Returns a dict with pre-computed expected values for edge-case and
-        small-value tests, suitable for embedding in LLM prompts and testbenches.
-        """
-        tables = logic_info['tables']
-        add_tbl = tables['add_table']
-        mul_tbl = tables['mul_table']
-        mod = k ** bits
-        max_val = mod - 1
-
-        def to_digits(value):
-            digits = []
-            for _ in range(bits):
-                digits.append(value % k)
-                value //= k
-            return digits
-
-        def from_digits(digits):
-            value = 0
-            for i, d in enumerate(digits):
-                value += d * (k ** i)
-            return value
-
-        def gf_add(a, b):
-            ad, bd = to_digits(a), to_digits(b)
-            return from_digits([add_tbl[ad[i]][bd[i]] for i in range(bits)])
-
-        def gf_sub(a, b):
-            ad, bd = to_digits(a), to_digits(b)
-            result = []
-            for i in range(bits):
-                for x in range(k):
-                    if add_tbl[x][bd[i]] == ad[i]:
-                        result.append(x)
-                        break
-            return from_digits(result)
-
-        def gf_mul(a, b):
-            ad, bd = to_digits(a), to_digits(b)
-            result = [0] * bits
-            for i in range(bits):
-                for j in range(bits):
-                    if i + j < bits:
-                        result[i + j] = add_tbl[result[i + j]][mul_tbl[ad[i]][bd[j]]]
-            return from_digits(result)
-
-        def gf_neg(a):
-            ad = to_digits(a)
-            result = []
-            for d in ad:
-                for x in range(k):
-                    if add_tbl[x][d] == 0:
-                        result.append(x)
-                        break
-            return from_digits(result)
-
-        def gf_inc(a):
-            ad = to_digits(a)
-            ad[0] = add_tbl[ad[0]][1]
-            return from_digits(ad)
-
-        def gf_dec(a):
-            ad = to_digits(a)
-            inv1 = 0
-            for x in range(k):
-                if add_tbl[x][1] == 0:
-                    inv1 = x
-                    break
-            ad[0] = add_tbl[ad[0]][inv1]
-            return from_digits(ad)
-
-        return {
-            'add_0_0': gf_add(0, 0),
-            'sub_0_0': gf_sub(0, 0),
-            'mul_0_0': gf_mul(0, 0),
-            'neg_0': gf_neg(0),
-            'inc_0': gf_inc(0),
-            'dec_0': gf_dec(0),
-            'add_max': gf_add(max_val, max_val),
-            'sub_max': gf_sub(max_val, max_val),
-            'mul_max': gf_mul(max_val, max_val),
-            'neg_max': gf_neg(max_val),
-            'inc_max': gf_inc(max_val),
-            'dec_max': gf_dec(max_val),
-            'add_10_20': gf_add(10, 20),
-            'sub_20_10': gf_sub(20, 10),
-            'sub_10_20': gf_sub(10, 20),
-            'mul_10_20': gf_mul(10, 20),
-            'neg_10': gf_neg(10),
-            'neg_1': gf_neg(1),
-            'inc_10': gf_inc(10),
-            'dec_10': gf_dec(10),
-        }
-
-    @staticmethod
     def _vhdl_unsigned_literal(value: int, width: int) -> str:
         """Generate a VHDL unsigned literal that avoids integer overflow.
 
@@ -1719,22 +1622,7 @@ RULE 11 — UNSIGNED ASSIGNMENT WIDTHS MUST MATCH EXACTLY (most common failure):
 RULE 12 — NO BARE INTEGER ON THE RIGHT OF AN UNSIGNED ASSIGNMENT:
    An integer literal has no array type and is rejected outright.
    WRONG:   v_result := {mod_minus_1};
-   CORRECT: v_result := to_unsigned({mod_minus_1}, {data_width});
-
-RULE 13 — THE TESTBENCH MUST STOP ITSELF:
-   A clock process that toggles forever keeps the simulation running long after
-   the last vector, and the run is killed as "testbench did not terminate".
-   Use a flag that the stimulus process sets when it is done:
-   signal sim_done : boolean := false;
-   clk_proc: process
-   begin
-       while not sim_done loop
-           clk_sig <= '0'; wait for CLK_PERIOD / 2;
-           clk_sig <= '1'; wait for CLK_PERIOD / 2;
-       end loop;
-       wait;
-   end process;
-   The stimulus process ends with:  sim_done <= true; wait;"""
+   CORRECT: v_result := to_unsigned({mod_minus_1}, {data_width});"""
 
         if is_extension:
             p = logic_info['p']
@@ -1968,61 +1856,36 @@ Generate the architecture now:
         compilation errors (report string quoting, entity name mismatches,
         missing wait, wrong literals, etc.).
         """
+        from golden_model import GoldenModel, NAME_TO_OP
+
         is_extension = (logic_info['category'] == 'extension_field' and logic_info.get('tables'))
         max_val = mod - 1
 
-        # Compute expected values
-        if is_extension:
-            gf_vals = MVLGenerator._compute_gf_test_values(k, bits, logic_info)
-            test_cases = [
-                # (test_num, op_name, opcode, a_val, b_val, expected, zero, neg, carry)
-                (1,  "ADD", "0000", 0, 0, gf_vals.get('add_0_0', 0), 1, 0, 0),
-                (2,  "SUB", "0001", 0, 0, gf_vals.get('sub_0_0', 0), 1, 0, 0),
-                (3,  "MUL", "0010", 0, 0, gf_vals.get('mul_0_0', 0), 1, 0, 0),
-                (4,  "NEG", "0011", 0, 0, gf_vals.get('neg_0', 0), 1, 0, 0),
-                (5,  "INC", "0100", 0, 0, gf_vals.get('inc_0', 1), 0, 0, 0),
-                (6,  "DEC", "0101", 0, 0, gf_vals['dec_0'], 0, 0, 0),
-                (7,  "ADD", "0000", max_val, max_val, gf_vals['add_max'], 0, 0, 0),
-                (8,  "SUB", "0001", max_val, max_val, gf_vals.get('sub_max', 0), 1, 0, 0),
-                (9,  "MUL", "0010", max_val, max_val, gf_vals['mul_max'], 0, 0, 0),
-                (10, "NEG", "0011", max_val, 0, gf_vals['neg_max'], 0, 0, 0),
-                (11, "INC", "0100", max_val, 0, gf_vals['inc_max'], 0, 0, 0),
-                (12, "DEC", "0101", max_val, 0, gf_vals['dec_max'], 0, 0, 0),
-                (13, "ADD", "0000", 10, 20, gf_vals['add_10_20'], 0, 0, 0),
-                (14, "SUB", "0001", 20, 10, gf_vals['sub_20_10'], 0, 0, 0),
-                (15, "SUB", "0001", 10, 20, gf_vals['sub_10_20'], 0, 0, 0),
-                (16, "MUL", "0010", 10, 20, gf_vals['mul_10_20'], 0, 0, 0),
-                (17, "NEG", "0011", 10, 0, gf_vals['neg_10'], 0, 0, 0),
-                (18, "NEG", "0011", 1, 0, gf_vals['neg_1'], 0, 0, 0),
-                (19, "INC", "0100", 10, 0, gf_vals['inc_10'], 0, 0, 0),
-                (20, "DEC", "0101", 10, 0, gf_vals['dec_10'], 0, 0, 0),
-                (21, "ADD", "0000", 5, 5, gf_vals.get('add_5_5', (5 + 5) % mod), 0, 0, 0),
-            ]
-        else:
-            neg_half = mod // 2
-            test_cases = [
-                (1,  "ADD", "0000", 0, 0, 0, 1, 0, 0),
-                (2,  "SUB", "0001", 0, 0, 0, 1, 0, 0),
-                (3,  "MUL", "0010", 0, 0, 0, 1, 0, 0),
-                (4,  "NEG", "0011", 0, 0, 0, 1, 0, 0),
-                (5,  "INC", "0100", 0, 0, 1, 0, 0, 0),
-                (6,  "DEC", "0101", 0, 0, (mod - 1), 0, 1, 1),
-                (7,  "ADD", "0000", max_val, max_val, (2 * max_val) % mod, 0, 0, 1 if 2 * max_val >= mod else 0),
-                (8,  "SUB", "0001", max_val, max_val, 0, 1, 0, 0),
-                (9,  "MUL", "0010", max_val, max_val, (max_val * max_val) % mod, 0, 0, 0),
-                (10, "NEG", "0011", max_val, 0, (mod - max_val) % mod, 0, 0, 0),
-                (11, "INC", "0100", max_val, 0, 0, 1, 0, 1),
-                (12, "DEC", "0101", max_val, 0, max_val - 1, 0, 0 if max_val - 1 < neg_half else 1, 0),
-                (13, "ADD", "0000", 10, 20, 30, 0, 0, 0),
-                (14, "SUB", "0001", 20, 10, 10, 0, 0, 0),
-                (15, "SUB", "0001", 10, 20, (10 - 20 + mod) % mod, 0, 1, 1),
-                (16, "MUL", "0010", 10, 20, (10 * 20) % mod, 0, 0, 0),
-                (17, "NEG", "0011", 10, 0, (mod - 10) % mod, 0, 1, 0),
-                (18, "NEG", "0011", 1, 0, (mod - 1) % mod, 0, 1, 0),
-                (19, "INC", "0100", 10, 0, 11, 0, 0, 0),
-                (20, "DEC", "0101", 10, 0, 9, 0, 0, 0),
-                (21, "ADD", "0000", 1, 1, 2, 0, 0, 0),
-            ]
+        # The operands of the twenty-one self-report tests. Their expected values
+        # are not written out here but computed by the reference model, for both
+        # families, so the testbench agrees with verification by construction.
+        # They used to come from a hand-kept table whose lookups fell back to
+        # integer arithmetic: test 21 for the field family had no table entry, so
+        # it expected 5 + 5 = 10 where GF(4) and GF(8) give 0 and GF(9) gives 7,
+        # and every correct GF design failed its own testbench.
+        operands = [
+            ("ADD", 0, 0), ("SUB", 0, 0), ("MUL", 0, 0),
+            ("NEG", 0, 0), ("INC", 0, 0), ("DEC", 0, 0),
+            ("ADD", max_val, max_val), ("SUB", max_val, max_val), ("MUL", max_val, max_val),
+            ("NEG", max_val, 0), ("INC", max_val, 0), ("DEC", max_val, 0),
+            ("ADD", 10, 20), ("SUB", 20, 10), ("SUB", 10, 20), ("MUL", 10, 20),
+            ("NEG", 10, 0), ("NEG", 1, 0), ("INC", 10, 0), ("DEC", 10, 0),
+            # a doubled digit: cancels in characteristic 2, wraps in characteristic 3
+            ("ADD", 5, 5) if is_extension else ("ADD", 1, 1),
+        ]
+        reference = GoldenModel(k=k, bits=bits)
+        test_cases = []
+        for num, (op, a, b) in enumerate(operands, 1):
+            code = NAME_TO_OP[op]
+            r = reference.execute(code, a, b)
+            # (test_num, op_name, opcode, a_val, b_val, expected, zero, neg, carry)
+            test_cases.append((num, op, format(code, '04b'), a, b, r.result,
+                               int(r.zero), int(r.negative), int(r.carry)))
 
         def slv_lit(val):
             return MVLGenerator._vhdl_slv_literal(val, data_width)
@@ -2063,9 +1926,19 @@ architecture Behavioral of mvl_alu_{k}_{bits}bit_tb is
     signal zero_sig     : std_logic;
     signal negative_sig : std_logic;
     signal carry_sig    : std_logic;
+    signal sim_done     : boolean := false;
 begin
-    -- Clock generation
-    clk_sig <= not clk_sig after 5 ns;
+    -- Clock generation. It stops once the stimulus process is done: a
+    -- free-running clock keeps the DUT evaluating its last opcode until the
+    -- simulator's stop time, millions of cycles after the last test.
+    clk_proc: process
+    begin
+        while not sim_done loop
+            clk_sig <= '0'; wait for 5 ns;
+            clk_sig <= '1'; wait for 5 ns;
+        end loop;
+        wait;
+    end process;
 
     -- DUT instantiation
     uut: entity work.mvl_alu_{k}_{bits}bit
@@ -2093,7 +1966,8 @@ begin
 {tests_body}
 
         report "All {len(test_cases)} tests complete" severity note;
-        wait;  -- stop simulation
+        sim_done <= true;  -- stops the clock, so the simulation ends here
+        wait;
     end process;
 end architecture Behavioral;
 """
