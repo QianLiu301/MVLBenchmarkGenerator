@@ -58,7 +58,7 @@
         setTimeout(async () => {
             try {
                 const r = await fetch('/api/submission/{{ sub.token }}');
-                const d = await r.json();
+                const d = await readJson(r);
                 if (d.status !== 'queued' && d.status !== 'running') { location.reload(); return; }
                 document.querySelectorAll('#stepBar li').forEach(li => {
                     const st = (d.steps[li.dataset.step] || {}).status || 'pending';

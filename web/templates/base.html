@@ -11,6 +11,9 @@
     <link rel="icon" type="image/png" sizes="16x16" href="{{ url_for('static', filename='brand/favicon-16.png') }}">
     <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='brand/favicon-180.png') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/library.css', v=asset_version) }}">
+    <!-- Loaded without defer: the page scripts below are inline and would
+         otherwise run before this one had defined readJson. -->
+    <script src="{{ url_for('static', filename='js/main.js', v=asset_version) }}"></script>
     <script src="https://cdn.jsdelivr.net/npm/lucide@0.460.0/dist/umd/lucide.min.js"></script>
     {% block head %}{% endblock %}
 </head>

@@ -137,7 +137,7 @@
         files.forEach(f => fd.append('files', new Blob([f.text], { type: 'text/plain' }), f.name));
         try {
             const r = await fetch('/api/submit', { method: 'POST', body: fd });
-            const data = await r.json();
+            const data = await readJson(r);
             if (data.status_url && (data.ok || data.token)) { location.href = data.status_url; return; }
             problems.innerHTML = (data.errors || ['Upload failed']).map(e => `<li class="err">${esc(e)}</li>`).join('');
             btn.disabled = false; hint.textContent = '';

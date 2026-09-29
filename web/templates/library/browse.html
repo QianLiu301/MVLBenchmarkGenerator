@@ -210,7 +210,7 @@
         async function refresh() {
             try {
                 const r = await fetch('/api/library/selection?' + params().toString());
-                const d = await r.json();
+                const d = await readJson(r);
                 count.textContent = `${d.specs} specs, ${d.files} files, ≈ ${(d.bytes / 1048576).toFixed(1)} MB`;
                 hint.textContent = `${d.specs} specs, ${d.files} files selected`;
                 // per-option counts: an option that cannot combine with the rest shows 0
