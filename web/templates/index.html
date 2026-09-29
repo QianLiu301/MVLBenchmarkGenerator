@@ -2210,6 +2210,9 @@
         let streamBuffers = {};
         let progressTimer = null;
         let progressStart = 0;
+        // Elapsed time and character count of the run that just finished, so the
+        // header can keep showing them once the live ticker has stopped.
+        let lastGenStats = null;
 
         function renderStreamPreview(lang) {
             const preview = document.getElementById('code-preview');
@@ -2240,6 +2243,22 @@
 
         function stopProgressTicker() {
             if (progressTimer) { clearInterval(progressTimer); progressTimer = null; }
+            if (progressStart) {
+                lastGenStats = {
+                    secs: Math.max(1, Math.round((Date.now() - progressStart) / 1000)),
+                    chars: Object.values(streamBuffers).reduce((n, t) => n + t.length, 0),
+                };
+                progressStart = 0;
+            }
+        }
+
+        // " • 11s • 1,277 chars" for the result header. With streaming off no text
+        // arrives incrementally, so fall back to the length of the finished files.
+        function genStatsSuffix() {
+            if (!lastGenStats) return '';
+            const chars = lastGenStats.chars || Object.values(currentResults)
+                .reduce((n, r) => n + ((r && r.code) ? r.code.length : 0), 0);
+            return ` • ${lastGenStats.secs}s • ${chars.toLocaleString()} chars`;
         }
 
         async function generateNormalOne(requestBody) {
@@ -2359,7 +2378,8 @@
                 const llm = first.llm || '';
                 document.getElementById('gen-result-subtitle').textContent =
                     `${languages.length} files generated • ${llm.toUpperCase()}` +
-                    (first.response_model ? ` • ${first.response_model}` : '');
+                    (first.response_model ? ` • ${first.response_model}` : '') +
+                    genStatsSuffix();
 
                 document.getElementById('download-all-btn').style.display = '';
                 document.getElementById('download-code-btn').textContent = 'Download This File';
@@ -2367,7 +2387,8 @@
                 const data = currentResults[languages[0]];
                 document.getElementById('gen-result-subtitle').textContent =
                     `${data.filename} • ${data.llm.toUpperCase()}` +
-                    (data.response_model ? ` • ${data.response_model}` : '');
+                    (data.response_model ? ` • ${data.response_model}` : '') +
+                    genStatsSuffix();
                 document.getElementById('download-all-btn').style.display = 'none';
                 document.getElementById('download-code-btn').textContent = 'Download Code';
             }
