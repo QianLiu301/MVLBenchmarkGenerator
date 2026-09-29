@@ -520,17 +520,52 @@ def api_check_tools():
     return jsonify(simulation_runner.get_tools_status())
 
 
+def _resolve_generated_file(filepath: str):
+    """Locate a generated file named by an API path, or None.
+
+    The generator reports an absolute path, so a URL built from it carries one:
+    "/api/download//app/output/mvl_code/x.vhd" on the server. Routing drops the
+    leading slash, so the path arrives as "app/output/mvl_code/x.vhd", and
+    joining that onto the project root pointed at "/app/app/output/..." -- every
+    download on the deployed site answered "File not found". It went unnoticed
+    locally because a Windows path keeps its drive letter and stays absolute
+    when joined, and unnoticed in simulation because that path travels in a JSON
+    body rather than in a URL.
+
+    The path is tried as given, as an absolute path, and with its first segment
+    dropped. Only a file inside output/ is returned, so a crafted path cannot
+    read anything else.
+    """
+    raw = Path(filepath.replace('\\', '/'))
+    root = PROJECT_ROOT.resolve()
+    output_dir = (root / 'output').resolve()
+
+    candidates = [root / raw]
+    if raw.is_absolute():
+        candidates.append(raw)
+    if len(raw.parts) > 1:
+        candidates.append(root / Path(*raw.parts[1:]))
+
+    for candidate in candidates:
+        try:
+            resolved = candidate.resolve()
+        except OSError:
+            continue
+        if resolved.is_file() and output_dir in resolved.parents:
+            return resolved
+    return None
+
+
 @app.route('/api/download/<path:filepath>')
 def api_download(filepath):
     """Download generated file"""
-    filepath = filepath.replace('\\', '/')
-    file_path = PROJECT_ROOT / filepath
+    file_path = _resolve_generated_file(filepath)
 
-    if not file_path.exists():
+    if file_path is None:
         return jsonify({'error': 'File not found'}), 404
 
     return send_from_directory(
-        str(file_path.parent.absolute()),
+        str(file_path.parent),
         file_path.name,
         as_attachment=True
     )
@@ -569,10 +604,9 @@ def api_download_zip():
 @app.route('/api/view-code/<path:filepath>')
 def api_view_code(filepath):
     """View code file content"""
-    filepath = filepath.replace('\\', '/')
-    file_path = PROJECT_ROOT / filepath
+    file_path = _resolve_generated_file(filepath)
 
-    if not file_path.exists():
+    if file_path is None:
         return jsonify({'error': 'File not found'}), 404
 
     try:
