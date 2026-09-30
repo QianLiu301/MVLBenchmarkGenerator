@@ -41,15 +41,6 @@ RUN echo "=== Checking installed tools ===" && \
     iverilog -V &&     ghdl --version && \
     echo "=== All tools installed successfully ==="
 
-# SystemC has no version command, so prove it works: compile, link and run a
-# minimal model. A broken install then fails the build here instead of every
-# SystemC simulation reporting "unavailable" once deployed.
-RUN printf '#include <systemc.h>\nint sc_main(int, char*[]) { return 0; }\n' > /tmp/sc_probe.cpp && \
-    g++ -std=c++17 /tmp/sc_probe.cpp -o /tmp/sc_probe -lsystemc -lpthread && \
-    SC_COPYRIGHT_MESSAGE=DISABLE /tmp/sc_probe && \
-    rm -f /tmp/sc_probe /tmp/sc_probe.cpp && \
-    echo "=== SystemC compiles, links and runs ==="
-
 # Copy requirements first (for Docker cache optimization)
 COPY requirements.txt .
 
@@ -59,6 +50,17 @@ RUN pip install --no-cache-dir --upgrade pip && \
 
 # Copy application code
 COPY . .
+
+# SystemC has no version command, so prove it works with the application's own
+# probe: it builds a small model with the port types of an entry, runs it and
+# checks the result, trying each C++ standard and link method. A two-line
+# program is not enough -- it linked where real models did not. A broken
+# install then fails the build here instead of every SystemC simulation
+# reporting "unavailable" once deployed.
+RUN python -c "import sys; sys.path.insert(0, 'src'); \
+from mvl_simulation_runner import MVLSimulationRunner as R; \
+s = R('/app')._systemc_status(); print('SystemC probe:', s); \
+sys.exit(0 if s['ok'] else 1)"
 
 # Create output directories
 RUN mkdir -p /app/output/mvl_code/gemini \

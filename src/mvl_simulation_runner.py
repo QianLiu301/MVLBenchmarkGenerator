@@ -519,7 +519,7 @@ class MVLSimulationRunner:
                                       env=self.tools.get('iverilog_env', os.environ.copy()))
             elif lang == 'systemc':
                 gxx = self._systemc_status()['cmd'] or 'g++'
-                proc = subprocess.run([gxx, *self.SYSTEMC_FLAGS, '-fsyntax-only', str(path)],
+                proc = subprocess.run([gxx, *self._systemc_flags(), '-fsyntax-only', str(path)],
                                       capture_output=True, timeout=self.SYSTEMC_COMPILE_TIMEOUT,
                                       env=self._systemc_env(self._env_with_tool_dir(gxx)))
             else:  # vhdl
@@ -637,14 +637,108 @@ class MVLSimulationRunner:
 
     # ------------------------------------------------------------------
     # SystemC: a C++ class library, so it needs g++ and the library itself.
-    # Whether both are usable is found out by compiling and linking a
-    # two-line program. That takes a few seconds and runners are created
+    # Whether both are usable is found out by building and running a small
+    # model (_SYSTEMC_PROBE). That takes a few seconds and runners are created
     # often, so it happens on first use and the answer is shared by all.
     # ------------------------------------------------------------------
     _systemc_probe: Optional[Dict] = None
     SYSTEMC_COMPILE_TIMEOUT = 120      # systemc.h is heavy; a slow server needs the room
-    SYSTEMC_FLAGS = ['-std=c++17']
+    # SystemC refuses to link code compiled under another C++ standard than the
+    # library was: the library exports sc_api_version_<ver>_cxx<standard>, and
+    # every translation unit references the one matching its own -std. The
+    # MSYS2 package is built as C++20, Debian's as C++17, so the probe tries
+    # each and every later compile uses the one that worked.
+    SYSTEMC_STD_CANDIDATES = ['-std=c++17', '-std=c++20', '-std=c++14']
     SYSTEMC_LIBS = ['-lsystemc', '-lpthread']
+    # The probe has to use what real models use. A program that only includes
+    # systemc.h linked fine against the MSYS2 archive, while any model using
+    # sc_signal<bool> failed with "multiple definition": that libsystemc.a holds
+    # both static objects and DLL import stubs, and both define the same
+    # template instances. The probe therefore instantiates a module with the
+    # port types of an entry, simulates it and checks the result.
+    _SYSTEMC_PROBE = """#include <systemc.h>
+SC_MODULE(probe_m) {
+    sc_in<bool> clk; sc_in<sc_uint<13>> a; sc_out<sc_uint<13>> r; sc_out<bool> z;
+    void f() { r.write(a.read()); z.write(a.read() == 0); }
+    SC_CTOR(probe_m) { SC_METHOD(f); sensitive << clk.pos(); }
+};
+int sc_main(int, char*[]) {
+    sc_clock clk("clk", 10, SC_NS);
+    sc_signal<sc_uint<13>> a, r; sc_signal<bool> z;
+    probe_m m("m"); m.clk(clk); m.a(a); m.r(r); m.z(z);
+    a.write(5); sc_start(20, SC_NS);
+    return (r.read() == 5 && !z.read()) ? 0 : 1;
+}
+"""
+
+    # Linking the MSYS2 DLL directly avoids its mixed archive, but that DLL
+    # exports neither main() nor sc_elab_and_sim(), which live only in the
+    # archive. This entry supplies main(): it calls sc_main as the library's own
+    # main does and, as sc_elab_and_sim does, turns an escaped SystemC error into
+    # a message on stderr rather than a silent abort. It is compiled once per
+    # C++ standard and linked in; the model's code is not touched.
+    _SYSTEMC_ENTRY = """#include <systemc.h>
+#include <cstdio>
+#include <exception>
+int main(int argc, char* argv[]) {
+    try {
+        return sc_main(argc, argv);
+    } catch (const sc_core::sc_report& e) {
+        std::fprintf(stderr, "SystemC error: %s\\n", e.what());
+    } catch (const std::exception& e) {
+        std::fprintf(stderr, "error: %s\\n", e.what());
+    } catch (...) {
+        std::fprintf(stderr, "error: unknown exception\\n");
+    }
+    return 1;
+}
+"""
+
+    def _systemc_flags(self) -> list:
+        return [self._systemc_status().get('std_flag') or self.SYSTEMC_STD_CANDIDATES[0]]
+
+    def _systemc_libs(self) -> list:
+        """What to put after the source file: the entry object if this
+        installation needs one, then the library."""
+        status = self._systemc_status()
+        libs = status.get('libs') or list(self.SYSTEMC_LIBS)
+        if status.get('needs_entry'):
+            return [self._systemc_entry_object(status), *libs]
+        return libs
+
+    def _systemc_entry_object(self, status: Dict, out_dir: Path = None) -> str:
+        """Compile _SYSTEMC_ENTRY once per C++ standard and return the object."""
+        out_dir = out_dir or (self.project_root / 'output' / 'mvl_results')
+        out_dir.mkdir(parents=True, exist_ok=True)
+        std = status['std_flag']
+        tag = std.replace('-std=', '').replace('+', 'x')
+        src = out_dir / 'sc_entry.cpp'
+        obj = out_dir / f'sc_entry_{tag}.o'
+        if not src.exists() or src.read_text(encoding='utf-8') != self._SYSTEMC_ENTRY:
+            src.write_text(self._SYSTEMC_ENTRY, encoding='utf-8')
+            if obj.exists():
+                obj.unlink()
+        if not obj.exists():
+            proc = subprocess.run(
+                [status['cmd'], std, '-c', str(src), '-o', str(obj)],
+                capture_output=True, timeout=self.SYSTEMC_COMPILE_TIMEOUT,
+                env=self._systemc_env(self._env_with_tool_dir(status['cmd'])))
+            if proc.returncode != 0:
+                raise RuntimeError('could not build the SystemC entry point: '
+                                   + (self._decode_output(proc.stderr) or '')[:300])
+        return str(obj)
+
+    def _systemc_link_candidates(self, gxx: str) -> list:
+        """(link arguments, needs our entry) to try, in order: -lsystemc, then on
+        Windows the DLL itself, which MinGW's ld links against directly and
+        which leaves the mixed MSYS2 archive out entirely."""
+        candidates = [(list(self.SYSTEMC_LIBS), False)]
+        if os.name == 'nt':
+            import glob
+            tool_dir = os.path.dirname(os.path.abspath(gxx))
+            for dll in sorted(glob.glob(os.path.join(tool_dir, 'libsystemc*.dll'))):
+                candidates.append(([dll, '-lpthread'], True))
+        return candidates
 
     @staticmethod
     def _systemc_env(base: Dict[str, str]) -> Dict[str, str]:
@@ -665,17 +759,37 @@ class MVLSimulationRunner:
         work = Path(tempfile.mkdtemp(prefix='mvl_sc_probe_'))
         try:
             src = work / 'probe.cpp'
-            src.write_text('#include <systemc.h>\nint sc_main(int, char*[]) { return 0; }\n',
-                           encoding='utf-8')
+            src.write_text(self._SYSTEMC_PROBE, encoding='utf-8')
             exe = work / ('probe.exe' if os.name == 'nt' else 'probe')
-            proc = subprocess.run(
-                [gxx, *self.SYSTEMC_FLAGS, str(src), '-o', str(exe), *self.SYSTEMC_LIBS],
-                capture_output=True, timeout=self.SYSTEMC_COMPILE_TIMEOUT,
-                env=self._env_with_tool_dir(gxx))
-            if proc.returncode != 0:
-                reason = (self._decode_output(proc.stderr) or 'link failed').strip().splitlines()
-                return {'ok': False, 'cmd': gxx, 'reason': reason[0][:200] if reason else ''}
-            return {'ok': True, 'cmd': gxx, 'reason': ''}
+            env = self._systemc_env(self._env_with_tool_dir(gxx))
+            # every attempt's outcome is kept: the last one alone is misleading
+            # (C++14 always fails on SystemC 3 headers and would hide the cause)
+            attempts = []
+            for std in self.SYSTEMC_STD_CANDIDATES:
+                for libs, needs_entry in self._systemc_link_candidates(gxx):
+                    label = f'{std} {"+entry " if needs_entry else ""}{" ".join(libs)}'
+                    try:
+                        extra = ([self._systemc_entry_object({'cmd': gxx, 'std_flag': std}, work)]
+                                 if needs_entry else [])
+                    except RuntimeError as e:
+                        attempts.append(f'{label}: {str(e)[:120]}')
+                        continue
+                    build = subprocess.run(
+                        [gxx, std, str(src), '-o', str(exe), *extra, *libs],
+                        capture_output=True, timeout=self.SYSTEMC_COMPILE_TIMEOUT, env=env)
+                    if build.returncode != 0:
+                        err = self._decode_output(build.stderr) or ''
+                        key = [l for l in err.splitlines()
+                               if 'error' in l.lower() or 'multiple definition' in l
+                               or 'undefined reference' in l]
+                        attempts.append(f'{label}: {(key or err.splitlines() or ["build failed"])[0][-160:]}')
+                        continue
+                    run = subprocess.run([str(exe)], capture_output=True, timeout=60, env=env)
+                    if run.returncode == 0:
+                        return {'ok': True, 'cmd': gxx, 'std_flag': std, 'libs': libs,
+                                'needs_entry': needs_entry, 'reason': ''}
+                    attempts.append(f'{label}: probe model ran but returned {run.returncode}')
+            return {'ok': False, 'cmd': gxx, 'reason': ' | '.join(attempts)[:1500]}
         except Exception as e:
             return {'ok': False, 'cmd': gxx, 'reason': str(e)[:200]}
         finally:
@@ -694,7 +808,7 @@ class MVLSimulationRunner:
         compiler = self._systemc_status()['cmd'] or 'g++'
         return self._compile_and_run(
             file_path, stdin_data, language='systemc', label='SystemC', compiler=compiler,
-            compile_args=[*self.SYSTEMC_FLAGS, *self.SYSTEMC_LIBS],
+            compile_args=[*self._systemc_flags(), *self._systemc_libs()],
             env=self._systemc_env(self._env_with_tool_dir(compiler)),
             compile_timeout=self.SYSTEMC_COMPILE_TIMEOUT)
 

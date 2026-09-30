@@ -1018,7 +1018,7 @@ class MVLGenerator:
             compile_note = 'Must be synthesizable and simulatable with GHDL.'
         elif lang == 'systemc':
             lang_upper = 'SystemC'
-            compile_note = 'Must be complete C++ that compiles with g++ -std=c++17 -lsystemc.'
+            compile_note = 'Must be complete C++ (C++17 or C++20) that compiles with g++ -lsystemc.'
         else:
             lang_upper = language.upper()
             compile_note = ''
@@ -1111,7 +1111,7 @@ Generate the complete {lang_upper} code now:
             compile_note = 'Must be synthesizable and simulatable with GHDL.'
         elif lang == 'systemc':
             lang_upper = 'SystemC'
-            compile_note = 'Must be complete C++ that compiles with g++ -std=c++17 -lsystemc.'
+            compile_note = 'Must be complete C++ (C++17 or C++20) that compiles with g++ -lsystemc.'
         else:
             lang_upper = language.upper()
             compile_note = ''
@@ -1209,7 +1209,7 @@ Generate the complete {lang_upper} code now:
             compile_note = 'Must be synthesizable and simulatable with GHDL.'
         elif lang == 'systemc':
             lang_upper = 'SystemC'
-            compile_note = 'Must be complete C++ that compiles with g++ -std=c++17 -lsystemc.'
+            compile_note = 'Must be complete C++ (C++17 or C++20) that compiles with g++ -lsystemc.'
         else:
             lang_upper = language.upper()
             compile_note = ''
@@ -1599,7 +1599,7 @@ Generate the complete C code now:
 
 CRITICAL RULES:
 1. Output ONLY C++ code using SystemC — no markdown, no explanations
-2. It must compile with:  g++ -std=c++17 design.cpp -lsystemc
+2. It must compile as C++17 or C++20 with:  g++ design.cpp -lsystemc
 3. sc_main() MUST print AT LEAST 20 test vectors — this is a HARD REQUIREMENT
 
 SPECIFICATIONS:
