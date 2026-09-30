@@ -420,6 +420,65 @@
             display: none;
         }
 
+        /* "C" is a single letter: the 80px minimum left it as wide as "VHDL",
+           mostly empty. Only this pill drops the minimum. */
+        #language-group .checkbox-item[data-value="c"] {
+            min-width: 0;
+            padding: 10px 22px;
+        }
+
+        /* Golden-model validation panel: plain-language explanations */
+        .val-intro {
+            font-size: 0.8rem;
+            line-height: 1.55;
+            color: var(--text-secondary);
+            margin-bottom: 16px;
+        }
+        .val-options {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-bottom: 20px;
+        }
+        .val-option {
+            min-width: 180px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .val-option .btn { width: 100%; }
+        .val-option p {
+            font-size: 0.72rem;
+            line-height: 1.5;
+            color: var(--text-secondary);
+            padding: 0 4px;
+        }
+        .val-option strong { color: var(--text-primary); }
+        .val-legend {
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 10px 14px;
+            margin-bottom: 16px;
+            font-size: 0.74rem;
+            line-height: 1.55;
+            color: var(--text-secondary);
+        }
+        .val-legend summary {
+            cursor: pointer;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+        .val-legend ul { margin: 8px 0 0 18px; }
+        .val-legend li { margin-bottom: 4px; }
+        .val-legend code {
+            font-size: 0.68rem;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 0 4px;
+        }
+
         /* Language header */
         .lang-header {
             display: flex;
@@ -1376,29 +1435,75 @@
                     <span style="font-size: 1.3rem;"></span>
                     <h3 style="font-weight: 700; font-size: 1rem; color: var(--text-primary);">Golden-Model Validation</h3>
                 </div>
-                <p style="font-size: 0.78rem; color: var(--text-secondary); margin-bottom: 16px;">
-                    Compare LLM output against the mathematically correct golden model. Choose a strategy or run both at once.
+                <p class="val-intro">
+                    Checks whether the file you just generated computes the right answers.
+                    The <strong>golden model</strong> is a reference ALU written directly from the
+                    mathematical definition of every operation, independently of any language model.
+                    Validation runs your file and compares what it computes with what the golden model
+                    computes for the same inputs.
                 </p>
 
-                <!-- Three entry-point buttons -->
-                <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 20px;">
-                    <button class="btn btn-secondary btn-sm" id="val-btn-a" onclick="runValidateA()" style="flex: 1; min-width: 140px;">
-                        <span id="val-btn-a-text">🅰Strategy A<br><span style="font-size:0.68rem;opacity:0.7">LLM Self-Test</span></span>
-                        <div class="spinner" id="val-spinner-a" style="display:none;"></div>
-                    </button>
-                    <button class="btn btn-secondary btn-sm" id="val-btn-b" onclick="runValidateB()" style="flex: 1; min-width: 140px;">
-                        <span id="val-btn-b-text">🅱Strategy B<br><span style="font-size:0.68rem;opacity:0.7">Golden Injection</span></span>
-                        <div class="spinner" id="val-spinner-b" style="display:none;"></div>
-                    </button>
-                    <button class="btn btn-primary btn-sm" id="val-btn-both" onclick="runValidateBoth()" style="flex: 1.2; min-width: 160px; font-weight: 600;">
-                        <span id="val-btn-both-text">Run Both (A+B)</span>
-                        <div class="spinner" id="val-spinner-both" style="display:none;"></div>
-                    </button>
+                <!-- Three options; each column keeps a button and its explanation
+                     together, so they stay paired when the row wraps -->
+                <div class="val-options">
+                    <div class="val-option" style="flex: 1;">
+                        <button class="btn btn-secondary btn-sm" id="val-btn-a" onclick="runValidateA()">
+                            <span id="val-btn-a-text">🅰Strategy A<br><span style="font-size:0.68rem;opacity:0.7">LLM Self-Test</span></span>
+                            <div class="spinner" id="val-spinner-a" style="display:none;"></div>
+                        </button>
+                        <p><strong>Checks the file's own tests.</strong>
+                            Runs the file as it is. Its own test code prints one line per test; every line is
+                            recomputed with the golden model.
+                            <em>Limit:</em> the file chose its own test inputs, so it can pass by testing only
+                            what it gets right.</p>
+                    </div>
+                    <div class="val-option" style="flex: 1;">
+                        <button class="btn btn-secondary btn-sm" id="val-btn-b" onclick="runValidateB()">
+                            <span id="val-btn-b-text">🅱Strategy B<br><span style="font-size:0.68rem;opacity:0.7">Golden Injection</span></span>
+                            <div class="spinner" id="val-spinner-b" style="display:none;"></div>
+                        </button>
+                        <p><strong>Checks with our tests.</strong>
+                            Removes the file's test code, puts ours in its place and feeds it inputs from the
+                            golden model: every possible pair when there are few enough, otherwise a fixed
+                            random sample plus all the edge cases. The file cannot choose what it is asked.</p>
+                    </div>
+                    <div class="val-option" style="flex: 1.2;">
+                        <button class="btn btn-primary btn-sm" id="val-btn-both" onclick="runValidateBoth()" style="font-weight: 600;">
+                            <span id="val-btn-both-text">Run Both (A+B)</span>
+                            <div class="spinner" id="val-spinner-both" style="display:none;"></div>
+                        </button>
+                        <p><strong>Recommended.</strong>
+                            Runs A, then B. A file counts as correct only when both pass.
+                            If A passes and B does not, the file's own tests missed a mistake that ours found.</p>
+                    </div>
                 </div>
             </div>
 
             <!-- Validation results container -->
             <div id="val-results" style="display: none; padding: 0 24px 20px;">
+
+                <!-- How to read what follows -->
+                <details class="val-legend" open>
+                    <summary>How to read the result</summary>
+                    <ul>
+                        <li><strong>Percentage and "12/21 passed"</strong> — how many of the test lines
+                            give the same result as the golden model.</li>
+                        <li><strong>Status</strong> —
+                            <code>PASS</code> every line matched;
+                            <code>LOGIC_ERROR</code> it ran, but at least one result is wrong;
+                            <code>COMPILE_ERROR</code> it did not compile;
+                            <code>RUNTIME_ERROR</code> it compiled, then crashed or stopped while running;
+                            <code>NO_OUTPUT</code> it ran but printed no test line that could be read.</li>
+                        <!-- Describes the current rule: update together with TestComparison.passed -->
+                        <li><strong>Flags</strong> — the zero (Z), negative (N) and carry (C) flags are
+                            compared as well. A line whose result is right but whose flags are not still
+                            counts as passed, and is listed separately as a flag warning.</li>
+                        <li><strong>A vs B</strong> (after Run Both) — "A pass, B fail" means the file's
+                            own tests missed a mistake that ours found.</li>
+                        <li><strong>Error patterns</strong> — failing lines grouped by a likely cause, for
+                            example a result that was not wrapped around at the modulus.</li>
+                    </ul>
+                </details>
 
                 <!-- Summary bar -->
                 <div id="val-summary-bar" style="display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px;"></div>
@@ -3107,6 +3212,9 @@
                             ${d.compile_time ? ' &middot; Compile: ' + d.compile_time + 's' : ''}
                             ${d.run_time ? ' &middot; Run: ' + d.run_time + 's' : ''}
                         </div>
+                        ${d.flag_warnings ? `<div style="font-size:0.7rem; color:var(--warn-fg); margin-top:4px;">
+                            ⚠ ${d.flag_warnings} passed line${d.flag_warnings === 1 ? '' : 's'} with a wrong flag (Z, N or C)
+                        </div>` : ''}
                     </div>`;
             });
 
