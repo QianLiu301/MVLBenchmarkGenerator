@@ -81,7 +81,7 @@
                 <a href="{{ url_for('library.download_impl', slug=b.slug, impl_id=i.id) }}" class="btn btn-outline btn-sm"><i data-lucide="download" class="icon"></i> {{ i.filename }}</a>
             </div>
         </div>
-        <pre class="code"><code id="code-{{ i.id }}" class="language-{{ {'c': 'c', 'python': 'python', 'verilog': 'verilog', 'vhdl': 'vhdl'}[i.language] }}">{{ i.code }}</code></pre>
+        <pre class="code"><code id="code-{{ i.id }}" class="language-{{ {'c': 'c', 'python': 'python', 'verilog': 'verilog', 'vhdl': 'vhdl', 'systemc': 'cpp'}[i.language] }}">{{ i.code }}</code></pre>
         {% if not loop.last %}<hr style="border:0;border-top:1px solid var(--border);margin:18px 0">{% endif %}
         {% endfor %}
     </div>

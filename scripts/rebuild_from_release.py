@@ -27,7 +27,7 @@ from library import service  # noqa: E402
 from library.db import init_db, session_scope  # noqa: E402
 from library.models import Benchmark, Implementation  # noqa: E402
 
-LANG_OF_EXT = {'.c': 'c', '.py': 'python', '.v': 'verilog', '.vhd': 'vhdl'}
+LANG_OF_EXT = {'.c': 'c', '.py': 'python', '.v': 'verilog', '.vhd': 'vhdl', '.cpp': 'systemc'}
 
 
 def main():

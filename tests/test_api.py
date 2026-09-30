@@ -148,16 +148,18 @@ def test_statistics(client):
     """Coverage, rates and the gap list come from the same rows as the library itself."""
     from library import service
     from library.db import session_scope
+    from library.models import LANGUAGES
     with session_scope() as s:
         d = service.library_statistics(s)
     assert d['ks'] == [3, 4] and d['digits'] == [8]
-    # alu_k3_8t: verified C, failed VHDL -> 1 of 4 languages verified
+    # alu_k3_8t: verified C, failed VHDL -> 1 of the library's languages verified
     cell = d['matrix'][0]['cells'][0]
-    assert cell['slug'] == 'alu_k3_8t' and cell['verified'] == 1 and cell['total'] == 4
+    assert cell['slug'] == 'alu_k3_8t' and cell['verified'] == 1 and cell['total'] == len(LANGUAGES)
     langs = {l['code']: l for l in d['languages']}
     assert langs['c']['verified'] == 1 and langs['c']['pct'] == 100
     assert langs['vhdl']['total'] == 2 and langs['vhdl']['verified'] == 1
-    assert d['pairs_total'] == 8 and d['pairs_verified'] == 2
+    # every (specification, language) pair counts, including languages with no entry yet
+    assert d['pairs_total'] == 2 * len(LANGUAGES) and d['pairs_verified'] == 2
     # every pair without a passing implementation is listed, with what was tried
     gaps = {g['slug']: g for g in d['gaps']}
     assert 'VHDL' in gaps['alu_k3_8t']['missing']

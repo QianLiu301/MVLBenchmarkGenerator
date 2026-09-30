@@ -123,6 +123,7 @@ _TEST_INDICATORS = {
     'python': ['print', 'test', 'assert'],
     'verilog': ['$display', 'initial begin', '#'],
     'vhdl': ['assert', 'report', 'wait for'],
+    'systemc': ['printf', 'test', 'assert'],
 }
 
 SORT_OPTIONS = {
@@ -447,7 +448,8 @@ FILTER_FIELDS = ('module_type', 'k_value', 'bitwidth', 'logic_family')
 IMPL_FILTERS = ('language', 'source', 'verified', 'model')
 
 
-_Q_LANGUAGES = {'c': 'c', 'python': 'python', 'py': 'python', 'verilog': 'verilog', 'vhdl': 'vhdl'}
+_Q_LANGUAGES = {'c': 'c', 'python': 'python', 'py': 'python', 'verilog': 'verilog', 'vhdl': 'vhdl',
+                'systemc': 'systemc'}
 _Q_LABELS = {'k_value': 'k = {}', 'bitwidth': '{} digits', 'module_type': '{}',
              'logic_family': '{}', 'language': '{}', 'verified': '{}'}
 
@@ -663,8 +665,11 @@ def home_categories(session) -> Dict:
     digits = [{'label': str(r['value']), 'count': r['specs'],
                'url_args': {'bitwidth': r['value']}} for r in f['bitwidth']]
 
-    languages = [{'label': LANGUAGES.get(r['value'], r['value']), 'count': r['impls'],
-                  'url_args': {'language': r['value']}} for r in f['language']]
+    # in LANGUAGES order, like the structure facet above, not in query order
+    lang_rows = by_value(f['language'])
+    languages = [{'label': label, 'count': lang_rows[code]['impls'],
+                  'url_args': {'language': code}}
+                 for code, label in LANGUAGES.items() if code in lang_rows]
     ver = by_value(f['verified'])
     verification = [{'label': 'Verified', 'count': ver.get('1', {}).get('impls', 0),
                      'url_args': {'verified': '1'}},
@@ -954,7 +959,8 @@ def api_benchmark(benchmark: Benchmark, base_url: str = 'https://llm-mvl.com',
     impls = benchmark.published_implementations
     out['implementation_count'] = len(impls)
     out['verified_count'] = sum(1 for i in impls if i.golden_status == 'PASS')
-    out['languages'] = sorted({i.language for i in impls})
+    present = {i.language for i in impls}
+    out['languages'] = [l for l in LANGUAGES if l in present]
     if with_implementations:
         out['implementations'] = [{
             'id': i.id,

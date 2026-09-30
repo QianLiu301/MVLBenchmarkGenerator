@@ -239,8 +239,10 @@ class MVLGenerator:
     # First line of the testbench _build_vhdl_testbench appends; the repair loop
     # cuts the file here so the model never sees the reference values below it.
     _VHDL_TB_MARK = '-- Testbench (deterministically generated)'
-    _FENCE = {'c': 'c', 'python': 'python', 'verilog': 'verilog', 'vhdl': 'vhdl'}
-    _EXT = {'c': '.c', 'python': '.py', 'verilog': '.v', 'vhdl': '.vhd'}
+    _FENCE = {'c': 'c', 'python': 'python', 'verilog': 'verilog', 'vhdl': 'vhdl',
+              'systemc': 'cpp'}
+    _EXT = {'c': '.c', 'python': '.py', 'verilog': '.v', 'vhdl': '.vhd',
+            'systemc': '.cpp'}
 
     def _syntax_runner(self):
         """A simulation runner used only for its compile-only check (cached)."""
@@ -986,6 +988,8 @@ class MVLGenerator:
                 return self._create_verilog_prompt(k, bits, mod, operations, logic_info)
             elif lang == 'vhdl':
                 return self._create_vhdl_prompt(k, bits, mod, operations, logic_info)
+            elif lang == 'systemc':
+                return self._create_systemc_prompt(k, bits, mod, operations, logic_info)
             else:
                 return None
 
@@ -1012,6 +1016,9 @@ class MVLGenerator:
         elif lang == 'vhdl':
             lang_upper = 'VHDL'
             compile_note = 'Must be synthesizable and simulatable with GHDL.'
+        elif lang == 'systemc':
+            lang_upper = 'SystemC'
+            compile_note = 'Must be complete C++ that compiles with g++ -std=c++17 -lsystemc.'
         else:
             lang_upper = language.upper()
             compile_note = ''
@@ -1102,6 +1109,9 @@ Generate the complete {lang_upper} code now:
         elif lang == 'vhdl':
             lang_upper = 'VHDL'
             compile_note = 'Must be synthesizable and simulatable with GHDL.'
+        elif lang == 'systemc':
+            lang_upper = 'SystemC'
+            compile_note = 'Must be complete C++ that compiles with g++ -std=c++17 -lsystemc.'
         else:
             lang_upper = language.upper()
             compile_note = ''
@@ -1197,6 +1207,9 @@ Generate the complete {lang_upper} code now:
         elif lang == 'vhdl':
             lang_upper = 'VHDL'
             compile_note = 'Must be synthesizable and simulatable with GHDL.'
+        elif lang == 'systemc':
+            lang_upper = 'SystemC'
+            compile_note = 'Must be complete C++ that compiles with g++ -std=c++17 -lsystemc.'
         else:
             lang_upper = language.upper()
             compile_note = ''
@@ -1544,6 +1557,102 @@ printf("Test %2d: %-3s A=%llu B=%llu -> R=%llu Z=%d N=%d C=%d\\n", ...);
 Generate the complete C code now:
 """
         return prompt
+
+    def _create_systemc_prompt(self, k: int, bits: int, mod: int, operations: List[str],
+                               logic_info: Dict = None) -> str:
+        """Create prompt for SystemC code generation.
+
+        A SystemC entry is a C++ module with the same port list as the Verilog
+        and VHDL entries (clk, rst, a, b, opcode -> result, zero, negative,
+        carry), so one harness shape can drive all three, and an sc_main
+        testbench that prints the same line format as every other language.
+        The arithmetic itself is C++ on base-k digits, as in the C entries: that
+        works for every k, including k = 9, where a base-9 digit does not map
+        onto a fixed group of bits.
+        """
+        import math
+        ops_str = ', '.join(operations)
+        if logic_info is None:
+            logic_info = self._resolve_logic_type(k)
+
+        data_width = math.ceil(math.log2(mod)) if mod > 1 else 1
+        mul_product_max = (mod - 1) * (mod - 1)
+        mul_type = "uint64_t" if mul_product_max <= 2**64 - 1 else "unsigned __int128"
+        module = f"mvl_alu_{k}_{bits}bit"
+
+        algebra_section = self._build_algebra_section(k, bits, mod, logic_info, 'c')
+        is_extension = (logic_info['category'] == 'extension_field' and logic_info.get('tables'))
+
+        if is_extension:
+            arith = f"""- GF({k}) addition and multiplication lookup tables (copy from ALGEBRAIC STRUCTURE)
+- Helper functions to_digits(), from_digits(), gf_add_digits(), gf_mul_digits() on uint64_t
+- ⚠️ ALL operations use digit-wise GF({k}) table lookups as described in ALGEBRAIC STRUCTURE.
+  Do NOT use standard modular arithmetic ((a+b)%MOD, (MOD-a)%MOD, ...) — these give WRONG results!
+- carry and negative are always false for GF field arithmetic; zero is (result == 0)."""
+        else:
+            arith = f"""- const uint64_t MOD = {mod}ULL;
+- For MUL use {mul_type} for the intermediate product ({mod - 1} * {mod - 1} = {mul_product_max}).
+- ⚠️ NEG must be (MOD - a) % MOD, NOT (MOD - a): NEG(0) must be 0.
+- carry and negative follow the ALGEBRAIC STRUCTURE section exactly."""
+
+        return f"""Generate a complete SystemC (C++) model of a {bits}-trit ALU operating in base-{k}, with a testbench in sc_main.
+
+CRITICAL RULES:
+1. Output ONLY C++ code using SystemC — no markdown, no explanations
+2. It must compile with:  g++ -std=c++17 design.cpp -lsystemc
+3. sc_main() MUST print AT LEAST 20 test vectors — this is a HARD REQUIREMENT
+
+SPECIFICATIONS:
+- K-value: {k}
+- Bitwidth: {bits} trits
+- MOD value: {mod} ({k}^{bits})
+- Operations: {ops_str}
+- Each operand range: 0 to {mod - 1}, which needs {data_width} bits
+
+{algebra_section}
+
+MODULE INTERFACE (use this EXACT interface, names included):
+#include <systemc.h>
+SC_MODULE({module}) {{
+    sc_in<bool>              clk;
+    sc_in<bool>              rst;
+    sc_in<sc_uint<{data_width}>>     a;
+    sc_in<sc_uint<{data_width}>>     b;
+    sc_in<sc_uint<4>>        opcode;
+    sc_out<sc_uint<{data_width}>>    result;
+    sc_out<bool>             zero;
+    sc_out<bool>             negative;
+    sc_out<bool>             carry;
+
+    void compute();
+
+    SC_CTOR({module}) {{
+        SC_METHOD(compute);
+        sensitive << clk.pos();
+    }}
+}};
+
+OPCODES: 0 = ADD, 1 = SUB, 2 = MUL, 3 = NEG, 4 = INC, 5 = DEC
+
+IMPLEMENTATION RULES:
+- Read ports with .read(), write ports with .write().
+- Do the arithmetic on uint64_t values (convert with .to_uint64()), then write the result back.
+{arith}
+- When rst is true, write 0 to result and false to every flag.
+
+TESTBENCH (sc_main):
+- sc_clock clk("clk", 10, SC_NS); one sc_signal per port; instantiate {module} and bind every port.
+- For each test: write a, b and opcode, then call sc_start(20, SC_NS), then read result and the flags.
+  The module computes on the rising clock edge, so 20 ns guarantees an edge after the inputs change.
+- Print every test with EXACTLY this format:
+  printf("Test %2d: %-3s A=%llu B=%llu -> R=%llu Z=%d N=%d C=%d\\n", ...);
+  Pass values as (unsigned long long) and flags as (int).
+- At least 20 tests: 6 edge cases (a=0, b=0, one per operation), 6 max-value tests
+  (a={mod - 1}, b={mod - 1}, one per operation), and 8 or more random tests.
+- End sc_main with: return 0;
+
+Generate the complete SystemC code now:
+"""
 
     def _create_python_prompt(self, k: int, bits: int, mod: int, operations: List[str], logic_info: Dict = None) -> str:
         """Create prompt for Python code generation"""
@@ -2248,6 +2357,13 @@ end architecture Behavioral;
         """Detect the actual language of generated code based on syntax markers."""
         code_lower = code.lower()
 
+        # SystemC first: it is C++ and carries every C marker below (#include,
+        # printf, uint64_t), so without this it would be reported as C.
+        systemc_markers = ['<systemc', 'sc_module', 'sc_main', 'sc_in<', 'sc_out<',
+                           'sc_signal', 'sc_start', 'sc_uint<']
+        if sum(1 for m in systemc_markers if m in code_lower) >= 2:
+            return 'systemc'
+
         # VHDL markers (must check before Verilog since both may share some keywords)
         vhdl_markers = ['library ieee', 'use ieee.', 'entity ', 'architecture ', 'std_logic', 'process(', 'process (']
         vhdl_score = sum(1 for m in vhdl_markers if m in code_lower)
@@ -2277,11 +2393,22 @@ end architecture Behavioral;
         """Extract code from LLM response, with language mismatch detection."""
         code = response
 
-        # Try to extract from code blocks — prefer language-specific match first
+        # Try to extract from code blocks — prefer language-specific match first.
+        # A fence tag must end its line: "```c\s*" also matched "```cpp" and left
+        # "pp" at the top of the code, and the generic fallback kept any tag it
+        # did not know ("```cpp" -> a first line reading "cpp"). SystemC answers
+        # come back as ```cpp, so both would have broken every one of them.
+        aliases = {
+            'c': ['c'],
+            'python': ['python', 'py', 'python3'],
+            'verilog': ['verilog', 'v', 'systemverilog', 'sv'],
+            'vhdl': ['vhdl'],
+            'systemc': ['systemc', 'cpp', 'c\\+\\+', 'cxx', 'cc'],
+        }.get(language.lower(), [re.escape(language.lower())])
         patterns = [
-            rf'```{language}\s*(.*?)```',
-            rf'```{language.lower()}\s*(.*?)```',
-            r'```\s*(.*?)```',
+            rf'```(?:{"|".join(aliases)})[ \t]*\r?\n(.*?)```',
+            r'```[\w+#.-]*[ \t]*\r?\n(.*?)```',
+            r'```(.*?)```',
         ]
 
         for pattern in patterns:
@@ -3716,6 +3843,7 @@ end architecture Behavioral;
             'python': ['print', 'test', 'assert'],
             'verilog': ['$display', 'initial begin', '#'],
             'vhdl': ['assert', 'report', 'wait for'],
+            'systemc': ['printf', 'test', 'assert'],
         }
         indicators = test_indicators.get(lang, [])
         test_count = sum(1 for line in code.split('\n')
@@ -3731,6 +3859,7 @@ end architecture Behavioral;
             'python': f'Add more print test lines in the if __name__ == "__main__" block. Use alu_exec(a, b, op) and print results. Include edge cases (0,0), max values ({mod-1},{mod-1}), and random values for all 6 operations.',
             'verilog': f'Add more $display test vectors in the testbench initial block. Test all 6 opcodes (0000-0101) with edge cases (a=0,b=0), max values (a={mod-1},b={mod-1}), and various other values. Use #10 between tests.',
             'vhdl': f'Add more assert/report test vectors in the testbench process. Test all 6 opcodes ("0000"-"0101") with edge cases (a=0,b=0), max values (a={mod-1},b={mod-1}), and various other values. Use wait for 10 ns between tests.',
+            'systemc': f'Add more printf test lines in sc_main(). For each test write a, b and opcode to their signals, call sc_start(20, SC_NS), then printf the result and the flags. Include edge cases (0,0), max values ({mod-1},{mod-1}), and random values for all 6 opcodes (0 to 5).',
         }
 
         enhance_prompt = f"""Here is existing {language.upper()} code that has too few test vectors. Add AT LEAST 15 more test vectors to the test/main section to bring the total to 20+.
@@ -3796,6 +3925,8 @@ Output the complete enhanced code now:"""
                         'neg': ['0011', 'neg'], 'inc': ['0100', 'inc'], 'dec': ['0101', 'dec']},
             'vhdl': {'add': ['0000', 'add'], 'sub': ['0001', 'sub'], 'mul': ['0010', 'mul'],
                      'neg': ['0011', 'neg'], 'inc': ['0100', 'inc'], 'dec': ['0101', 'dec']},
+            'systemc': {'add': ['add'], 'sub': ['sub'], 'mul': ['mul'],
+                        'neg': ['neg'], 'inc': ['inc'], 'dec': ['dec']},
         }
         if lang in op_keywords:
             for op_name, keywords in op_keywords[lang].items():
@@ -3828,6 +3959,7 @@ Output the complete enhanced code now:"""
             'python': ['print', 'test', 'assert'],
             'verilog': ['$display', 'initial begin', '#'],
             'vhdl': ['assert', 'report', 'wait for'],
+            'systemc': ['printf', 'test', 'assert'],
         }
         indicators = test_indicators.get(lang, [])
         test_count = sum(1 for line in code.split('\n')
@@ -3878,7 +4010,8 @@ Output the complete enhanced code now:"""
             'c': 'c',
             'python': 'py',
             'verilog': 'v',
-            'vhdl': 'vhd'
+            'vhdl': 'vhd',
+            'systemc': 'cpp'
         }
         ext = extensions.get(language.lower(), 'txt')
 

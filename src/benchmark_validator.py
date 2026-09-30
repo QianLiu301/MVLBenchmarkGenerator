@@ -180,7 +180,7 @@ class BenchmarkValidator:
         """Full validation pipeline: compile → run → parse → compare."""
         fp = Path(file_path)
         if language is None:
-            language = {'.c': 'c', '.py': 'python', '.v': 'verilog', '.vhd': 'vhdl'
+            language = {'.c': 'c', '.py': 'python', '.v': 'verilog', '.vhd': 'vhdl', '.cpp': 'systemc'
                         }.get(fp.suffix.lower(), 'unknown')
 
         report = ValidationReport(
@@ -276,7 +276,7 @@ class BenchmarkValidator:
 
         # Step 3: Write harness to a temp file and run
         lang = language.lower()
-        ext = {'c': '.c', 'python': '.py', 'verilog': '.v', 'vhdl': '.vhd'}[lang]
+        ext = {'c': '.c', 'python': '.py', 'verilog': '.v', 'vhdl': '.vhd', 'systemc': '.cpp'}[lang]
 
         tmp_dir = tempfile.mkdtemp(prefix='mvl_stratb_')
         harness_path = os.path.join(tmp_dir, f'harness{ext}')
@@ -356,7 +356,7 @@ class BenchmarkValidator:
         """
         fp = Path(file_path)
         if language is None:
-            language = {'.c': 'c', '.py': 'python', '.v': 'verilog', '.vhd': 'vhdl'
+            language = {'.c': 'c', '.py': 'python', '.v': 'verilog', '.vhd': 'vhdl', '.cpp': 'systemc'
                         }.get(fp.suffix.lower(), 'unknown')
 
         # Run both strategies

@@ -17,6 +17,16 @@ from typing import Dict, Optional
 class MVLSimulationRunner:
     """Run MVL code simulations"""
 
+    # Wall-clock limits for the VHDL steps, in seconds. A well-formed run ends
+    # long before any of them: the testbench stops its clock after the last
+    # vector. They are ceilings for large files (GF tables make analysis slow)
+    # and for a slower server, so they err on the generous side. The injected
+    # run gets the most because an exhausted operand space is 393,216 vectors.
+    VHDL_ANALYSE_TIMEOUT = 60
+    VHDL_ELABORATE_TIMEOUT = 60
+    VHDL_RUN_TIMEOUT = 120
+    VHDL_RUN_TIMEOUT_INJECTED = 300
+
     def __init__(self, project_root: str = None):
         self.project_root = Path(project_root) if project_root else Path.cwd()
         self.tools = self._check_tools()
@@ -407,6 +417,7 @@ class MVLSimulationRunner:
     def refresh_tools(self):
         """Re-detect available tools (useful after installing new tools)"""
         self.tools = self._detect_tools()
+        MVLSimulationRunner._systemc_probe = None   # probe SystemC again as well
         return self.get_tools_status()
 
     def get_tools_status(self) -> Dict:
@@ -416,10 +427,13 @@ class MVLSimulationRunner:
             'python_available': self.tools.get('python'),
             'verilog_available': bool(self.tools.get('iverilog') and self.tools.get('vvp')),
             'vhdl_available': bool(self.tools.get('ghdl')),
+            'systemc_available': bool(self._systemc_status()['ok']),
             'tools': {k: v for k, v in self.tools.items()
                       if not isinstance(v, dict)}  # exclude env dicts (too large)
         }
         # Add diagnostic info for unavailable tools
+        if not status['systemc_available']:
+            status['systemc_diagnostic'] = self._systemc_status()['reason']
         if not status['verilog_available']:
             candidates = self.tools.get('iverilog_candidates', [])
             if candidates:
@@ -441,6 +455,8 @@ class MVLSimulationRunner:
             return self.tools.get('iverilog') and self.tools.get('vvp')
         elif lang == 'vhdl':
             return self.tools.get('ghdl')
+        elif lang == 'systemc':
+            return self._systemc_status()['ok']
         return False
 
     def _env_with_tool_dir(self, command: str) -> Dict[str, str]:
@@ -501,6 +517,11 @@ class MVLSimulationRunner:
                        '-o', str(work_dir / 'a.out'), str(path)]
                 proc = subprocess.run(cmd, capture_output=True, timeout=30,
                                       env=self.tools.get('iverilog_env', os.environ.copy()))
+            elif lang == 'systemc':
+                gxx = self._systemc_status()['cmd'] or 'g++'
+                proc = subprocess.run([gxx, *self.SYSTEMC_FLAGS, '-fsyntax-only', str(path)],
+                                      capture_output=True, timeout=self.SYSTEMC_COMPILE_TIMEOUT,
+                                      env=self._systemc_env(self._env_with_tool_dir(gxx)))
             else:  # vhdl
                 work_dir = path.parent / ('_syntax_' + path.stem)
                 work_dir.mkdir(parents=True, exist_ok=True)
@@ -548,7 +569,8 @@ class MVLSimulationRunner:
                 '.c': 'c',
                 '.py': 'python',
                 '.v': 'verilog',
-                '.vhd': 'vhdl'
+                '.vhd': 'vhdl',
+                '.cpp': 'systemc',
             }.get(ext, 'unknown')
 
         if not self.can_run(language):
@@ -572,7 +594,10 @@ class MVLSimulationRunner:
                 tool_hints = {
                     'c': 'Install gcc or clang',
                     'python': 'Install python3',
-                    'vhdl': 'Install ghdl (GHDL VHDL simulator)'
+                    'vhdl': 'Install ghdl (GHDL VHDL simulator)',
+                    'systemc': ('Install a C++ compiler and the SystemC library '
+                                '(Debian: libsystemc-dev; MSYS2: mingw-w64-ucrt-x86_64-systemc). '
+                                'Probe said: ' + (self._systemc_status()['reason'] or 'unavailable')),
                 }
                 hint = tool_hints.get(language, f'Install tools for {language}')
             return {
@@ -596,6 +621,8 @@ class MVLSimulationRunner:
             return self._run_verilog(file_path, stdin_data=stdin_data)
         elif language == 'vhdl':
             return self._run_vhdl(file_path, vector_file=vector_file)
+        elif language == 'systemc':
+            return self._run_systemc(file_path, stdin_data=stdin_data)
         else:
             return {
                 'success': False,
@@ -608,8 +635,77 @@ class MVLSimulationRunner:
                 'test_results': {'total': 0, 'passed': 0, 'failed': 0}
             }
 
+    # ------------------------------------------------------------------
+    # SystemC: a C++ class library, so it needs g++ and the library itself.
+    # Whether both are usable is found out by compiling and linking a
+    # two-line program. That takes a few seconds and runners are created
+    # often, so it happens on first use and the answer is shared by all.
+    # ------------------------------------------------------------------
+    _systemc_probe: Optional[Dict] = None
+    SYSTEMC_COMPILE_TIMEOUT = 120      # systemc.h is heavy; a slow server needs the room
+    SYSTEMC_FLAGS = ['-std=c++17']
+    SYSTEMC_LIBS = ['-lsystemc', '-lpthread']
+
+    @staticmethod
+    def _systemc_env(base: Dict[str, str]) -> Dict[str, str]:
+        env = dict(base)
+        env['SC_COPYRIGHT_MESSAGE'] = 'DISABLE'   # keep the banner out of the parsed output
+        return env
+
+    def _systemc_status(self) -> Dict:
+        if MVLSimulationRunner._systemc_probe is None:
+            MVLSimulationRunner._systemc_probe = self._probe_systemc()
+        return MVLSimulationRunner._systemc_probe
+
+    def _probe_systemc(self) -> Dict:
+        import tempfile
+        gxx = shutil.which('g++') or shutil.which('clang++')
+        if not gxx:
+            return {'ok': False, 'cmd': None, 'reason': 'no C++ compiler (g++ or clang++) found'}
+        work = Path(tempfile.mkdtemp(prefix='mvl_sc_probe_'))
+        try:
+            src = work / 'probe.cpp'
+            src.write_text('#include <systemc.h>\nint sc_main(int, char*[]) { return 0; }\n',
+                           encoding='utf-8')
+            exe = work / ('probe.exe' if os.name == 'nt' else 'probe')
+            proc = subprocess.run(
+                [gxx, *self.SYSTEMC_FLAGS, str(src), '-o', str(exe), *self.SYSTEMC_LIBS],
+                capture_output=True, timeout=self.SYSTEMC_COMPILE_TIMEOUT,
+                env=self._env_with_tool_dir(gxx))
+            if proc.returncode != 0:
+                reason = (self._decode_output(proc.stderr) or 'link failed').strip().splitlines()
+                return {'ok': False, 'cmd': gxx, 'reason': reason[0][:200] if reason else ''}
+            return {'ok': True, 'cmd': gxx, 'reason': ''}
+        except Exception as e:
+            return {'ok': False, 'cmd': gxx, 'reason': str(e)[:200]}
+        finally:
+            shutil.rmtree(work, ignore_errors=True)
+
     def _run_c(self, file_path: Path, stdin_data: str = None) -> Dict:
         """Compile and run C code"""
+        compiler = self.tools.get('gcc_cmd', 'gcc')
+        return self._compile_and_run(
+            file_path, stdin_data, language='c', label='C', compiler=compiler,
+            compile_args=['-lm', '-Wall'], env=self._env_with_tool_dir(compiler),
+            compile_timeout=30)
+
+    def _run_systemc(self, file_path: Path, stdin_data: str = None) -> Dict:
+        """Compile a SystemC model with its sc_main testbench, and run it."""
+        compiler = self._systemc_status()['cmd'] or 'g++'
+        return self._compile_and_run(
+            file_path, stdin_data, language='systemc', label='SystemC', compiler=compiler,
+            compile_args=[*self.SYSTEMC_FLAGS, *self.SYSTEMC_LIBS],
+            env=self._systemc_env(self._env_with_tool_dir(compiler)),
+            compile_timeout=self.SYSTEMC_COMPILE_TIMEOUT)
+
+    def _compile_and_run(self, file_path: Path, stdin_data: Optional[str], *, language: str,
+                         label: str, compiler: str, compile_args: list, env: Dict[str, str],
+                         compile_timeout: int) -> Dict:
+        """Compile a native program, run it, and parse the test lines it prints.
+
+        Shared by C and SystemC, which differ only in the compiler, its
+        arguments, the environment and how long the compiler may take.
+        """
         import time
 
         # Setup paths
@@ -629,7 +725,7 @@ class MVLSimulationRunner:
 
         result = {
             'success': False,
-            'language': 'c',
+            'language': language,
             'file': file_path.name,
             'compile_time': 0,
             'run_time': 0,
@@ -642,29 +738,22 @@ class MVLSimulationRunner:
             }
         }
 
-        # Select compiler (use detected command name for MSYS2/MinGW compatibility)
-        compiler = self.tools.get('gcc_cmd', 'gcc')
+        c_env = env
 
-        c_env = self._env_with_tool_dir(compiler)
-
-        # Step 1: Compile
+        # Step 1: Compile. Libraries go after the source file: GNU ld resolves
+        # them left to right, so "-lsystemc file.cpp" would leave sc_main's
+        # references unresolved.
         try:
             start = time.time()
 
-            compile_cmd = [
-                compiler,
-                '-o', str(exe_file),
-                str(file_path),
-                '-lm',  # Math library
-                '-Wall'  # Warnings
-            ]
+            compile_cmd = [compiler, '-o', str(exe_file), str(file_path), *compile_args]
 
-            print(f"   C compile cmd: {' '.join(compile_cmd)}")
+            print(f"   {label} compile cmd: {' '.join(compile_cmd)}")
 
             compile_result = subprocess.run(
                 compile_cmd,
                 capture_output=True,
-                timeout=30,
+                timeout=compile_timeout,
                 env=c_env
             )
 
@@ -674,14 +763,14 @@ class MVLSimulationRunner:
                 stderr_text = self._decode_output(compile_result.stderr)
                 stdout_text = self._decode_output(compile_result.stdout)
                 error_msg = stderr_text or stdout_text or f'returncode={compile_result.returncode}'
-                print(f"   C compile failed: {error_msg}")
+                print(f"   {label} compile failed: {error_msg}")
                 result['errors'].append(f'Compilation failed: {error_msg}')
                 return result
 
-            print(f"   C compiled OK in {result['compile_time']}s")
+            print(f"   {label} compiled OK in {result['compile_time']}s")
 
         except subprocess.TimeoutExpired:
-            result['errors'].append('Compilation timeout (30s)')
+            result['errors'].append(f'Compilation timeout ({compile_timeout}s)')
             return result
         except Exception as e:
             result['errors'].append(f'Compilation error: {str(e)}')
@@ -1027,7 +1116,7 @@ class MVLSimulationRunner:
             analyze_result = subprocess.run(
                 analyze_cmd,
                 capture_output=True,
-                timeout=30,
+                timeout=self.VHDL_ANALYSE_TIMEOUT,
                 shell=use_shell,
                 env=ghdl_env
             )
@@ -1040,7 +1129,7 @@ class MVLSimulationRunner:
                 return result
             print(f"   VHDL analyze OK")
         except subprocess.TimeoutExpired:
-            result['errors'].append('Compilation timeout (30s)')
+            result['errors'].append(f'Analysis timeout ({self.VHDL_ANALYSE_TIMEOUT}s)')
             return result
         except Exception as e:
             result['errors'].append(f'Compilation error: {str(e)}')
@@ -1060,7 +1149,7 @@ class MVLSimulationRunner:
             elab_result = subprocess.run(
                 elab_cmd,
                 capture_output=True,
-                timeout=30,
+                timeout=self.VHDL_ELABORATE_TIMEOUT,
                 cwd=str(work_dir),
                 shell=use_shell,
                 env=ghdl_env
@@ -1076,7 +1165,7 @@ class MVLSimulationRunner:
                 return result
             print(f"   VHDL elaborate OK in {result['compile_time']}s")
         except subprocess.TimeoutExpired:
-            result['errors'].append('Elaboration timeout (30s)')
+            result['errors'].append(f'Elaboration timeout ({self.VHDL_ELABORATE_TIMEOUT}s)')
             return result
         except Exception as e:
             result['errors'].append(f'Elaboration error: {str(e)}')
@@ -1114,7 +1203,8 @@ class MVLSimulationRunner:
                     n_vectors = 400_000          # the exhaustive maximum
             stop_ns = max((n_vectors * 20 + 100) * 2, 1_000_000)
             stop_time = f'{stop_ns}ns'
-            proc_timeout = 120 if vector_file else 30
+            proc_timeout = (self.VHDL_RUN_TIMEOUT_INJECTED if vector_file
+                            else self.VHDL_RUN_TIMEOUT)
 
             run_cmd = [
                 ghdl_cmd, '-r',

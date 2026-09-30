@@ -41,6 +41,8 @@ def generate_harness(language: str, k: int, bits: int, llm_code: str) -> str:
         return _harness_verilog(llm_code, k, bits)
     elif lang == 'vhdl':
         return _harness_vhdl(llm_code, k, bits)
+    elif lang == 'systemc':
+        return _harness_systemc(llm_code, k, bits)
     else:
         raise ValueError(f"Unsupported language: {language}")
 
@@ -203,6 +205,102 @@ def _harness_c(llm_code: str, k: int, bits: int) -> str:
     harness_main = (harness_main.replace('RTYPE', rtype).replace('(RES)', f'({res})')
                     .replace('(ZF)', f'({z})').replace('(NF)', f'({n})').replace('(CF)', f'({c})'))
     return headers + '\n' + alu_only.rstrip() + '\n' + harness_main
+
+
+# ====================================================================
+# SystemC harness
+# ====================================================================
+
+def _strip_sc_main(code: str) -> str:
+    """Remove the model's sc_main() so our testbench can take its place."""
+    m = re.search(r'^[ \t]*int\s+sc_main\s*\([^)]*\)\s*\{', code, re.MULTILINE)
+    if not m:
+        return code
+    depth = 0
+    i = m.end() - 1  # the opening '{'
+    while i < len(code):
+        if code[i] == '{':
+            depth += 1
+        elif code[i] == '}':
+            depth -= 1
+            if depth == 0:
+                return code[:m.start()] + code[i + 1:]
+        i += 1
+    return code[:m.start()]
+
+
+def _harness_systemc(llm_code: str, k: int, bits: int) -> str:
+    """The model's SystemC module with our stdin-driven sc_main.
+
+    The prompt fixes the module name and every port, so nothing has to be
+    inferred from the code as it does for C: the harness instantiates the
+    module and binds the ports by name. A model that renamed a port or chose
+    another width fails to compile here, which is the enforcement the Verilog
+    and VHDL entries get as well.
+
+    Each vector is held for two clock periods (20 ns), so a rising edge always
+    falls after the inputs have changed, whether the model computes on the
+    edge, as asked, or combinationally.
+    """
+    import math
+    mod = k ** bits
+    width = math.ceil(math.log2(mod)) if mod > 1 else 1
+    module = f'mvl_alu_{k}_{bits}bit'
+    model_part = _strip_sc_main(llm_code)
+    headers = '' if 'systemc.h' in model_part else '#include <systemc.h>\n'
+    if '<cstdio>' not in model_part and '<stdio.h>' not in model_part:
+        headers += '#include <cstdio>\n'
+
+    harness = textwrap.dedent(r"""
+        /* ---- Strategy-B stdin-driven harness ---- */
+        int sc_main(int argc, char* argv[]) {
+            sc_clock clk("clk", 10, SC_NS);
+            sc_signal<bool> rst_s, zero_s, negative_s, carry_s;
+            sc_signal<sc_uint<WIDTH> > a_s, b_s, result_s;
+            sc_signal<sc_uint<4> > opcode_s;
+
+            MODULE dut("dut");
+            dut.clk(clk);
+            dut.rst(rst_s);
+            dut.a(a_s);
+            dut.b(b_s);
+            dut.opcode(opcode_s);
+            dut.result(result_s);
+            dut.zero(zero_s);
+            dut.negative(negative_s);
+            dut.carry(carry_s);
+
+            rst_s.write(true);
+            sc_start(20, SC_NS);
+            rst_s.write(false);
+            sc_start(10, SC_NS);
+
+            int count;
+            if (scanf("%d", &count) != 1) return 1;
+            const char* names[] = {"ADD", "SUB", "MUL", "NEG", "INC", "DEC"};
+            for (int i = 0; i < count; i++) {
+                int op;
+                unsigned long long a_val, b_val, exp_r;
+                int exp_z, exp_n, exp_c;
+                if (scanf("%d %llu %llu %llu %d %d %d",
+                          &op, &a_val, &b_val, &exp_r, &exp_z, &exp_n, &exp_c) != 7) {
+                    fprintf(stderr, "Parse error on vector %d\n", i);
+                    return 1;
+                }
+                a_s.write(a_val);
+                b_s.write(b_val);
+                opcode_s.write(op);
+                sc_start(20, SC_NS);
+                printf("Test %2d: %s A=%llu B=%llu -> R=%llu Z=%d N=%d C=%d\n",
+                       i + 1, (op >= 0 && op <= 5) ? names[op] : "???",
+                       a_val, b_val,
+                       (unsigned long long)result_s.read().to_uint64(),
+                       (int)zero_s.read(), (int)negative_s.read(), (int)carry_s.read());
+            }
+            return 0;
+        }
+    """).replace('WIDTH', str(width)).replace('MODULE', module)
+    return headers + model_part.rstrip() + '\n' + harness
 
 
 # ====================================================================

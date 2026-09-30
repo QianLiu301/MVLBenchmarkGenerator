@@ -48,7 +48,7 @@
 <section class="card">
     <div class="section-title"><i data-lucide="code-2" class="icon"></i> Files</div>
     {% for name, code in sub.files.items() %}
-    {% set lang = {'.c': 'c', '.py': 'python', '.v': 'verilog', '.vhd': 'vhdl'}.get('.' ~ name.rsplit('.', 1)[-1], 'plaintext') %}
+    {% set lang = {'.c': 'c', '.py': 'python', '.v': 'verilog', '.vhd': 'vhdl', '.cpp': 'cpp'}.get('.' ~ name.rsplit('.', 1)[-1], 'plaintext') %}
     <details {{ 'open' if loop.first }} style="margin-bottom:10px">
         <summary style="cursor:pointer;font-weight:600;padding:6px 0" class="mono">{{ name }} <span class="muted small">({{ code.split('\n')|length }} lines)</span></summary>
         <pre class="code"><code class="language-{{ lang }}">{{ code }}</code></pre>

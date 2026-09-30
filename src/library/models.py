@@ -32,8 +32,12 @@ MODULE_ICONS = {'alu': 'cpu', 'register': 'database', 'cpu-risc-v': 'microchip'}
 # Publication status of specs/implementations. 'published' == "approved" in the
 # review pipeline; there is no separate approved value.
 PUBLISHED = 'published'
-LANGUAGES = {'c': 'C', 'python': 'Python', 'verilog': 'Verilog', 'vhdl': 'VHDL'}
-LANGUAGE_EXT = {'c': '.c', 'python': '.py', 'verilog': '.v', 'vhdl': '.vhd'}
+# Also the display order wherever a list of languages is shown: dicts keep
+# insertion order, and pages iterate over these.
+LANGUAGES = {'python': 'Python', 'verilog': 'Verilog', 'c': 'C',
+             'systemc': 'SystemC', 'vhdl': 'VHDL'}
+LANGUAGE_EXT = {'python': '.py', 'verilog': '.v', 'c': '.c',
+                'systemc': '.cpp', 'vhdl': '.vhd'}
 SOURCES = {
     'llm-generated': 'LLM-generated',
     'human-authored': 'Human-authored',

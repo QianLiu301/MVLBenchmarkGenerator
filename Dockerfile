@@ -1,7 +1,7 @@
 # ============================================================
 # MVL Benchmark Generator - Dockerfile
 # ============================================================
-# Supports: GCC (C), Python, Icarus Verilog, GHDL simulation tools
+# Supports: GCC (C), Python, Icarus Verilog, GHDL, SystemC simulation tools
 # ============================================================
 
 FROM python:3.11-slim
@@ -25,6 +25,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     iverilog \
     # VHDL simulation (Debian ghdl package; the library verifies .vhd submissions with it)
     ghdl \
+    # SystemC simulation: headers and library, compiled against with g++ -lsystemc
+    libsystemc-dev \
     # Utilities
     curl \
     git \
@@ -38,6 +40,15 @@ RUN echo "=== Checking installed tools ===" && \
     python3 --version && \
     iverilog -V &&     ghdl --version && \
     echo "=== All tools installed successfully ==="
+
+# SystemC has no version command, so prove it works: compile, link and run a
+# minimal model. A broken install then fails the build here instead of every
+# SystemC simulation reporting "unavailable" once deployed.
+RUN printf '#include <systemc.h>\nint sc_main(int, char*[]) { return 0; }\n' > /tmp/sc_probe.cpp && \
+    g++ -std=c++17 /tmp/sc_probe.cpp -o /tmp/sc_probe -lsystemc -lpthread && \
+    SC_COPYRIGHT_MESSAGE=DISABLE /tmp/sc_probe && \
+    rm -f /tmp/sc_probe /tmp/sc_probe.cpp && \
+    echo "=== SystemC compiles, links and runs ==="
 
 # Copy requirements first (for Docker cache optimization)
 COPY requirements.txt .

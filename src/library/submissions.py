@@ -167,12 +167,15 @@ _FORBIDDEN = {
     'python': [r'\bimport\s+os\b', r'\bimport\s+subprocess\b', r'\bimport\s+socket\b', r'\bopen\s*\(', r'\b__import__\b', r'\beval\s*\(', r'\bexec\s*\('],
     'verilog': [r'\$system\b', r'\$fopen\b', r'\$fwrite\b'],
     'vhdl': [r'\bfile_open\b', r'\btextio\b.*\bfile\b'],
+    'systemc': [r'\bsystem\s*\(', r'\bpopen\s*\(', r'\bfork\s*\(', r'\bexec[lv]p?\s*\(',
+                r'#include\s*<windows\.h>', r'\bfopen\s*\(', r'\b[io]?fstream\b'],
 }
 _REQUIRED = {
     'c': (r'\bint\s+main\s*\(', 'a main() function'),
     'python': (r'__main__', 'an if __name__ == "__main__" block'),
     'verilog': (r'\bmodule\s+\w+', 'a module declaration'),
     'vhdl': (r'\bentity\s+\w+\s+is\b', 'an entity declaration'),
+    'systemc': (r'\bint\s+sc_main\s*\(', 'an sc_main() testbench'),
 }
 
 

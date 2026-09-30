@@ -214,7 +214,7 @@ def api_generate():
         if bitwidth < 1 or bitwidth > 64:
             return jsonify({'success': False, 'error': 'Bitwidth must be between 1 and 64'}), 400
 
-        if language not in ['c', 'python', 'verilog', 'vhdl']:
+        if language not in ['c', 'python', 'verilog', 'vhdl', 'systemc']:
             return jsonify({'success': False, 'error': 'Language must be c, python, verilog, or vhdl'}), 400
 
         valid_module_types = ['alu', 'counter', 'register', 'cpu-risc-v']
@@ -301,7 +301,7 @@ def api_generate_stream():
             return jsonify({'success': False, 'error': 'K-value must be between 2 and 16'}), 400
         if bitwidth < 1 or bitwidth > 64:
             return jsonify({'success': False, 'error': 'Bitwidth must be between 1 and 64'}), 400
-        if language not in ['c', 'python', 'verilog', 'vhdl']:
+        if language not in ['c', 'python', 'verilog', 'vhdl', 'systemc']:
             return jsonify({'success': False, 'error': 'Language must be c, python, verilog, or vhdl'}), 400
 
         print(f"\n📋 [API] Stream generate request:")
