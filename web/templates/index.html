@@ -1270,14 +1270,14 @@
                     <label class="checkbox-item selected" data-value="python">
                         <input type="checkbox" value="python" checked> Python
                     </label>
-                    <label class="checkbox-item" data-value="verilog">
-                        <input type="checkbox" value="verilog"> Verilog
-                    </label>
                     <label class="checkbox-item" data-value="c">
                         <input type="checkbox" value="c"> C
                     </label>
                     <label class="checkbox-item" data-value="systemc">
                         <input type="checkbox" value="systemc"> SystemC
+                    </label>
+                    <label class="checkbox-item" data-value="verilog">
+                        <input type="checkbox" value="verilog"> Verilog
                     </label>
                     <label class="checkbox-item" data-value="vhdl">
                         <input type="checkbox" value="vhdl"> VHDL
@@ -1464,8 +1464,8 @@
                         </button>
                         <p><strong>Checks with our tests.</strong>
                             Removes the file's test code, puts ours in its place and feeds it inputs from the
-                            golden model: every possible pair when there are few enough, otherwise a fixed
-                            random sample plus all the edge cases. The file cannot choose what it is asked.</p>
+                            golden model: the edge cases (0, 1, the largest value) and 50 random pairs, the
+                            same ones every time. The file cannot choose what it is asked.</p>
                     </div>
                     <div class="val-option" style="flex: 1.2;">
                         <button class="btn btn-primary btn-sm" id="val-btn-both" onclick="runValidateBoth()" style="font-weight: 600;">
@@ -1492,8 +1492,11 @@
                             <code>PASS</code> every line matched;
                             <code>LOGIC_ERROR</code> it ran, but at least one result is wrong;
                             <code>COMPILE_ERROR</code> it did not compile;
+                            <code>INTERFACE_ERROR</code> (B only) the file compiles, but its ports or names
+                            differ from the ones asked for, so our tests cannot be connected to it;
                             <code>RUNTIME_ERROR</code> it compiled, then crashed or stopped while running;
-                            <code>NO_OUTPUT</code> it ran but printed no test line that could be read.</li>
+                            <code>NO_OUTPUT</code> it ran but printed no test line that could be read.
+                            In B, an input that gets no readable answer counts as failed.</li>
                         <!-- Describes the current rule: update together with TestComparison.passed -->
                         <li><strong>Flags</strong> — the zero (Z), negative (N) and carry (C) flags are
                             compared as well. A line whose result is right but whose flags are not still
@@ -1880,8 +1883,8 @@
                 container.innerHTML = '';
 
                 const tools = [
-                    { name: 'GCC (C)', key: 'gcc' },
                     { name: 'Python', key: 'python' },
+                    { name: 'GCC (C)', key: 'gcc' },
                     { name: 'Icarus Verilog', key: 'iverilog' }
                 ];
 
@@ -2862,11 +2865,11 @@
                 const resp = await fetch('/api/tools', { method: 'POST' });
                 const data = await readJson(resp);
                 const items = [];
-                if (data.c_available) items.push('C (gcc/clang)');
                 if (data.python_available) items.push('Python');
+                if (data.c_available) items.push('C (gcc/clang)');
+                if (data.systemc_available) items.push('SystemC (g++ + libsystemc)');
                 if (data.verilog_available) items.push('Verilog (iverilog)');
                 if (data.vhdl_available) items.push('VHDL (ghdl)');
-                if (data.systemc_available) items.push('SystemC (g++ + libsystemc)');
                 if (items.length === 0) {
                     statusEl.textContent = 'No simulation tools detected.';
                 } else {
@@ -3215,6 +3218,10 @@
                         ${d.flag_warnings ? `<div style="font-size:0.7rem; color:var(--warn-fg); margin-top:4px;">
                             ⚠ ${d.flag_warnings} passed line${d.flag_warnings === 1 ? '' : 's'} with a wrong flag (Z, N or C)
                         </div>` : ''}
+                        ${d.missing_vectors ? `<div style="font-size:0.7rem; color:var(--err-fg); margin-top:4px;">
+                            ${d.missing_vectors} of ${d.expected_vectors} inputs got no readable answer
+                        </div>` : ''}
+                        ${d.interface_error ? `<pre style="font-size:0.68rem; color:var(--err-fg); margin-top:6px; white-space:pre-wrap; max-height:120px; overflow:auto;">${escapeHtml(d.interface_error.slice(0, 600))}</pre>` : ''}
                     </div>`;
             });
 

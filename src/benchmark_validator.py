@@ -16,7 +16,7 @@ from typing import Dict, List, Optional, Tuple
 try:
     from src.golden_model import (
         GoldenModel, ALUResult, OP_NAMES, NAME_TO_OP,
-        serialize_vectors, TestVector,
+        serialize_vectors, serialize_vectors_vhdl, operand_width, TestVector,
     )
     from src.mvl_simulation_runner import MVLSimulationRunner
     from src.test_vector_injector import generate_harness
@@ -24,11 +24,21 @@ try:
 except ImportError:
     from golden_model import (
         GoldenModel, ALUResult, OP_NAMES, NAME_TO_OP,
-        serialize_vectors, TestVector,
+        serialize_vectors, serialize_vectors_vhdl, operand_width, TestVector,
     )
     from mvl_simulation_runner import MVLSimulationRunner
     from test_vector_injector import generate_harness
     from error_classifier import ErrorPatternClassifier
+
+
+def _decode_bit_strings(output: str) -> str:
+    """"A=0b0101" -> "A=5".
+
+    The VHDL testbenches print values as bit strings, because integer'image
+    stops at 2^31-1. A value with an undefined bit ("0b01X1") is left as it is,
+    so its line is not read and, in strategy B, counts as failed.
+    """
+    return re.sub(r'=0b([01]+)\b', lambda m: '=' + str(int(m.group(1), 2)), output)
 
 
 @dataclass
@@ -85,6 +95,15 @@ class ValidationReport:
     # Golden model comparison
     comparisons: List[TestComparison] = field(default_factory=list)
 
+    # Strategy B only. The file compiles on its own, but our test harness cannot
+    # be built around it or does not compile with it: it does not have the
+    # interface the prompt asked for (a renamed port, another struct layout).
+    interface_error: str = ''
+    # Strategy B only: how many vectors were fed in. A vector without a readable
+    # output line counts as failed, so a harness that answers only some of them
+    # cannot pass.
+    expected_vectors: int = 0
+
     @property
     def total_parsed(self) -> int:
         return len(self.parsed_tests)
@@ -94,12 +113,16 @@ class ValidationReport:
         return len(self.comparisons)
 
     @property
+    def missing_vectors(self) -> int:
+        return max(0, self.expected_vectors - self.total_compared)
+
+    @property
     def passed(self) -> int:
         return sum(1 for c in self.comparisons if c.passed)
 
     @property
     def failed(self) -> int:
-        return sum(1 for c in self.comparisons if not c.passed)
+        return sum(1 for c in self.comparisons if not c.passed) + self.missing_vectors
 
     @property
     def flag_warnings(self) -> int:
@@ -114,6 +137,8 @@ class ValidationReport:
 
     @property
     def status(self) -> str:
+        if self.interface_error:
+            return 'INTERFACE_ERROR'
         if not self.compile_success:
             return 'COMPILE_ERROR'
         if not self.run_success:
@@ -142,6 +167,9 @@ class ValidationReport:
             'passed': self.passed,
             'failed': self.failed,
             'flag_warnings': self.flag_warnings,
+            'interface_error': self.interface_error,
+            'expected_vectors': self.expected_vectors,
+            'missing_vectors': self.missing_vectors,
             'parse_warnings': self.parse_warnings,
             'failures': [
                 {
@@ -213,6 +241,8 @@ class BenchmarkValidator:
 
         report.run_success = sim_result.get('success', False)
         output = sim_result.get('output', '')
+        if language == 'vhdl':
+            output = _decode_bit_strings(output)
         report.run_output = output
 
         if not output.strip():
@@ -266,12 +296,13 @@ class BenchmarkValidator:
         vectors = (golden.generate_exhaustive_vectors() if exhaustive
                    else golden.generate_test_vectors(random_count=random_count, seed=seed))
         stdin_text = serialize_vectors(vectors)
+        report.expected_vectors = len(vectors)
 
         # Step 2: Generate harness (LLM code + our stdin-driven main)
         try:
             harness_code = generate_harness(language, k, bits, llm_code)
         except Exception as e:
-            report.compile_errors = f'Harness generation failed: {e}'
+            report.interface_error = f'Harness generation failed: {e}'
             return report
 
         # Step 3: Write harness to a temp file and run
@@ -289,7 +320,7 @@ class BenchmarkValidator:
         if lang == 'vhdl':
             vector_file = os.path.join(tmp_dir, 'test_vectors.txt')
             with open(vector_file, 'w', encoding='utf-8') as f:
-                f.write(stdin_text)
+                f.write(serialize_vectors_vhdl(vectors, operand_width(k, bits)))
 
         sim_kwargs = {'stdin_data': stdin_text} if lang != 'vhdl' else {'vector_file': vector_file}
         sim_result = self.runner.run_simulation(harness_path, language, **sim_kwargs)
@@ -303,6 +334,9 @@ class BenchmarkValidator:
             if 'Compilation failed' in first_error or 'Compilation error' in first_error:
                 report.compile_success = False
                 report.compile_errors = '\n'.join(errors)
+                if self._compiles_alone(llm_code, lang, tmp_dir):
+                    # the file is fine by itself; only our harness around it is not
+                    report.interface_error = report.compile_errors
                 return report
             else:
                 report.compile_success = True
@@ -313,6 +347,8 @@ class BenchmarkValidator:
 
         report.run_success = sim_result.get('success', False)
         output = sim_result.get('output', '')
+        if lang == 'vhdl':
+            output = _decode_bit_strings(output)
         report.run_output = output
 
         if not output.strip():
@@ -334,6 +370,21 @@ class BenchmarkValidator:
             pass
 
         return report
+
+    def _compiles_alone(self, code: str, lang: str, tmp_dir: str) -> bool:
+        """Whether the file compiles without our harness.
+
+        Tells an interface problem (the harness does not fit the file) apart from
+        a file that does not compile at all. False when it cannot be checked, so
+        an unchecked failure stays a compile error.
+        """
+        import os
+        ext = {'c': '.c', 'python': '.py', 'verilog': '.v', 'vhdl': '.vhd', 'systemc': '.cpp'}[lang]
+        path = os.path.join(tmp_dir, f'original{ext}')
+        with open(path, 'w', encoding='utf-8') as f:
+            f.write(code)
+        res = self.runner.check_syntax(path, lang)
+        return res['checked'] and res['ok']
 
     # ------------------------------------------------------------------
     # Strategy A+B: one-click run both strategies
@@ -443,7 +494,10 @@ class BenchmarkValidator:
     # Output parsing
     # ------------------------------------------------------------------
 
-    # Patterns for different output formats LLMs commonly produce
+    # Patterns for different output formats LLMs commonly produce. A flag may be
+    # quoted (\x27 is '): VHDL testbenches written with std_logic'image print Z='1'.
+    # A result must end at a word boundary, so "R=0b01X1" (an undefined bit) is
+    # not read as R=0.
     _PATTERNS = [
         # "Test  1: ADD A=0 B=0 -> R=0 Z=1 N=0 C=0"          (C / Verilog / VHDL prompts)
         # "Test 1: ADD a=0 b=0 result=0 z=1 n=0 c=0"         (Python prompt: no arrow, "result=")
@@ -452,17 +506,17 @@ class BenchmarkValidator:
             r'A\s*=\s*(?P<a>\d+)\s+'
             r'B\s*=\s*(?P<b>\d+)\s*'
             r'(?:->|=>|:)?\s*'
-            r'(?:R|RES|RESULT)\s*=\s*(?P<r>\d+)'
-            r'(?:\s+Z\s*=\s*(?P<z>[01]))?'
-            r'(?:\s+N\s*=\s*(?P<n>[01]))?'
-            r'(?:\s+C\s*=\s*(?P<c>[01]))?',
+            r'(?:R|RES|RESULT)\s*=\s*(?P<r>\d+)(?!\w)'
+            r'(?:\s+Z\s*=\s*\x27?(?P<z>[01])\x27?)?'
+            r'(?:\s+N\s*=\s*\x27?(?P<n>[01])\x27?)?'
+            r'(?:\s+C\s*=\s*\x27?(?P<c>[01])\x27?)?',
             re.IGNORECASE,
         ),
         # "ADD(0, 0) = 0" or "ADD(0, 0) -> 0"
         re.compile(
             r'(?P<op>ADD|SUB|MUL|NEG|INC|DEC)\s*\(\s*(?P<a>\d+)\s*'
             r'(?:,\s*(?P<b>\d+)\s*)?\)\s*'
-            r'(?:=|->|=>)\s*(?P<r>\d+)',
+            r'(?:=|->|=>)\s*(?P<r>\d+)(?!\w)',
             re.IGNORECASE,
         ),
         # "op=ADD a=0 b=0 result=0" (flexible key=value)
@@ -470,10 +524,10 @@ class BenchmarkValidator:
             r'op\s*=\s*(?P<op>\w+)\s+'
             r'a\s*=\s*(?P<a>\d+)\s+'
             r'b\s*=\s*(?P<b>\d+)\s+'
-            r'result\s*=\s*(?P<r>\d+)'
-            r'(?:\s+zero\s*=\s*(?P<z>[01]))?'
-            r'(?:\s+neg(?:ative)?\s*=\s*(?P<n>[01]))?'
-            r'(?:\s+carry\s*=\s*(?P<c>[01]))?',
+            r'result\s*=\s*(?P<r>\d+)(?!\w)'
+            r'(?:\s+zero\s*=\s*\x27?(?P<z>[01])\x27?)?'
+            r'(?:\s+neg(?:ative)?\s*=\s*\x27?(?P<n>[01])\x27?)?'
+            r'(?:\s+carry\s*=\s*\x27?(?P<c>[01])\x27?)?',
             re.IGNORECASE,
         ),
         # Verilog $display: "Test  1: OP=0 A=  0 B=  0 R=  0 Z=1 N=0 C=0"
@@ -483,10 +537,10 @@ class BenchmarkValidator:
             r'A\s*=\s*(?P<a>\d+)\s+'
             r'B\s*=\s*(?P<b>\d+)\s*'
             r'(?:->|=>|:)?\s*'
-            r'(?:R|RES|RESULT)\s*=\s*(?P<r>\d+)'
-            r'(?:\s+Z\s*=\s*(?P<z>[01]))?'
-            r'(?:\s+N\s*=\s*(?P<n>[01]))?'
-            r'(?:\s+C\s*=\s*(?P<c>[01]))?',
+            r'(?:R|RES|RESULT)\s*=\s*(?P<r>\d+)(?!\w)'
+            r'(?:\s+Z\s*=\s*\x27?(?P<z>[01])\x27?)?'
+            r'(?:\s+N\s*=\s*\x27?(?P<n>[01])\x27?)?'
+            r'(?:\s+C\s*=\s*\x27?(?P<c>[01])\x27?)?',
             re.IGNORECASE,
         ),
         # VHDL report: "Test 1: ADD A=0 B=0 -> R=0"

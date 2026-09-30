@@ -513,6 +513,36 @@ def _harness_vhdl(llm_code: str, k: int, bits: int) -> str:
             signal sim_done    : boolean := false;
 
             constant CLK_PERIOD : time := 10 ns;
+
+            -- Values are printed as bit strings ("0b0101"), which the validator
+            -- turns into numbers: integer'image stops at 2^31-1, and 16 of the
+            -- specifications have wider operands. An undefined bit prints as X,
+            -- so the line is not read and the vector counts as failed.
+            function bits(v : std_logic_vector) return string is
+                variable s : string(1 to v'length);
+                variable j : integer := 1;
+            begin
+                for i in v'range loop
+                    case v(i) is
+                        when '0' | 'L' => s(j) := '0';
+                        when '1' | 'H' => s(j) := '1';
+                        when others    => s(j) := 'X';
+                    end case;
+                    j := j + 1;
+                end loop;
+                return s;
+            end function;
+
+            -- std_logic'image prints '1' with quotes, which the parser does not
+            -- read, so the flags were never compared for VHDL.
+            function flag(x : std_logic) return string is
+            begin
+                case x is
+                    when '0' | 'L' => return "0";
+                    when '1' | 'H' => return "1";
+                    when others    => return "X";
+                end case;
+            end function;
         begin
             uut: entity work.{module_name}
                 port map (
@@ -541,13 +571,8 @@ def _harness_vhdl(llm_code: str, k: int, bits: int) -> str:
                 variable v_line  : line;
                 variable v_count : integer;
                 variable v_op    : integer;
-                variable v_a     : integer;
-                variable v_b     : integer;
-                variable v_exp_r : integer;
-                variable v_exp_z : integer;
-                variable v_exp_n : integer;
-                variable v_exp_c : integer;
-                variable v_space : character;
+                variable v_a     : bit_vector({data_width - 1} downto 0);
+                variable v_b     : bit_vector({data_width - 1} downto 0);
             begin
                 -- Reset
                 rst_sig <= '1';
@@ -560,28 +585,25 @@ def _harness_vhdl(llm_code: str, k: int, bits: int) -> str:
                 read(v_line, v_count);
 
                 for i in 1 to v_count loop
+                    -- "OP A B", A and B as {data_width}-bit strings (serialize_vectors_vhdl)
                     readline(vector_file, v_line);
-                    read(v_line, v_op);    read(v_line, v_space);
-                    read(v_line, v_a);     read(v_line, v_space);
-                    read(v_line, v_b);     read(v_line, v_space);
-                    read(v_line, v_exp_r); read(v_line, v_space);
-                    read(v_line, v_exp_z); read(v_line, v_space);
-                    read(v_line, v_exp_n); read(v_line, v_space);
-                    read(v_line, v_exp_c);
+                    read(v_line, v_op);
+                    read(v_line, v_a);
+                    read(v_line, v_b);
 
-                    a_sig      <= std_logic_vector(to_unsigned(v_a, {data_width}));
-                    b_sig      <= std_logic_vector(to_unsigned(v_b, {data_width}));
+                    a_sig      <= to_stdlogicvector(v_a);
+                    b_sig      <= to_stdlogicvector(v_b);
                     opcode_sig <= std_logic_vector(to_unsigned(v_op, 4));
                     wait for CLK_PERIOD * 2;
 
                     report "Test " & integer'image(i) &
                            ": OP=" & integer'image(v_op) &
-                           " A=" & integer'image(v_a) &
-                           " B=" & integer'image(v_b) &
-                           " R=" & integer'image(to_integer(unsigned(result_sig))) &
-                           " Z=" & std_logic'image(zero_sig) &
-                           " N=" & std_logic'image(negative_sig) &
-                           " C=" & std_logic'image(carry_sig);
+                           " A=0b" & bits(to_stdlogicvector(v_a)) &
+                           " B=0b" & bits(to_stdlogicvector(v_b)) &
+                           " R=0b" & bits(result_sig) &
+                           " Z=" & flag(zero_sig) &
+                           " N=" & flag(negative_sig) &
+                           " C=" & flag(carry_sig);
                 end loop;
 
                 report "STRATEGY_B_DONE" severity note;

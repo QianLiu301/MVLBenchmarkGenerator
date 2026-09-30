@@ -2190,10 +2190,9 @@ Generate the architecture now:
             test_lines.append(f"        b_sig <= {slv_lit(b)};")
             test_lines.append(f'        opcode_sig <= "{opc}";')
             test_lines.append(f"        wait for 20 ns;")
-            test_lines.append(f'        report "Test {num}: {op} A={a} B={b} -> R=" '
-                              f'& integer\'image(to_integer(unsigned(result_sig))) '
-                              f'& " Z=" & std_logic\'image(zero_sig)'
-                              f' severity note;')
+            test_lines.append(f'        report "Test {num}: {op} A={a} B={b} -> R=0b" & bits(result_sig) '
+                              f'& " Z=" & flag(zero_sig) & " N=" & flag(negative_sig) '
+                              f'& " C=" & flag(carry_sig) severity note;')
             test_lines.append(f"        assert result_sig = {slv_lit(exp)}")
             test_lines.append(f'            report "FAIL Test {num}: {op} A={a} B={b} expected {exp}" severity error;')
 
@@ -2218,6 +2217,34 @@ architecture Behavioral of mvl_alu_{k}_{bits}bit_tb is
     signal negative_sig : std_logic;
     signal carry_sig    : std_logic;
     signal sim_done     : boolean := false;
+
+    -- The result is printed as a bit string ("0b0101"), which the validator
+    -- turns into a number: integer'image stops at 2^31-1, so a wide correct
+    -- result used to end the simulation with a bound-check failure. The flags
+    -- print as 0/1; std_logic'image adds quotes the validator does not read.
+    function bits(v : std_logic_vector) return string is
+        variable s : string(1 to v'length);
+        variable j : integer := 1;
+    begin
+        for i in v'range loop
+            case v(i) is
+                when '0' | 'L' => s(j) := '0';
+                when '1' | 'H' => s(j) := '1';
+                when others    => s(j) := 'X';
+            end case;
+            j := j + 1;
+        end loop;
+        return s;
+    end function;
+
+    function flag(x : std_logic) return string is
+    begin
+        case x is
+            when '0' | 'L' => return "0";
+            when '1' | 'H' => return "1";
+            when others    => return "X";
+        end case;
+    end function;
 begin
     -- Clock generation. It stops once the stimulus process is done: a
     -- free-running clock keeps the DUT evaluating its last opcode until the

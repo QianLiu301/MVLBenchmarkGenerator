@@ -34,10 +34,10 @@ MODULE_ICONS = {'alu': 'cpu', 'register': 'database', 'cpu-risc-v': 'microchip'}
 PUBLISHED = 'published'
 # Also the display order wherever a list of languages is shown: dicts keep
 # insertion order, and pages iterate over these.
-LANGUAGES = {'python': 'Python', 'verilog': 'Verilog', 'c': 'C',
-             'systemc': 'SystemC', 'vhdl': 'VHDL'}
-LANGUAGE_EXT = {'python': '.py', 'verilog': '.v', 'c': '.c',
-                'systemc': '.cpp', 'vhdl': '.vhd'}
+LANGUAGES = {'python': 'Python', 'c': 'C', 'systemc': 'SystemC',
+             'verilog': 'Verilog', 'vhdl': 'VHDL'}
+LANGUAGE_EXT = {'python': '.py', 'c': '.c', 'systemc': '.cpp',
+                'verilog': '.v', 'vhdl': '.vhd'}
 SOURCES = {
     'llm-generated': 'LLM-generated',
     'human-authored': 'Human-authored',

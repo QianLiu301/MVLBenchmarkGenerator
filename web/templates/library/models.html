@@ -81,6 +81,8 @@
     <h2>By outcome of step 3</h2>
     <p>
         <code>COMPILE_ERROR</code>: the file does not compile or elaborate ·
+        <code>INTERFACE_ERROR</code>: it compiles, but not with the port names or types the prompt fixes,
+        so the injected-vector harness cannot be connected to it ·
         <code>RUNTIME_ERROR</code>: it crashes, aborts or times out (for VHDL typically a width or
         bound-check failure) · <code>LOGIC_ERROR</code>: it runs, but at least one vector disagrees
         with the reference model · <code>NO_OUTPUT</code>: no parsable test lines.

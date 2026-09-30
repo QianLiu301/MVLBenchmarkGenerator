@@ -35,11 +35,23 @@
 
 {% set a = report.strategy_a or {} %}
 {% set bb = report.strategy_b or {} %}
-{% if a.failures or a.compile_errors or a.run_errors or bb.failures %}
+{% if a.failures or a.compile_errors or a.run_errors or bb.failures or bb.interface_error or bb.run_errors or bb.missing_vectors %}
 <div class="card" style="margin-top:20px">
     <div class="section-title"><i data-lucide="shield-alert" class="icon"></i> Verification details</div>
     {% if a.compile_errors %}<pre class="bibtex">{{ a.compile_errors }}</pre>{% endif %}
     {% if a.run_errors %}<pre class="bibtex">{{ a.run_errors }}</pre>{% endif %}
+    {% if bb.interface_error %}
+    <p class="small muted" style="margin:10px 0 6px">The file compiles on its own, but the injected-vector harness could not be
+        built around it: it does not have the <a href="{{ url_for('library.format') }}#harness">interface</a> the prompt asks for.</p>
+    <pre class="bibtex">{{ bb.interface_error }}</pre>
+    {% elif bb.run_errors %}
+    <p class="small muted" style="margin:10px 0 6px">Injected golden vectors — the run failed:</p>
+    <pre class="bibtex">{{ bb.run_errors }}</pre>
+    {% endif %}
+    {% if bb.missing_vectors %}
+    <p class="small muted" style="margin:10px 0 6px">{{ bb.missing_vectors }} of {{ bb.expected_vectors }} injected vectors produced
+        no readable output line (for example an undefined bit), and count as failed.</p>
+    {% endif %}
     {% for label, rep in [('self-reported vectors', a), ('injected golden vectors', bb)] if rep.failures %}
     <p class="small muted" style="margin:10px 0 6px">First mismatches — {{ label }}:</p>
     <div class="table-wrap"><table class="bench" style="min-width:0">

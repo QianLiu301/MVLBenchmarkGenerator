@@ -14,6 +14,7 @@ Supports:
 
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
+import math
 import random
 
 try:
@@ -288,6 +289,27 @@ def serialize_vectors(vectors: List[TestVector]) -> str:
         n = 1 if v.expected.negative else 0
         c = 1 if v.expected.carry else 0
         lines.append(f"{v.op} {v.a} {v.b} {v.expected.result} {z} {n} {c}")
+    return '\n'.join(lines) + '\n'
+
+
+def operand_width(k: int, bits: int) -> int:
+    """Binary width of an operand port, the same formula the generator prompts use."""
+    mod = k ** bits
+    return math.ceil(math.log2(mod)) if mod > 1 else 1
+
+
+def serialize_vectors_vhdl(vectors: List[TestVector], width: int) -> str:
+    """The vector file read by the VHDL harness.
+
+    One line per vector: OP A B, with A and B written as `width`-bit binary
+    strings. VHDL reads decimal numbers into `integer`, which holds at most
+    2^31-1, and 16 of the specifications have larger operands; a bit string is
+    read into a bit_vector of any width. The expected values are left out: the
+    harness only drives inputs, the comparison happens in Python.
+    """
+    lines = [str(len(vectors))]
+    for v in vectors:
+        lines.append(f"{v.op} {v.a:0{width}b} {v.b:0{width}b}")
     return '\n'.join(lines) + '\n'
 
 

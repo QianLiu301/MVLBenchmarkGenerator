@@ -289,9 +289,15 @@ def verify_code(code: str, language: str, k: int, bitwidth: int, validator=None,
 
     Strategy A: compile + run the file as-is and compare every test vector it
     prints against the golden model ("self-reported" vectors).
-    Strategy B: replace the test section by a harness fed with N golden random
-    vectors (deterministic seed) — this is the verification *strength* shown on
-    the detail page. B is skipped when the harness cannot be built.
+    Strategy B: replace the test section by a harness fed with golden vectors —
+    every operand pair when k^n <= EXHAUSTIVE_MAX_RANGE, otherwise N seeded random
+    pairs plus edge cases. This is the verification *strength* shown on the
+    detail page.
+
+    PASS requires both: A passes, and B ran and every injected vector matched.
+    A file's own tests alone never make it PASS, because the file chose them.
+    When the file compiles but the harness cannot be built around it, the entry
+    is INTERFACE_ERROR, with the compiler's message.
     """
     if validator is None:
         try:
@@ -317,41 +323,35 @@ def verify_code(code: str, language: str, k: int, bitwidth: int, validator=None,
             pass
 
     sum_b = None
-    # The VHDL harness feeds vectors through textio into `integer` (32-bit); wider
-    # operand ranges overflow it, so injection cannot be used there. Say so instead
-    # of reporting a crash as a result.
-    vhdl_range_limit = language == 'vhdl' and k ** bitwidth > 2 ** 31 - 1
-    if vhdl_range_limit:
-        sum_b = {'status': 'skipped', 'error': f'operand range {k}^{bitwidth} exceeds VHDL integer (2^31-1); '
-                                               'injection harness not applicable',
-                 'total_compared': 0, 'passed': 0, 'failed': 0}
     exhaustive = k ** bitwidth <= EXHAUSTIVE_MAX_RANGE
-    if vhdl_range_limit:
-        pass
-    elif sum_a['compile_success'] and sum_a['run_success']:
-        try:
-            rep_b = validator.validate_with_injection(code, k, bitwidth, language,
-                                                      random_count=random_count, seed=seed,
-                                                      exhaustive=exhaustive)
-            sum_b = rep_b.summary()
-            if rep_b.run_output:
-                log += '\n\n=== Strategy B (golden vectors via harness) ===\n' + rep_b.run_output
-        except Exception as e:  # harness generation is best-effort
-            sum_b = {'status': 'HARNESS_ERROR', 'error': str(e), 'total_compared': 0, 'passed': 0, 'failed': 0}
-
     sim_ok = sum_a['compile_success'] and sum_a['run_success']
-    b_ran = bool(sum_b) and sum_b.get('total_compared', 0) > 0
+    if sim_ok:
+        rep_b = validator.validate_with_injection(code, k, bitwidth, language,
+                                                  random_count=random_count, seed=seed,
+                                                  exhaustive=exhaustive)
+        sum_b = rep_b.summary()
+        if rep_b.interface_error:
+            log += '\n\n=== Strategy B: the harness does not fit this file ===\n' + rep_b.interface_error
+        elif rep_b.run_output:
+            log += '\n\n=== Strategy B (golden vectors via harness) ===\n' + rep_b.run_output
+
+    b_ran = bool(sum_b) and sum_b['total_compared'] > 0
     if b_ran:
-        strength = (f"exhaustive(N={sum_b['total_compared']})" if exhaustive
+        strength = (f"exhaustive(N={sum_b['expected_vectors']})" if exhaustive
                     else f"random(N={random_count}, seed={seed})")
-        golden_status = 'PASS' if (sum_a['status'] == 'PASS' and sum_b['status'] == 'PASS') else \
-            (sum_b['status'] if sum_b['status'] != 'PASS' else sum_a['status'])
     else:
         strength = f"self-reported(N={sum_a['total_compared']})"
-        golden_status = sum_a['status']
+    if sum_b is None:
+        golden_status = sum_a['status']          # A did not compile or run: B was not tried
+    elif sum_b['status'] != 'PASS':
+        golden_status = sum_b['status']          # includes INTERFACE_ERROR and missing vectors
+    else:
+        golden_status = sum_a['status']          # PASS only when A passes too
 
+    # a vector the harness gave no readable line for is counted as compared and failed
     passed = sum_a['passed'] + (sum_b['passed'] if b_ran else 0)
-    compared = sum_a['total_compared'] + (sum_b['total_compared'] if b_ran else 0)
+    compared = sum_a['total_compared'] + (max(sum_b['total_compared'], sum_b['expected_vectors'])
+                                          if b_ran else 0)
     return {
         'sha256': sha256(code),
         'sim_status': 'pass' if sim_ok else 'fail',
@@ -364,11 +364,14 @@ def verify_code(code: str, language: str, k: int, bitwidth: int, validator=None,
         'verification_meta': {
             'tools': tool_versions(),
             'golden_model': GOLDEN_MODEL_VERSION,
-            'strategy_a': {'status': sum_a['status'], 'compared': sum_a['total_compared'], 'passed': sum_a['passed']},
+            'strategy_a': {'status': sum_a['status'], 'compared': sum_a['total_compared'], 'passed': sum_a['passed'],
+                           'flag_warnings': sum_a['flag_warnings']},
             'strategy_b': ({'status': sum_b['status'], 'compared': sum_b.get('total_compared', 0),
                             'passed': sum_b.get('passed', 0), 'N': random_count, 'seed': seed,
-                            'exhaustive': exhaustive,
-                            'error': sum_b.get('error')} if sum_b else {'status': 'skipped'}),
+                            'exhaustive': exhaustive, 'missing': sum_b['missing_vectors'],
+                            'flag_warnings': sum_b['flag_warnings'],
+                            'error': sum_b['interface_error'] or None} if sum_b
+                           else {'status': 'skipped'}),
         },
         'verification_report': {'strategy_a': _trim(sum_a), 'strategy_b': _trim(sum_b) if sum_b else None},
         'verification_log': log[-LOG_LIMIT:],
@@ -745,7 +748,7 @@ def contributors(session) -> Dict:
             'models': [{'provider': p, 'model': m, 'count': c} for p, m, c in models]}
 
 
-STATUS_CLASSES = ('PASS', 'COMPILE_ERROR', 'RUNTIME_ERROR', 'LOGIC_ERROR', 'NO_OUTPUT')
+STATUS_CLASSES = ('PASS', 'COMPILE_ERROR', 'INTERFACE_ERROR', 'RUNTIME_ERROR', 'LOGIC_ERROR', 'NO_OUTPUT')
 
 
 def model_matrix(session) -> Dict:
