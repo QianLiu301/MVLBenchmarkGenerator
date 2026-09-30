@@ -2261,8 +2261,12 @@
         // durations can be compared with one another.
         let langStats = {};
         // { lang: {round, max_rounds, compiler} } while the model is correcting a
-        // file the compiler rejected; shown in the progress line.
+        // file the compiler rejected.
         let langRepair = {};
+        // The compiler-guided repair runs on the server either way; this only
+        // decides whether the page mentions it (in the progress line and the
+        // result header). Hidden for now; set to true to show it again.
+        const SHOW_REPAIR_ROUNDS = false;
 
         function renderStreamPreview(lang) {
             const preview = document.getElementById('code-preview');
@@ -2285,7 +2289,7 @@
                 const chars = Object.values(streamBuffers).reduce((n, t) => n + t.length, 0);
                 const pending = languages.filter(l => langStatus[l] === 'generating').length;
                 const which = languages.length > 1 ? ` (${languages.length - pending}/${languages.length} done)` : '';
-                const repairing = Object.entries(langRepair)
+                const repairing = !SHOW_REPAIR_ROUNDS ? '' : Object.entries(langRepair)
                     .map(([l, r]) => `${l.toUpperCase()} fixing compile errors (round ${r.round}/${r.max_rounds})`)
                     .join(', ');
                 title.textContent = `Generating...${which} ${secs}s · ${chars.toLocaleString()} chars`
@@ -2502,7 +2506,7 @@
             const log = data.repair_log || [];
             const stillFailing = log.length && log[log.length - 1].after;
             const noun = rounds === 1 ? 'round' : 'rounds';
-            const repaired = !rounds ? ''
+            const repaired = (!rounds || !SHOW_REPAIR_ROUNDS) ? ''
                 : stillFailing ? ` • still not compiling after ${rounds} repair ${noun}`
                 : ` • compiles after ${rounds} repair ${noun}`;
             document.getElementById('gen-result-subtitle').textContent =

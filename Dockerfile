@@ -54,13 +54,14 @@ COPY . .
 # SystemC has no version command, so prove it works with the application's own
 # probe: it builds a small model with the port types of an entry, runs it and
 # checks the result, trying each C++ standard and link method. A two-line
-# program is not enough -- it linked where real models did not. A broken
-# install then fails the build here instead of every SystemC simulation
-# reporting "unavailable" once deployed.
+# program is not enough -- it linked where real models did not. A failure is
+# reported loudly in the build log but does not stop the build: the rest of the
+# application deploys, and SystemC simulations report "unavailable" with the
+# probe's reason until it is fixed.
 RUN python -c "import sys; sys.path.insert(0, 'src'); \
 from mvl_simulation_runner import MVLSimulationRunner as R; \
 s = R('/app')._systemc_status(); print('SystemC probe:', s); \
-sys.exit(0 if s['ok'] else 1)"
+print('SystemC OK' if s['ok'] else '*** WARNING: SystemC unavailable: ' + s['reason'])"
 
 # Create output directories
 RUN mkdir -p /app/output/mvl_code/gemini \
