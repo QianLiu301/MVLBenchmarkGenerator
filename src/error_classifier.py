@@ -80,12 +80,15 @@ class OpSummary:
 
 @dataclass
 class StrategyComparison:
-    """Cross-comparison of Strategy A vs B results."""
-    a_only_pass: int = 0       # A passed but B failed
-    b_only_pass: int = 0       # B passed but A failed
-    both_pass: int = 0
-    both_fail: int = 0
-    selective_testing_examples: List[Dict] = field(default_factory=list)
+    """Cross-comparison of Strategy A vs B results, counted over distinct inputs (op, a, b)."""
+    a_inputs: int = 0          # distinct inputs the file tested itself
+    b_inputs: int = 0          # distinct inputs we injected
+    overlap: int = 0           # inputs in both sets
+    b_failed: int = 0          # our inputs with a wrong answer
+    missed_by_a: int = 0       # ... that the file never tested itself
+    found_by_a: int = 0        # ... that the file tested and also got wrong
+    disagree: int = 0          # same input, right in one run and wrong in the other
+    missed_examples: List[Dict] = field(default_factory=list)
 
 
 # ------------------------------------------------------------------
@@ -159,61 +162,41 @@ class ErrorPatternClassifier:
         report_a,  # ValidationReport from Strategy A
         report_b,  # ValidationReport from Strategy B
     ) -> Dict:
-        """Cross-compare Strategy A and B results.
+        """Did the file's own tests (A) miss mistakes that ours (B) found?
 
-        Since A and B test different vectors, we compare by (op, a, b) keys.
-        A's vectors are LLM-chosen; B's are golden-injected.
-        The key insight: cases B tests but A doesn't reveal "selective self-testing".
+        Both sets are keyed by input (op, a, b). The question is answered over
+        our inputs: of those with a wrong answer, how many the file never
+        tested itself (missed) and how many it tested and also got wrong
+        (found). An input in both sets that is right in one run and wrong in
+        the other is counted as a disagreement: the file then answers the same
+        question differently depending on how it is asked.
         """
-        # Build lookup: (op_name, a, b) -> passed?
-        a_results = {}
-        for c in report_a.comparisons:
-            key = (c.parsed.op_name, c.parsed.a, c.parsed.b)
-            a_results[key] = c.passed
+        a_results = {(c.parsed.op_name, c.parsed.a, c.parsed.b): c.passed for c in report_a.comparisons}
+        b_results = {(c.parsed.op_name, c.parsed.a, c.parsed.b): c.passed for c in report_b.comparisons}
 
-        b_results = {}
-        for c in report_b.comparisons:
-            key = (c.parsed.op_name, c.parsed.a, c.parsed.b)
-            b_results[key] = c.passed
-
-        comp = StrategyComparison()
-        selective_examples = []
-
-        # Check B's vectors: which ones would A have caught?
+        comp = StrategyComparison(a_inputs=len(a_results), b_inputs=len(b_results))
+        missed = []
         for key, b_pass in b_results.items():
-            a_pass = a_results.get(key)  # None if A never tested this input
-
+            a_pass = a_results.get(key)  # None if the file never tested this input
+            if a_pass is not None:
+                comp.overlap += 1
+                if a_pass != b_pass:
+                    comp.disagree += 1
+            if b_pass:
+                continue
+            comp.b_failed += 1
             if a_pass is None:
-                # A never tested this input
-                if not b_pass:
-                    comp.a_only_pass += 1  # "selective" — A avoided a failing case
-                    selective_examples.append({
-                        'op': key[0], 'a': key[1], 'b': key[2],
-                        'note': 'LLM self-test did not cover this input',
-                    })
-                else:
-                    comp.both_pass += 1  # Would have passed anyway
-            elif a_pass and b_pass:
-                comp.both_pass += 1
-            elif a_pass and not b_pass:
-                comp.a_only_pass += 1
-                selective_examples.append({
-                    'op': key[0], 'a': key[1], 'b': key[2],
-                    'note': 'LLM self-test passed but injection test failed',
-                })
-            elif not a_pass and b_pass:
-                comp.b_only_pass += 1
-            else:
-                comp.both_fail += 1
-
-        comp.selective_testing_examples = selective_examples[:MAX_EXAMPLES_PER_PATTERN]
+                comp.missed_by_a += 1
+                missed.append({'op': key[0], 'a': key[1], 'b': key[2]})
+            elif not a_pass:
+                comp.found_by_a += 1
+        comp.missed_examples = missed[:MAX_EXAMPLES_PER_PATTERN]
 
         return {
-            'a_only_pass': comp.a_only_pass,
-            'b_only_pass': comp.b_only_pass,
-            'both_pass': comp.both_pass,
-            'both_fail': comp.both_fail,
-            'selective_testing_examples': comp.selective_testing_examples,
+            'a_inputs': comp.a_inputs, 'b_inputs': comp.b_inputs, 'overlap': comp.overlap,
+            'b_failed': comp.b_failed, 'missed_by_a': comp.missed_by_a,
+            'found_by_a': comp.found_by_a, 'disagree': comp.disagree,
+            'missed_examples': comp.missed_examples,
         }
 
     # ------------------------------------------------------------------

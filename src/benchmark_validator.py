@@ -41,6 +41,13 @@ def _decode_bit_strings(output: str) -> str:
     return re.sub(r'=0b([01]+)\b', lambda m: '=' + str(int(m.group(1), 2)), output)
 
 
+def _flag_value(text: Optional[str]) -> Optional[bool]:
+    """'1'/'0'/'True'/'False' -> bool; None when the line has no such flag."""
+    if text is None:
+        return None
+    return text.lower() in ('1', 'true')
+
+
 @dataclass
 class ParsedTestLine:
     """A single test result parsed from LLM-generated code output."""
@@ -136,6 +143,12 @@ class ValidationReport:
         return count
 
     @property
+    def flags_checked(self) -> int:
+        """Lines on which at least one flag could be read and compared."""
+        return sum(1 for c in self.comparisons
+                   if any(f is not None for f in (c.zero_match, c.negative_match, c.carry_match)))
+
+    @property
     def status(self) -> str:
         if self.interface_error:
             return 'INTERFACE_ERROR'
@@ -149,7 +162,23 @@ class ValidationReport:
             return 'LOGIC_ERROR'
         return 'PASS'
 
-    def summary(self, classify: bool = True) -> Dict:
+    # Enough for the generator page, which runs at most a few hundred vectors;
+    # an exhaustive library run is never sent line by line.
+    MAX_TEST_LINES = 2000
+
+    def test_lines(self) -> List[Dict]:
+        """Every compared line, for showing test by test what was right."""
+        def flag(got, exp):
+            return None if got is None else {'got': int(got), 'expected': int(exp)}
+        return [{
+            'op': c.parsed.op_name, 'a': c.parsed.a, 'b': c.parsed.b,
+            'got': c.parsed.result, 'expected': c.expected.result, 'ok': c.passed,
+            'z': flag(c.parsed.zero, c.expected.zero),
+            'n': flag(c.parsed.negative, c.expected.negative),
+            'c': flag(c.parsed.carry, c.expected.carry),
+        } for c in self.comparisons[:self.MAX_TEST_LINES]]
+
+    def summary(self, classify: bool = True, include_tests: bool = False) -> Dict:
         data = {
             'file': self.file_path,
             'language': self.language,
@@ -167,6 +196,7 @@ class ValidationReport:
             'passed': self.passed,
             'failed': self.failed,
             'flag_warnings': self.flag_warnings,
+            'flags_checked': self.flags_checked,
             'interface_error': self.interface_error,
             'expected_vectors': self.expected_vectors,
             'missing_vectors': self.missing_vectors,
@@ -183,6 +213,9 @@ class ValidationReport:
                 for c in self.comparisons if not c.passed
             ],
         }
+
+        if include_tests:
+            data['tests'] = self.test_lines()
 
         # Attach classified counterexamples when there are comparisons
         if classify and self.comparisons:
@@ -371,6 +404,23 @@ class BenchmarkValidator:
 
         return report
 
+    def check_output(self, output: str, k: int, bits: int, language: str) -> 'ValidationReport':
+        """Compare the test lines of a run that already happened with the golden model.
+
+        Used by the simulation panel, so that its passed/failed counts come from
+        the reference model rather than from counting the lines a file printed.
+        This is strategy A without running the file a second time.
+        """
+        report = ValidationReport(file_path='<simulation>', language=language, k=k, bits=bits,
+                                  compile_success=True, run_success=True)
+        if (language or '').lower() == 'vhdl':
+            output = _decode_bit_strings(output)
+        report.run_output = output
+        report.parsed_tests = self._parse_output(output, language, report)
+        if report.parsed_tests:
+            report.comparisons = self._compare(report.parsed_tests, GoldenModel(k, bits))
+        return report
+
     def _compiles_alone(self, code: str, lang: str, tmp_dir: str) -> bool:
         """Whether the file compiles without our harness.
 
@@ -399,6 +449,7 @@ class BenchmarkValidator:
         language: str = None,
         random_count: int = 50,
         seed: int = 42,
+        include_tests: bool = False,
     ) -> Dict:
         """Run both Strategy A and B, classify errors, and return combined report.
 
@@ -416,8 +467,8 @@ class BenchmarkValidator:
             llm_code, k, bits, language, random_count=random_count, seed=seed,
         )
 
-        summary_a = report_a.summary(classify=True)
-        summary_b = report_b.summary(classify=True)
+        summary_a = report_a.summary(classify=True, include_tests=include_tests)
+        summary_b = report_b.summary(classify=True, include_tests=include_tests)
 
         # Cross-compare A vs B
         classifier = ErrorPatternClassifier(k, bits)
@@ -497,7 +548,7 @@ class BenchmarkValidator:
     # Patterns for different output formats LLMs commonly produce. A flag may be
     # quoted (\x27 is '): VHDL testbenches written with std_logic'image print Z='1'.
     # A result must end at a word boundary, so "R=0b01X1" (an undefined bit) is
-    # not read as R=0.
+    # not read as R=0. Python files often print flags as True/False.
     _PATTERNS = [
         # "Test  1: ADD A=0 B=0 -> R=0 Z=1 N=0 C=0"          (C / Verilog / VHDL prompts)
         # "Test 1: ADD a=0 b=0 result=0 z=1 n=0 c=0"         (Python prompt: no arrow, "result=")
@@ -507,9 +558,9 @@ class BenchmarkValidator:
             r'B\s*=\s*(?P<b>\d+)\s*'
             r'(?:->|=>|:)?\s*'
             r'(?:R|RES|RESULT)\s*=\s*(?P<r>\d+)(?!\w)'
-            r'(?:\s+Z\s*=\s*\x27?(?P<z>[01])\x27?)?'
-            r'(?:\s+N\s*=\s*\x27?(?P<n>[01])\x27?)?'
-            r'(?:\s+C\s*=\s*\x27?(?P<c>[01])\x27?)?',
+            r'(?:\s+Z\s*=\s*\x27?(?P<z>[01]|true|false)\x27?)?'
+            r'(?:\s+N\s*=\s*\x27?(?P<n>[01]|true|false)\x27?)?'
+            r'(?:\s+C\s*=\s*\x27?(?P<c>[01]|true|false)\x27?)?',
             re.IGNORECASE,
         ),
         # "ADD(0, 0) = 0" or "ADD(0, 0) -> 0"
@@ -525,9 +576,9 @@ class BenchmarkValidator:
             r'a\s*=\s*(?P<a>\d+)\s+'
             r'b\s*=\s*(?P<b>\d+)\s+'
             r'result\s*=\s*(?P<r>\d+)(?!\w)'
-            r'(?:\s+zero\s*=\s*\x27?(?P<z>[01])\x27?)?'
-            r'(?:\s+neg(?:ative)?\s*=\s*\x27?(?P<n>[01])\x27?)?'
-            r'(?:\s+carry\s*=\s*\x27?(?P<c>[01])\x27?)?',
+            r'(?:\s+zero\s*=\s*\x27?(?P<z>[01]|true|false)\x27?)?'
+            r'(?:\s+neg(?:ative)?\s*=\s*\x27?(?P<n>[01]|true|false)\x27?)?'
+            r'(?:\s+carry\s*=\s*\x27?(?P<c>[01]|true|false)\x27?)?',
             re.IGNORECASE,
         ),
         # Verilog $display: "Test  1: OP=0 A=  0 B=  0 R=  0 Z=1 N=0 C=0"
@@ -538,9 +589,9 @@ class BenchmarkValidator:
             r'B\s*=\s*(?P<b>\d+)\s*'
             r'(?:->|=>|:)?\s*'
             r'(?:R|RES|RESULT)\s*=\s*(?P<r>\d+)(?!\w)'
-            r'(?:\s+Z\s*=\s*\x27?(?P<z>[01])\x27?)?'
-            r'(?:\s+N\s*=\s*\x27?(?P<n>[01])\x27?)?'
-            r'(?:\s+C\s*=\s*\x27?(?P<c>[01])\x27?)?',
+            r'(?:\s+Z\s*=\s*\x27?(?P<z>[01]|true|false)\x27?)?'
+            r'(?:\s+N\s*=\s*\x27?(?P<n>[01]|true|false)\x27?)?'
+            r'(?:\s+C\s*=\s*\x27?(?P<c>[01]|true|false)\x27?)?',
             re.IGNORECASE,
         ),
         # VHDL report: "Test 1: ADD A=0 B=0 -> R=0"
@@ -596,9 +647,9 @@ class BenchmarkValidator:
                 b = int(groups.get('b') or '0')
                 result = int(groups['r'])
 
-                z = bool(int(groups['z'])) if groups.get('z') is not None else None
-                n = bool(int(groups['n'])) if groups.get('n') is not None else None
-                c = bool(int(groups['c'])) if groups.get('c') is not None else None
+                z = _flag_value(groups.get('z'))
+                n = _flag_value(groups.get('n'))
+                c = _flag_value(groups.get('c'))
 
                 return ParsedTestLine(
                     line_num=0, op_name=op_name,

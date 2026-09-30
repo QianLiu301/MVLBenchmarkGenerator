@@ -360,6 +360,32 @@ def api_generate_stream():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+def _check_simulation(result: dict, language: str, k, bits) -> dict:
+    """Replace the simulation's passed/failed counts by a golden-model check.
+
+    The runner counts the test lines a file prints and calls all of them
+    passed, which says nothing about whether they are right. When k and n are
+    known, every line is recomputed with the golden model instead (strategy A
+    on the output that was just produced). 'golden' tells the page which of
+    the two it is showing.
+    """
+    output = result.get('output') or ''
+    if k is None or bits is None or not output.strip():
+        result['golden'] = None
+        return result
+    report = benchmark_validator.check_output(output, int(k), int(bits), language)
+    if report.total_compared == 0:
+        result['golden'] = {'checked': 0}
+        return result
+    result['test_results'] = {'total': report.total_compared, 'passed': report.passed,
+                              'failed': report.failed}
+    s = report.summary(classify=False)
+    result['golden'] = {'checked': report.total_compared, 'passed': report.passed,
+                        'failed': report.failed, 'flag_warnings': report.flag_warnings,
+                        'flags_checked': report.flags_checked, 'failures': s['failures'][:20]}
+    return result
+
+
 @app.route('/api/run-simulation', methods=['POST'])
 def api_run_simulation():
     """Run simulation for generated code (single language)"""
@@ -375,6 +401,7 @@ def api_run_simulation():
         full_path = PROJECT_ROOT / file_path
 
         result = simulation_runner.run_simulation(str(full_path), language)
+        result = _check_simulation(result, language, data.get('k'), data.get('bits'))
 
         return jsonify(result)
 
@@ -405,7 +432,7 @@ def api_run_simulation_batch():
                 continue
             full_path = PROJECT_ROOT / file_path
             sim_result = simulation_runner.run_simulation(str(full_path), language)
-            results[language] = sim_result
+            results[language] = _check_simulation(sim_result, language, item.get('k'), item.get('bits'))
 
         return jsonify({'success': True, 'results': results})
 
@@ -441,7 +468,7 @@ def api_validate():
             str(full_path), int(k), int(bits), language
         )
 
-        return jsonify(report.summary())
+        return jsonify(report.summary(include_tests=True))
 
     except Exception as e:
         import traceback
@@ -473,7 +500,7 @@ def api_validate_b():
             code, int(k), int(bits), language
         )
 
-        return jsonify(report.summary())
+        return jsonify(report.summary(include_tests=True))
 
     except Exception as e:
         import traceback
@@ -505,7 +532,7 @@ def api_validate_both():
         full_path = PROJECT_ROOT / file_path
 
         combined = benchmark_validator.validate_both(
-            str(full_path), code, int(k), int(bits), language
+            str(full_path), code, int(k), int(bits), language, include_tests=True
         )
 
         return jsonify({'success': True, **combined})

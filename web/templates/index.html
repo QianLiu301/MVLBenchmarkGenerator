@@ -454,6 +454,39 @@
             padding: 0 4px;
         }
         .val-option strong { color: var(--text-primary); }
+        .val-verdict { border-radius: 8px; padding: 12px 16px; margin-bottom: 16px; font-size: 0.8rem; line-height: 1.55; border: 1px solid var(--border); }
+        .val-verdict.ok { background: var(--ok-bg); color: var(--ok-fg); }
+        .val-verdict.warn { background: var(--warn-bg); color: var(--warn-fg); }
+        .val-verdict.err { background: var(--err-bg); color: var(--err-fg); }
+        .val-verdict-title { font-weight: 700; font-size: 0.92rem; margin-bottom: 2px; }
+        .val-card { flex: 1; min-width: 240px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; }
+        .val-card-title { font-size: 0.78rem; font-weight: 600; color: var(--text-primary); margin-bottom: 6px; }
+        .val-card-title span { font-weight: 400; color: var(--text-muted); }
+        .val-card-line { font-size: 0.72rem; color: var(--text-secondary); margin-top: 6px; line-height: 1.5; }
+        .val-card-line.ok { color: var(--ok-fg); }
+        .val-card-line.warn { color: var(--warn-fg); }
+        .val-card-line.err { color: var(--err-fg); }
+        .val-card-line .muted, .val-card-line.muted { color: var(--text-muted); }
+        .val-card-pre { font-size: 0.68rem; color: var(--err-fg); margin-top: 6px; white-space: pre-wrap; max-height: 120px; overflow: auto; }
+        .val-lines-box { margin-top: 10px; font-size: 0.72rem; }
+        .val-lines-box summary { cursor: pointer; color: var(--link); font-weight: 500; }
+        .val-lines-scroll { max-height: 280px; overflow: auto; margin-top: 6px; }
+        .val-lines { width: 100%; border-collapse: collapse; font-size: 0.7rem; font-variant-numeric: tabular-nums; }
+        .val-lines th { text-align: left; font-weight: 600; color: var(--text-secondary); background: var(--bg); padding: 3px 6px; position: sticky; top: 0; }
+        .val-lines td { padding: 3px 6px; border-bottom: 1px solid var(--bg); }
+        .val-lines td.flags { white-space: nowrap; }
+        .val-lines .bad { color: var(--err-fg); font-weight: 600; }
+        .val-lines .good { color: var(--ok-fg); font-weight: 600; }
+        .val-lines tr.row-bad td { background: var(--err-bg); }
+        .val-comparison-body { font-size: 0.78rem; color: var(--link-hover); line-height: 1.6; }
+        .val-comparison-body p { margin: 4px 0; }
+        .val-comparison-body .muted { color: var(--text-muted); font-size: 0.72rem; }
+        .sim-note { font-size: 0.76rem; line-height: 1.55; color: var(--text-secondary); background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; margin-bottom: 12px; }
+        .sim-note-head { font-weight: 700; color: var(--text-primary); margin-bottom: 2px; }
+        .sim-note-head.ok { color: var(--ok-fg); }
+        .sim-note-head.err { color: var(--err-fg); }
+        .sim-note-warn { color: var(--warn-fg); margin-top: 4px; }
+        .sim-note .val-lines { margin-top: 8px; }
         .val-legend {
             background: var(--bg);
             border: 1px solid var(--border);
@@ -1405,6 +1438,9 @@
                     </div>
                 </div>
 
+                <!-- What the counts above mean: filled by showSimForLang -->
+                <div id="sim-golden-note" class="sim-note" style="display: none;"></div>
+
                 <!-- Error box (compile/run errors) -->
                 <div id="sim-error-box" style="display: none; background: var(--err-bg); border: 1px solid var(--err-bg); border-radius: 8px; padding: 12px 16px; margin-bottom: 12px;">
                     <div style="font-size: 0.8rem; font-weight: 600; color: var(--err-fg); margin-bottom: 4px;">Errors</div>
@@ -1482,11 +1518,29 @@
             <!-- Validation results container -->
             <div id="val-results" style="display: none; padding: 0 24px 20px;">
 
-                <!-- How to read what follows -->
-                <details class="val-legend" open>
-                    <summary>How to read the result</summary>
+                <!-- What the result means, in one sentence -->
+                <div id="val-verdict"></div>
+
+                <!-- Summary bar -->
+                <div id="val-summary-bar" style="display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px;"></div>
+
+                <!-- Strategy comparison (only for "Both") -->
+                <div id="val-comparison" style="display: none; background: var(--ok-bg); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; margin-bottom: 16px;">
+                    <div style="font-size: 0.82rem; font-weight: 600; color: var(--link-hover); margin-bottom: 4px;">A versus B: did the file's own tests miss anything?</div>
+                    <div id="val-comparison-body" class="val-comparison-body"></div>
+                </div>
+
+                <!-- Error pattern groups -->
+                <div id="val-patterns" style="margin-bottom: 16px;"></div>
+
+                <!-- Cross-language comparison (only when multiple languages validated) -->
+                <div id="val-cross-lang" style="display: none; background: var(--ok-bg); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; margin-bottom: 16px;"></div>
+
+                <!-- Reference for the terms used above; each card already explains its own result -->
+                <details class="val-legend">
+                    <summary>What the terms mean</summary>
                     <ul>
-                        <li><strong>Percentage and "12/21 passed"</strong> — how many of the test lines
+                        <li><strong>Percentage and "12 of 21 right"</strong> — how many of the test lines
                             give the same result as the golden model.</li>
                         <li><strong>Status</strong> —
                             <code>PASS</code> every line matched;
@@ -1501,27 +1555,13 @@
                         <li><strong>Flags</strong> — the zero (Z), negative (N) and carry (C) flags are
                             compared as well. A line whose result is right but whose flags are not still
                             counts as passed, and is listed separately as a flag warning.</li>
-                        <li><strong>A vs B</strong> (after Run Both) — "A pass, B fail" means the file's
-                            own tests missed a mistake that ours found.</li>
-                        <li><strong>Error patterns</strong> — failing lines grouped by a likely cause, for
-                            example a result that was not wrapped around at the modulus.</li>
+                        <li><strong>A versus B</strong> (after Run Both) — of the wrong answers our tests
+                            found, how many are for inputs the file never tested itself: mistakes its own
+                            tests missed.</li>
+                        <li><strong>Why the answers are wrong</strong> — wrong lines grouped by a likely cause,
+                            for example a result that was not wrapped around at the modulus.</li>
                     </ul>
                 </details>
-
-                <!-- Summary bar -->
-                <div id="val-summary-bar" style="display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px;"></div>
-
-                <!-- Strategy comparison (only for "Both") -->
-                <div id="val-comparison" style="display: none; background: var(--ok-bg); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; margin-bottom: 16px;">
-                    <div style="font-size: 0.82rem; font-weight: 600; color: var(--link-hover); margin-bottom: 8px;">Strategy Comparison (A vs B)</div>
-                    <div id="val-comparison-body" style="font-size: 0.78rem; color: var(--link-hover); line-height: 1.8;"></div>
-                </div>
-
-                <!-- Error pattern groups -->
-                <div id="val-patterns" style="margin-bottom: 16px;"></div>
-
-                <!-- Cross-language comparison (only when multiple languages validated) -->
-                <div id="val-cross-lang" style="display: none; background: var(--ok-bg); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; margin-bottom: 16px;"></div>
 
                 <!-- Download buttons -->
                 <div class="action-buttons" id="val-download-btns" style="display: none;">
@@ -2726,7 +2766,8 @@
                     const response = await fetch('/api/run-simulation', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ file_path: r.file_path, language: r.language })
+                        body: JSON.stringify({ file_path: r.file_path, language: r.language,
+                                               k: r.k_value, bits: r.bitwidth })
                     });
                     const data = await readJson(response);
                     simResults[lang] = data;
@@ -2754,8 +2795,10 @@
             await Promise.all(promises);
 
             // All done — update header
-            const allTotal = Object.values(simResults).reduce((s, d) => s + (d.test_results?.total || 0), 0);
-            const allPassed = Object.values(simResults).reduce((s, d) => s + (d.test_results?.passed || 0), 0);
+            // count only lines the golden model checked; printed-only lines are not "passed"
+            const checkedRuns = Object.values(simResults).filter(d => d.golden && d.golden.checked > 0);
+            const allTotal = checkedRuns.reduce((s, d) => s + d.golden.checked, 0);
+            const allPassed = checkedRuns.reduce((s, d) => s + d.golden.passed, 0);
             const anyFailed = Object.values(simResults).some(d => !d.success || (d.errors && d.errors.length > 0) || d.error);
 
             document.getElementById('sim-result-icon').innerHTML = '';
@@ -2768,7 +2811,9 @@
             }
             document.getElementById('sim-result-title').textContent = 'Simulation Complete';
             document.getElementById('sim-result-subtitle').textContent =
-                `${allTotal} tests (${allPassed} passed) across ${langs.length} language(s)`;
+                allTotal > 0
+                    ? `${allPassed} of ${allTotal} test lines right (checked with the golden model) across ${langs.length} language(s)`
+                    : `${langs.length} language(s) run; no test line could be checked`;
 
             // Show first successful lang, or first lang
             const firstOk = langs.find(l => simResults[l]?.success) || langs[0];
@@ -2833,12 +2878,46 @@
             const hasErrors = errorList.length > 0;
             const hasOutput = data.output && data.output.trim().length > 0;
 
-            // Stats
+            // Stats. Passed/failed are real only when the lines were checked
+            // against the golden model; otherwise they are just printed lines.
+            const g = data.golden;
+            const checked = g && g.checked > 0;
             document.getElementById('sim-total').textContent = tr.total;
-            document.getElementById('sim-passed').textContent = tr.passed;
-            document.getElementById('sim-failed').textContent = tr.failed;
+            document.getElementById('sim-passed').textContent = checked ? tr.passed : '—';
+            document.getElementById('sim-failed').textContent = checked ? tr.failed : '—';
             const totalTime = (data.compile_time || 0) + (data.run_time || 0);
             document.getElementById('sim-time').textContent = `${totalTime.toFixed(2)}s`;
+
+            const note = document.getElementById('sim-golden-note');
+            if (checked) {
+                const allRight = g.failed === 0;
+                let html = `<div class="sim-note-head ${allRight ? 'ok' : 'err'}">${allRight ? '✓' : '✗'}
+                    ${allRight
+                        ? `All ${g.checked} test lines this file printed give the right answer.`
+                        : `${g.failed} of the ${g.checked} test lines this file printed give a wrong answer.`}</div>
+                    <div>Each line was recomputed with the golden model. These are the file's <strong>own</strong>
+                    tests, so it chose the inputs itself; <strong>Golden-Model Validation</strong> below also tests it
+                    with inputs it did not choose.</div>`;
+                if (g.flags_checked === 0) {
+                    html += `<div class="sim-note-warn">Flags (Z, N, C) are not printed in a form that can be read, so only the results were checked.</div>`;
+                } else if (g.flag_warnings) {
+                    html += `<div class="sim-note-warn">⚠ ${g.flag_warnings} line${g.flag_warnings === 1 ? '' : 's'} with the right result but a wrong flag (Z, N or C).</div>`;
+                }
+                if (g.failures && g.failures.length) {
+                    html += `<table class="val-lines"><tr><th>Op</th><th>A</th><th>B</th><th>Printed</th><th>Right answer</th></tr>` +
+                        g.failures.map(f => `<tr><td>${escapeHtml(f.op)}</td><td>${f.a}</td><td>${f.b}</td>
+                            <td class="bad">${f.got}</td><td class="good">${f.expected}</td></tr>`).join('') + `</table>`;
+                }
+                note.innerHTML = html;
+                note.style.display = '';
+            } else if (hasOutput && ok) {
+                note.innerHTML = `<div class="sim-note-head">These ${tr.total} lines have not been checked.</div>
+                    <div>The output is not in the expected test-line format, so it could not be compared with the golden model.
+                    Use <strong>Golden-Model Validation</strong> below.</div>`;
+                note.style.display = '';
+            } else {
+                note.style.display = 'none';
+            }
 
             // Errors
             const errorBox = document.getElementById('sim-error-box');
@@ -3185,77 +3264,145 @@
             finally { _setValBtnLoading('val-btn-both', false); }
         }
 
+        // Plain meaning of each status, shown next to it
+        const VAL_STATUS_TEXT = {
+            PASS: 'every answer is right',
+            LOGIC_ERROR: 'it ran, but some answers are wrong',
+            COMPILE_ERROR: 'the file did not compile',
+            INTERFACE_ERROR: 'the file compiles, but its ports or names differ from the ones asked for, so our tests could not be connected to it',
+            RUNTIME_ERROR: 'it compiled, then crashed or stopped while running',
+            NO_OUTPUT: 'it ran, but printed no test line that could be read',
+        };
+        const VAL_NOT_RUN = ['COMPILE_ERROR', 'RUNTIME_ERROR', 'NO_OUTPUT', 'INTERFACE_ERROR'];
+
+        function _valTotal(d) { return (d.passed || 0) + (d.failed || 0); }
+        function _valLine(d) {
+            return VAL_NOT_RUN.includes(d.status) ? VAL_STATUS_TEXT[d.status]
+                : `${d.passed} of ${_valTotal(d)} right`;
+        }
+
+        // What the result means, in one heading and one sentence
+        function valVerdict(a, b) {
+            if (a && b) {
+                if (a.status === 'PASS' && b.status === 'PASS') return { cls: 'ok', title: 'Correct on every test',
+                    text: `All ${_valTotal(a)} of the file's own tests and all ${_valTotal(b)} of ours give the same answer as the golden model.` };
+                if (b.status === 'INTERFACE_ERROR') return { cls: 'warn', title: 'Our tests could not be connected to this file',
+                    text: `Its own tests: ${_valLine(a)}. Our tests need the ports and names the prompt asked for, and this file uses others (the compiler's message is under Strategy B), so it cannot count as correct.` };
+                if (VAL_NOT_RUN.includes(a.status) || VAL_NOT_RUN.includes(b.status)) return { cls: 'err', title: 'The file could not be fully tested',
+                    text: `Its own tests: ${_valLine(a)}. Our tests: ${_valLine(b)}.` };
+                if (a.status === 'PASS') return { cls: 'err', title: 'Wrong answers found by our tests',
+                    text: `All ${_valTotal(a)} of the file's own tests pass, but ${b.failed} of our ${_valTotal(b)} give a wrong answer: its own tests missed these mistakes.` };
+                if (b.status === 'PASS') return { cls: 'warn', title: "The file fails some of its own tests, but passes all of ours",
+                    text: `${a.failed} of its own ${_valTotal(a)} tests give a wrong answer, while all ${_valTotal(b)} of ours are right. Look at its failing lines: its test code may print something other than what the design computes.` };
+                return { cls: 'err', title: 'Wrong answers found',
+                    text: `${a.failed} of its own ${_valTotal(a)} tests and ${b.failed} of our ${_valTotal(b)} give a wrong answer.` };
+            }
+            const d = a || b, own = !!a;
+            if (d.status === 'PASS') return { cls: 'ok',
+                title: own ? "The file's own tests all pass" : 'All of our tests pass',
+                text: own ? `All ${_valTotal(d)} tests the file wrote for itself give the right answer. It chose these inputs itself, so run B, or Both, to test it with inputs it did not choose.`
+                          : `All ${_valTotal(d)} of our tests give the right answer. Run Both to check the file's own tests as well.` };
+            if (d.status === 'LOGIC_ERROR') return { cls: 'err', title: 'Wrong answers found',
+                text: `${d.failed} of ${own ? 'its own' : 'our'} ${_valTotal(d)} tests give a wrong answer.` };
+            return { cls: d.status === 'INTERFACE_ERROR' ? 'warn' : 'err', title: 'The file could not be tested',
+                text: VAL_STATUS_TEXT[d.status] ? VAL_STATUS_TEXT[d.status].charAt(0).toUpperCase() + VAL_STATUS_TEXT[d.status].slice(1) + '.' : '' };
+        }
+
+        // Whether the Z, N and C flags were checked, and how they came out
+        function valFlagLine(d) {
+            if (!_valTotal(d) || VAL_NOT_RUN.includes(d.status)) return '';
+            if (!d.flags_checked) return `<div class="val-card-line muted">Flags Z, N, C: not printed in a form that can be read, so only the results were checked.</div>`;
+            if (d.flag_warnings) return `<div class="val-card-line warn">⚠ Flags Z, N, C: ${d.flag_warnings} line${d.flag_warnings === 1 ? '' : 's'} with the right result but a wrong flag (still counted as right).</div>`;
+            return `<div class="val-card-line ok">Flags Z, N, C: right on all ${d.flags_checked} lines where they were printed.</div>`;
+        }
+
+        // Every test line, folded away: input, the file's answer, the right answer
+        function valLinesTable(d) {
+            const rows = d.tests || [];
+            if (!rows.length) return '';
+            const fl = (name, f) => f ? `<span class="${f.got === f.expected ? '' : 'bad'}">${name}${f.got}</span>` : '';
+            // wrong lines first, so an opened table starts with what matters; # keeps the test's own number
+            const ordered = rows.map((t, i) => [t, i]).sort((x, y) => (x[0].ok - y[0].ok) || (x[1] - y[1]));
+            const body = ordered.map(([t, i]) => `<tr class="${t.ok ? '' : 'row-bad'}">
+                    <td>${i + 1}</td><td>${escapeHtml(t.op)}</td><td>${t.a}</td><td>${t.b}</td>
+                    <td class="${t.ok ? '' : 'bad'}">${t.got}</td><td>${t.expected}</td>
+                    <td class="flags">${fl('Z', t.z)} ${fl('N', t.n)} ${fl('C', t.c)}</td>
+                    <td>${t.ok ? '<span class="good">✓</span>' : '<span class="bad">✗</span>'}</td></tr>`).join('');
+            const wrong = rows.filter(t => !t.ok).length;
+            return `<details class="val-lines-box"${wrong ? ' open' : ''}>
+                <summary>Show all ${rows.length} test lines${wrong ? ` (${wrong} wrong, listed first)` : ''}</summary>
+                <div class="val-lines-scroll"><table class="val-lines">
+                    <tr><th>#</th><th>Op</th><th>A</th><th>B</th><th>File's answer</th><th>Right answer</th><th>Flags</th><th></th></tr>
+                    ${body}</table></div></details>`;
+        }
+
         function renderValResults(data, mode) {
             const container = document.getElementById('val-results');
             container.style.display = '';
 
-            // --- Summary bar ---
+            const strategies = [];
+            if (data.strategy_a) strategies.push({ key: 'A', label: 'Strategy A', whose: "the file's own tests", d: data.strategy_a });
+            if (data.strategy_b) strategies.push({ key: 'B', label: 'Strategy B', whose: 'our tests', d: data.strategy_b });
+
+            // --- Verdict: one sentence saying what the result means ---
+            const v = valVerdict(data.strategy_a, data.strategy_b);
+            document.getElementById('val-verdict').innerHTML = `
+                <div class="val-verdict ${v.cls}">
+                    <div class="val-verdict-title">${v.cls === 'ok' ? '✓' : (v.cls === 'warn' ? '⚠' : '✗')} ${v.title}</div>
+                    <div>${v.text}</div>
+                </div>`;
+
+            // --- One card per strategy, each explaining its own numbers ---
             const bar = document.getElementById('val-summary-bar');
             bar.innerHTML = '';
-            const strategies = [];
-            if (data.strategy_a) strategies.push({ label: 'Strategy A', d: data.strategy_a });
-            if (data.strategy_b) strategies.push({ label: 'Strategy B', d: data.strategy_b });
-
-            strategies.forEach(({ label, d }) => {
+            strategies.forEach(({ label, whose, d }) => {
                 const pass = d.passed || 0, fail = d.failed || 0, total = pass + fail;
                 const pct = total > 0 ? Math.round(100 * pass / total) : 0;
-                const color = fail === 0 ? 'var(--ok-fg)' : (pct >= 80 ? 'var(--primary-to)' : 'var(--err-fg)');
+                const color = total > 0 && fail === 0 ? 'var(--ok-fg)' : 'var(--err-fg)';
                 bar.innerHTML += `
-                    <div style="flex:1; min-width:200px; background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:14px 16px;">
-                        <div style="font-size:0.75rem; font-weight:600; color:var(--text-secondary); margin-bottom:6px;">${label}</div>
+                    <div class="val-card">
+                        <div class="val-card-title">${label} <span>· ${whose}</span></div>
                         <div style="display:flex; align-items:baseline; gap:8px;">
-                            <span style="font-size:1.5rem; font-weight:700; color:${color}">${pct}%</span>
-                            <span style="font-size:0.75rem; color:var(--text-muted);">${pass}/${total} passed</span>
+                            <span style="font-size:1.5rem; font-weight:700; color:${color}">${total > 0 ? pct + '%' : '—'}</span>
+                            <span style="font-size:0.78rem; color:var(--text-muted);">${total > 0 ? `${pass} of ${total} right` : 'no answer compared'}</span>
                         </div>
                         <div style="margin-top:8px; height:6px; background:var(--bg); border-radius:3px; overflow:hidden;">
                             <div style="height:100%; width:${pct}%; background:${color}; border-radius:3px; transition:width 0.5s;"></div>
                         </div>
-                        <div style="font-size:0.7rem; color:var(--text-muted); margin-top:4px;">
-                            Status: <strong>${d.status || 'N/A'}</strong>
-                            ${d.compile_time ? ' &middot; Compile: ' + d.compile_time + 's' : ''}
-                            ${d.run_time ? ' &middot; Run: ' + d.run_time + 's' : ''}
+                        <div class="val-card-line">
+                            <strong>${d.status || 'N/A'}</strong> — ${VAL_STATUS_TEXT[d.status] || ''}
+                            ${d.run_time ? `<span class="muted"> · ran in ${d.run_time}s</span>` : ''}
                         </div>
-                        ${d.flag_warnings ? `<div style="font-size:0.7rem; color:var(--warn-fg); margin-top:4px;">
-                            ⚠ ${d.flag_warnings} passed line${d.flag_warnings === 1 ? '' : 's'} with a wrong flag (Z, N or C)
-                        </div>` : ''}
-                        ${d.missing_vectors ? `<div style="font-size:0.7rem; color:var(--err-fg); margin-top:4px;">
-                            ${d.missing_vectors} of ${d.expected_vectors} inputs got no readable answer
-                        </div>` : ''}
-                        ${d.interface_error ? `<pre style="font-size:0.68rem; color:var(--err-fg); margin-top:6px; white-space:pre-wrap; max-height:120px; overflow:auto;">${escapeHtml(d.interface_error.slice(0, 600))}</pre>` : ''}
+                        ${valFlagLine(d)}
+                        ${d.missing_vectors ? `<div class="val-card-line err">
+                            ${d.missing_vectors} of ${d.expected_vectors} inputs got no readable answer; they count as wrong.</div>` : ''}
+                        ${d.interface_error ? `<pre class="val-card-pre">${escapeHtml(d.interface_error.slice(0, 600))}</pre>` : ''}
+                        ${!d.interface_error && d.compile_errors ? `<pre class="val-card-pre">${escapeHtml(d.compile_errors.slice(0, 600))}</pre>` : ''}
+                        ${!d.compile_errors && d.run_errors ? `<pre class="val-card-pre">${escapeHtml(d.run_errors.slice(0, 600))}</pre>` : ''}
+                        ${valLinesTable(d)}
                     </div>`;
             });
 
-            // --- Strategy comparison ---
+            // --- A versus B: did the file's own tests miss anything? ---
             const compDiv = document.getElementById('val-comparison');
-            if (data.strategy_comparison && mode === 'Both') {
-                const c = data.strategy_comparison;
+            const c = data.strategy_comparison;
+            if (c && mode === 'Both' && c.b_inputs > 0) {
                 compDiv.style.display = '';
-                let html = `
-                    <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:8px; margin-bottom:10px;">
-                        <div style="text-align:center; padding:8px; background:var(--surface); border-radius:6px;">
-                            <div style="font-size:1.1rem; font-weight:700; color:var(--ok-fg);">${c.both_pass}</div>
-                            <div style="font-size:0.68rem;">Both Pass</div>
-                        </div>
-                        <div style="text-align:center; padding:8px; background:var(--surface); border-radius:6px;">
-                            <div style="font-size:1.1rem; font-weight:700; color:var(--err-fg);">${c.both_fail}</div>
-                            <div style="font-size:0.68rem;">Both Fail</div>
-                        </div>
-                        <div style="text-align:center; padding:8px; background:var(--surface); border-radius:6px;">
-                            <div style="font-size:1.1rem; font-weight:700; color:var(--primary-to);">${c.a_only_pass}</div>
-                            <div style="font-size:0.68rem;">A pass, B fail</div>
-                        </div>
-                        <div style="text-align:center; padding:8px; background:var(--surface); border-radius:6px;">
-                            <div style="font-size:1.1rem; font-weight:700; color:var(--link);">${c.b_only_pass}</div>
-                            <div style="font-size:0.68rem;">B pass, A fail</div>
-                        </div>
-                    </div>`;
-                if (c.selective_testing_examples && c.selective_testing_examples.length > 0) {
-                    html += `<div style="font-size:0.72rem; font-weight:600; margin-bottom:4px;">Selective self-testing examples:</div>`;
-                    c.selective_testing_examples.forEach(ex => {
-                        html += `<div style="font-size:0.72rem; padding:4px 8px; background:var(--ok-bg); border-radius:4px; margin-bottom:3px;">
-                            ${escapeHtml(ex.op)}(${ex.a}, ${ex.b}) — ${escapeHtml(ex.note)}</div>`;
-                    });
+                let html;
+                if (c.b_failed === 0) {
+                    html = `<p>No. All ${c.b_inputs} of our inputs give the right answer, so there was nothing for its own tests to miss.</p>`;
+                } else {
+                    html = `<p><strong>${c.missed_by_a} of the ${c.b_failed} wrong answers</strong> our tests found are for inputs
+                        the file never tested itself: its own tests missed them.${c.found_by_a
+                            ? ` The other ${c.found_by_a} are inputs it did test, and got wrong there as well.` : ''}</p>`;
+                    if (c.missed_examples && c.missed_examples.length) {
+                        html += `<p>For example: ${c.missed_examples.map(ex =>
+                            `<code>${escapeHtml(ex.op)}(${ex.a}, ${ex.b})</code>`).join(', ')}.</p>`;
+                    }
                 }
+                html += `<p class="muted">The file tested ${c.a_inputs} input${c.a_inputs === 1 ? '' : 's'} itself and we tested ${c.b_inputs};
+                    ${c.overlap} appear in both${c.disagree
+                        ? `, and on ${c.disagree} of them the file answered differently in the two runs` : ''}.</p>`;
                 document.getElementById('val-comparison-body').innerHTML = html;
             } else {
                 compDiv.style.display = 'none';
@@ -3275,11 +3422,12 @@
                 'unknown': 'var(--text-muted)',
             };
 
-            strategies.forEach(({ label, d }) => {
+            strategies.forEach(({ label, whose, d }) => {
                 const cex = d.counterexamples;
                 if (!cex || !cex.by_pattern || cex.by_pattern.length === 0) return;
 
-                let html = `<div style="font-size:0.82rem; font-weight:600; color:var(--text-primary); margin-bottom:8px;">${label} — Error Patterns</div>`;
+                let html = `<div style="font-size:0.82rem; font-weight:600; color:var(--text-primary); margin-bottom:2px;">Why the answers are wrong — ${label} (${whose})</div>
+                    <div style="font-size:0.72rem; color:var(--text-muted); margin-bottom:8px;">Wrong lines grouped by a likely cause, with examples.</div>`;
 
                 cex.by_pattern.forEach(group => {
                     const c = patternColors[group.pattern] || 'var(--text-muted)';
