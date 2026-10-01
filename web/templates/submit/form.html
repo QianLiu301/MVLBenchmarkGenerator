@@ -17,24 +17,29 @@
     {% for key, label in steps %}<li><span class="st">{{ loop.index }}</span>{{ label }}</li>{% endfor %}
 </ol>
 
-<div class="card example-card">
-    <div class="section-title"><i data-lucide="lightbulb" class="icon"></i> A complete example</div>
-    <p class="prose small" style="margin:0 0 10px">
+<details class="card example-card">
+    <summary class="section-title example-summary">
+        <i data-lucide="lightbulb" class="icon"></i> A complete example
+        <span class="small muted">— what to upload, shown on a Verilog design<span class="example-hint"> (click to open)</span></span>
+    </summary>
+    <p class="prose small" style="margin:12px 0 10px">
         A benchmark is a <strong>specification</strong> plus <strong>implementations</strong> of it. Here the
         specification is <a href="{{ url_for('library.detail', slug='alu_k3_8t') }}" class="mono">alu_k3_8t</a>:
-        an ALU for ternary numbers with 8 digits (0 to 3<sup>8</sup>−1 = 6560) and six operations that wrap
-        around modulo 3<sup>8</sup>. To add your implementation of it, you upload two files:
+        an ALU for ternary numbers with 8 digits (0 to 3<sup>8</sup>−1 = 6560, held in 13 bits) and six
+        operations that wrap around modulo 3<sup>8</sup>. To add your implementation of it, you upload two files:
     </p>
     <ol class="example-points small">
         <li><strong><span class="mono">manifest.json</span> says what it is:</strong> the specification
             (<span class="mono">k_value</span> 3 and <span class="mono">bitwidth</span> 8 give the name
             <span class="mono">alu_k3_8t</span>), your source files and their language, and who you are.</li>
-        <li><strong>The source file does the computing:</strong> a function
-            <span class="mono">alu_exec(a, b, op)</span> that returns the result and the flags Z, N, C.
-            Our tests call it directly (<a href="{{ url_for('library.format') }}#harness">interfaces for every language</a>).</li>
-        <li><strong>Its own tests print one line each:</strong>
+        <li><strong>The design does the computing:</strong> a module <span class="mono">mvl_alu_3_8bit</span>
+            with inputs <span class="mono">a</span>, <span class="mono">b</span>, <span class="mono">opcode</span>
+            and outputs <span class="mono">result</span>, <span class="mono">zero</span>,
+            <span class="mono">negative</span>, <span class="mono">carry</span>. Our tests connect to these ports
+            by name (<a href="{{ url_for('library.format') }}#harness">interfaces for every language</a>).</li>
+        <li><strong>Its testbench prints one line per test:</strong>
             <span class="mono">Test 1: ADD A=0 B=0 -&gt; R=0 Z=1 N=0 C=0</span>. Every line is recomputed
-            with the reference model.</li>
+            with the reference model; to run our own tests, the library swaps this testbench for its own.</li>
     </ol>
     <div class="example-files">
         <div>
@@ -50,7 +55,7 @@
     </div>
     <p class="small muted" style="margin:10px 0 0">This example passes every check. Replace the code with your own design,
         put your name in the manifest, and drop both files below. Any of {{ language_labels.values()|join(', ') }} works the same way.</p>
-</div>
+</details>
 
 <div class="home-two">
     <div class="card">

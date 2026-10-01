@@ -532,3 +532,8 @@ table.rules code { font-size: .8rem; }
 .example-file-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 6px; font-size: .85rem; }
 .example-code { margin: 0; max-height: 360px; overflow: auto; font-size: .74rem; white-space: pre; }
 @media (max-width: 860px) { .example-files { grid-template-columns: minmax(0, 1fr); } }
+.example-summary { cursor: pointer; margin-bottom: 0; flex-wrap: wrap; list-style: none; }
+.example-summary::-webkit-details-marker { display: none; }
+.example-summary::after { content: '▸'; margin-left: auto; color: var(--text-muted); transition: transform .15s; }
+details[open] > .example-summary::after { transform: rotate(90deg); }
+details[open] .example-hint { display: none; }
