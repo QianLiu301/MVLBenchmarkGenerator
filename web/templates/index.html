@@ -1553,8 +1553,8 @@
                             In B, an input that gets no readable answer counts as failed.</li>
                         <!-- Describes the current rule: update together with TestComparison.passed -->
                         <li><strong>Flags</strong> — the zero (Z), negative (N) and carry (C) flags are
-                            compared as well. A line whose result is right but whose flags are not still
-                            counts as passed, and is listed separately as a flag warning.</li>
+                            outputs like the result, so they are compared as well: a line counts as right
+                            only if its result and every flag it prints are right.</li>
                         <li><strong>A versus B</strong> (after Run Both) — of the wrong answers our tests
                             found, how many are for inputs the file never tested itself: mistakes its own
                             tests missed.</li>
@@ -2900,13 +2900,14 @@
                     with inputs it did not choose.</div>`;
                 if (g.flags_checked === 0) {
                     html += `<div class="sim-note-warn">Flags (Z, N, C) are not printed in a form that can be read, so only the results were checked.</div>`;
-                } else if (g.flag_warnings) {
-                    html += `<div class="sim-note-warn">⚠ ${g.flag_warnings} line${g.flag_warnings === 1 ? '' : 's'} with the right result but a wrong flag (Z, N or C).</div>`;
+                } else if (g.flag_errors) {
+                    html += `<div class="sim-note-warn">${g.flag_errors} of the wrong line${g.flag_errors === 1 ? '' : 's'} ${g.flag_errors === 1 ? 'has' : 'have'} the right result but a wrong flag (Z, N or C).</div>`;
                 }
                 if (g.failures && g.failures.length) {
-                    html += `<table class="val-lines"><tr><th>Op</th><th>A</th><th>B</th><th>Printed</th><th>Right answer</th></tr>` +
+                    html += `<table class="val-lines"><tr><th>Op</th><th>A</th><th>B</th><th>Printed</th><th>Right answer</th><th>Wrong flags</th></tr>` +
                         g.failures.map(f => `<tr><td>${escapeHtml(f.op)}</td><td>${f.a}</td><td>${f.b}</td>
-                            <td class="bad">${f.got}</td><td class="good">${f.expected}</td></tr>`).join('') + `</table>`;
+                            <td class="${f.got === f.expected ? '' : 'bad'}">${f.got}</td><td class="good">${f.expected}</td>
+                            <td class="bad">${escapeHtml(f.flags || '')}</td></tr>`).join('') + `</table>`;
                 }
                 note.innerHTML = html;
                 note.style.display = '';
@@ -3312,7 +3313,7 @@
         function valFlagLine(d) {
             if (!_valTotal(d) || VAL_NOT_RUN.includes(d.status)) return '';
             if (!d.flags_checked) return `<div class="val-card-line muted">Flags Z, N, C: not printed in a form that can be read, so only the results were checked.</div>`;
-            if (d.flag_warnings) return `<div class="val-card-line warn">⚠ Flags Z, N, C: ${d.flag_warnings} line${d.flag_warnings === 1 ? '' : 's'} with the right result but a wrong flag (still counted as right).</div>`;
+            if (d.flag_errors) return `<div class="val-card-line err">Flags Z, N, C: ${d.flag_errors} line${d.flag_errors === 1 ? '' : 's'} with the right result but a wrong flag, counted as wrong.</div>`;
             return `<div class="val-card-line ok">Flags Z, N, C: right on all ${d.flags_checked} lines where they were printed.</div>`;
         }
 

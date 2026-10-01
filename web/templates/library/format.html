@@ -107,7 +107,7 @@
     <p>Implementations print their self-test vectors one per line so that the comparison in step 3 can read them:</p>
     <pre class="bibtex">Test  1: ADD A=0 B=0 -> R=0 Z=1 N=0 C=0
 Test  2: SUB A=6560 B=1 -> R=6559 Z=0 N=1 C=0</pre>
-    <p>Accepted variants: <code>result=</code> instead of <code>R=</code>, lower-case keys, and a numeric <code>OP=</code> field (0 = ADD … 5 = DEC). Flags Z / N / C are optional but compared when present.</p>
+    <p>Accepted variants: <code>result=</code> instead of <code>R=</code>, lower-case keys, and a numeric <code>OP=</code> field (0 = ADD … 5 = DEC). Flags Z / N / C are optional in your own test lines but compared when present, and a wrong flag fails the line just as a wrong result does; the injected-vector harness always reads all three.</p>
 
     <h3 id="harness">Harness interface (strategy B)</h3>
     <p>

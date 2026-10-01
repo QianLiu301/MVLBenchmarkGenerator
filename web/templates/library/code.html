@@ -55,8 +55,8 @@
     {% for label, rep in [('self-reported vectors', a), ('injected golden vectors', bb)] if rep.failures %}
     <p class="small muted" style="margin:10px 0 6px">First mismatches — {{ label }}:</p>
     <div class="table-wrap"><table class="bench" style="min-width:0">
-        <thead><tr><th>Op</th><th class="num">A</th><th class="num">B</th><th class="num">Got</th><th class="num">Expected</th></tr></thead>
-        <tbody>{% for f in rep.failures %}<tr><td class="mono">{{ f.op }}</td><td class="num">{{ f.a }}</td><td class="num">{{ f.b }}</td><td class="num">{{ f.got }}</td><td class="num">{{ f.expected }}</td></tr>{% endfor %}</tbody>
+        <thead><tr><th>Op</th><th class="num">A</th><th class="num">B</th><th class="num">Got</th><th class="num">Expected</th><th>Wrong flags</th></tr></thead>
+        <tbody>{% for f in rep.failures %}<tr><td class="mono">{{ f.op }}</td><td class="num">{{ f.a }}</td><td class="num">{{ f.b }}</td><td class="num">{{ f.got }}</td><td class="num">{{ f.expected }}</td><td class="mono small">{{ f.flags or '' }}</td></tr>{% endfor %}</tbody>
     </table></div>
     {% endfor %}
 </div>

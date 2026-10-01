@@ -41,3 +41,17 @@ def test_example_verifies():
                                     manifest['k_value'], manifest['bitwidth'])
         assert m['golden_status'] == 'PASS', m['verification_meta']
         assert m['verification_meta']['strategy_b']['compared'] > 0
+
+
+def test_wrong_flag_fails():
+    """Flags are outputs: right results with a wrong borrow flag must not verify."""
+    from library import service
+    manifest, files = _example()
+    f = manifest['files'][0]
+    code = files[f['filename']]
+    broken = code.replace('c = (a < b);', 'c = 1\'b0;')   # SUB never reports a borrow
+    assert broken != code
+    with contextlib.redirect_stdout(io.StringIO()):
+        m = service.verify_code(broken, f['language'], manifest['k_value'], manifest['bitwidth'])
+    assert m['golden_status'] == 'LOGIC_ERROR'
+    assert m['verification_meta']['strategy_b']['flag_errors'] > 0

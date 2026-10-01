@@ -80,9 +80,20 @@ class TestComparison:
     carry_match: Optional[bool]
 
     @property
+    def flags_match(self) -> bool:
+        """Every flag the line printed agrees; a flag that was not printed is not judged."""
+        return not any(m is False for m in (self.zero_match, self.negative_match, self.carry_match))
+
+    @property
     def passed(self) -> bool:
-        """A test passes if result matches. Flag mismatches are warnings."""
-        return self.result_match
+        """A test passes only if the result and every printed flag are right.
+
+        The flags are outputs of the ALU like the result: a wrong carry breaks
+        multi-word arithmetic, a wrong zero or negative flag a branch. Until
+        2026-10 a wrong flag was only a warning. The injected-vector harness
+        prints all three flags for every language, so strategy B always judges them.
+        """
+        return self.result_match and self.flags_match
 
 
 @dataclass
@@ -139,15 +150,9 @@ class ValidationReport:
         return sum(1 for c in self.comparisons if not c.passed) + self.missing_vectors
 
     @property
-    def flag_warnings(self) -> int:
-        """Count tests where result matches but at least one flag doesn't."""
-        count = 0
-        for c in self.comparisons:
-            if c.passed:
-                flags = [c.zero_match, c.negative_match, c.carry_match]
-                if any(f is False for f in flags):
-                    count += 1
-        return count
+    def flag_errors(self) -> int:
+        """Failed tests whose result is right: only a flag is wrong."""
+        return sum(1 for c in self.comparisons if c.result_match and not c.flags_match)
 
     @property
     def flags_checked(self) -> int:
@@ -202,7 +207,7 @@ class ValidationReport:
             'total_compared': self.total_compared,
             'passed': self.passed,
             'failed': self.failed,
-            'flag_warnings': self.flag_warnings,
+            'flag_errors': self.flag_errors,
             'flags_checked': self.flags_checked,
             'interface_error': self.interface_error,
             'expected_vectors': self.expected_vectors,
@@ -215,6 +220,13 @@ class ValidationReport:
                     'b': c.parsed.b,
                     'got': c.parsed.result,
                     'expected': c.expected.result,
+                    # e.g. "C=0, expected 1": says why a line with the right result failed
+                    'flags': ', '.join(f'{name}={int(got)}, expected {int(exp)}'
+                                       for name, got, exp, m in (
+                                           ('Z', c.parsed.zero, c.expected.zero, c.zero_match),
+                                           ('N', c.parsed.negative, c.expected.negative, c.negative_match),
+                                           ('C', c.parsed.carry, c.expected.carry, c.carry_match))
+                                       if m is False),
                     'line': c.parsed.raw_line.strip(),
                 }
                 for c in self.comparisons if not c.passed
@@ -747,8 +759,8 @@ def _print_report(report: ValidationReport):
         print(f"   Compared:     {report.total_compared}")
         print(f"   Passed:       {report.passed}")
         print(f"   Failed:       {report.failed}")
-        if report.flag_warnings:
-            print(f"   Flag warnings: {report.flag_warnings}")
+        if report.flag_errors:
+            print(f"   Wrong flags only: {report.flag_errors}")
 
     if report.failed > 0:
         print(f"\n   Failures:")

@@ -71,7 +71,7 @@ def _setup_proxy():
 _setup_proxy()
 
 # Add src to path
-PROJECT_ROOT = Path(__file__).parent.parent
+PROJECT_ROOT = Path(__file__).resolve().parent.parent   # absolute: simulators run in other directories
 sys.path.insert(0, str(PROJECT_ROOT / 'src'))
 
 from mvl_generator import MVLGenerator
@@ -381,7 +381,7 @@ def _check_simulation(result: dict, language: str, k, bits) -> dict:
                               'failed': report.failed}
     s = report.summary(classify=False)
     result['golden'] = {'checked': report.total_compared, 'passed': report.passed,
-                        'failed': report.failed, 'flag_warnings': report.flag_warnings,
+                        'failed': report.failed, 'flag_errors': report.flag_errors,
                         'flags_checked': report.flags_checked, 'failures': s['failures'][:20]}
     return result
 

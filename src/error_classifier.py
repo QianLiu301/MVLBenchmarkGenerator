@@ -125,23 +125,18 @@ class ErrorPatternClassifier:
                 continue
 
             if c.passed:
-                # Check flag-only errors
-                flags_wrong = any(
-                    f is False
-                    for f in [c.zero_match, c.negative_match, c.carry_match]
-                )
-                if flags_wrong:
-                    cf = ClassifiedFailure(
-                        pattern='flag_only',
-                        op=c.parsed.op_name,
-                        a=c.parsed.a, b=c.parsed.b,
-                        got=c.parsed.result, expected=c.expected.result,
-                        flags=self._flag_detail(c),
-                    )
-                    classified.append(cf)
+                continue
+            if c.result_match:
+                # the result is right and a flag is not: a failure since flags count
+                classified.append(ClassifiedFailure(
+                    pattern='flag_only',
+                    op=c.parsed.op_name,
+                    a=c.parsed.a, b=c.parsed.b,
+                    got=c.parsed.result, expected=c.expected.result,
+                    flags=self._flag_detail(c),
+                ))
             else:
-                cf = self._classify_one(c, op_code)
-                classified.append(cf)
+                classified.append(self._classify_one(c, op_code))
 
         # Build by_pattern groups
         by_pattern = self._group_by_pattern(classified)
@@ -373,7 +368,7 @@ class ErrorPatternClassifier:
         # Attach pattern tags
         op_patterns: Dict[str, set] = {op: set() for op in OP_NAMES.values()}
         for cf in classified:
-            if cf.op in op_patterns and cf.pattern != 'flag_only':
+            if cf.op in op_patterns:   # flag_only included: a wrong flag fails the test
                 op_patterns[cf.op].add(cf.pattern)
 
         for op_name, s in summary.items():
