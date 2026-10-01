@@ -16,7 +16,7 @@ from typing import Dict, List, Optional, Tuple
 try:
     from src.golden_model import (
         GoldenModel, ALUResult, OP_NAMES, NAME_TO_OP,
-        serialize_vectors, serialize_vectors_vhdl, operand_width, TestVector,
+        serialize_vectors, serialize_vectors_bits, operand_width, TestVector,
     )
     from src.mvl_simulation_runner import MVLSimulationRunner
     from src.test_vector_injector import generate_harness
@@ -24,7 +24,7 @@ try:
 except ImportError:
     from golden_model import (
         GoldenModel, ALUResult, OP_NAMES, NAME_TO_OP,
-        serialize_vectors, serialize_vectors_vhdl, operand_width, TestVector,
+        serialize_vectors, serialize_vectors_bits, operand_width, TestVector,
     )
     from mvl_simulation_runner import MVLSimulationRunner
     from test_vector_injector import generate_harness
@@ -53,6 +53,23 @@ def _flag_value(text: Optional[str]) -> Optional[bool]:
     if text is None:
         return None
     return text.lower() in ('1', 'true')
+
+
+# A flag the simulator printed as undefined (Verilog x/z, VHDL X/U/W). It is a
+# value of its own that never equals the right answer, so the line fails;
+# reading it as "not printed" let a design whose carry is never driven pass.
+UNDEFINED_FLAG = 'X'
+
+
+def _undefined_flag(line: str, short: str, long: str) -> Optional[str]:
+    if re.search(rf"(?<![A-Za-z])(?:{short}|{long})\s*=\s*\x27?[xXzZuUwW-](?![A-Za-z])", line, re.IGNORECASE):
+        return UNDEFINED_FLAG
+    return None
+
+
+def _flag_text(v) -> str:
+    """How a parsed or expected flag is shown: 0, 1 or X."""
+    return v if v == UNDEFINED_FLAG else str(int(v))
 
 
 @dataclass
@@ -181,7 +198,7 @@ class ValidationReport:
     def test_lines(self) -> List[Dict]:
         """Every compared line, for showing test by test what was right."""
         def flag(got, exp):
-            return None if got is None else {'got': int(got), 'expected': int(exp)}
+            return None if got is None else {'got': _flag_text(got), 'expected': _flag_text(exp)}
         return [{
             'op': c.parsed.op_name, 'a': c.parsed.a, 'b': c.parsed.b,
             'got': c.parsed.result, 'expected': c.expected.result, 'ok': c.passed,
@@ -221,7 +238,7 @@ class ValidationReport:
                     'got': c.parsed.result,
                     'expected': c.expected.result,
                     # e.g. "C=0, expected 1": says why a line with the right result failed
-                    'flags': ', '.join(f'{name}={int(got)}, expected {int(exp)}'
+                    'flags': ', '.join(f'{name}={_flag_text(got)}, expected {_flag_text(exp)}'
                                        for name, got, exp, m in (
                                            ('Z', c.parsed.zero, c.expected.zero, c.zero_match),
                                            ('N', c.parsed.negative, c.expected.negative, c.negative_match),
@@ -366,12 +383,15 @@ class BenchmarkValidator:
             f.write(harness_code)
         report.file_path = harness_path
 
-        # For VHDL: write vectors to a file instead of stdin
+        # The HDL harnesses read operands as bit strings, which have no width limit:
+        # VHDL from a file (it has no stdin), Verilog and SystemVerilog from stdin
         vector_file = None
         if lang == 'vhdl':
             vector_file = os.path.join(tmp_dir, 'test_vectors.txt')
             with open(vector_file, 'w', encoding='utf-8') as f:
-                f.write(serialize_vectors_vhdl(vectors, operand_width(k, bits)))
+                f.write(serialize_vectors_bits(vectors, operand_width(k, bits)))
+        elif lang in ('verilog', 'systemverilog'):
+            stdin_text = serialize_vectors_bits(vectors, operand_width(k, bits))
 
         sim_kwargs = {'stdin_data': stdin_text} if lang != 'vhdl' else {'vector_file': vector_file}
         sim_result = self.runner.run_simulation(harness_path, language, **sim_kwargs)
@@ -664,9 +684,9 @@ class BenchmarkValidator:
                 b = int(groups.get('b') or '0')
                 result = int(groups['r'])
 
-                z = _flag_value(groups.get('z'))
-                n = _flag_value(groups.get('n'))
-                c = _flag_value(groups.get('c'))
+                z = _flag_value(groups.get('z')) if groups.get('z') is not None else _undefined_flag(line, 'Z', 'zero')
+                n = _flag_value(groups.get('n')) if groups.get('n') is not None else _undefined_flag(line, 'N', 'neg(?:ative)?')
+                c = _flag_value(groups.get('c')) if groups.get('c') is not None else _undefined_flag(line, 'C', 'carry')
 
                 return ParsedTestLine(
                     line_num=0, op_name=op_name,

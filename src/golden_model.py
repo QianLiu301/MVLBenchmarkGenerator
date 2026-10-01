@@ -298,14 +298,15 @@ def operand_width(k: int, bits: int) -> int:
     return math.ceil(math.log2(mod)) if mod > 1 else 1
 
 
-def serialize_vectors_vhdl(vectors: List[TestVector], width: int) -> str:
-    """The vector file read by the VHDL harness.
+def serialize_vectors_bits(vectors: List[TestVector], width: int) -> str:
+    """The vectors read by the HDL harnesses (VHDL from a file, Verilog from stdin).
 
     One line per vector: OP A B, with A and B written as `width`-bit binary
-    strings. VHDL reads decimal numbers into `integer`, which holds at most
-    2^31-1, and 16 of the specifications have larger operands; a bit string is
-    read into a bit_vector of any width. The expected values are left out: the
-    harness only drives inputs, the comparison happens in Python.
+    strings. Both languages read decimal numbers into a 32-bit `integer`, which
+    holds at most 2^31-1, and 16 of the specifications have larger operands; a
+    bit string is read into a vector of any width (VHDL bit_vector, Verilog %b).
+    The expected values are left out: the harness only drives inputs, the
+    comparison happens in Python.
     """
     lines = [str(len(vectors))]
     for v in vectors:

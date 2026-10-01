@@ -421,8 +421,11 @@ def _harness_verilog(llm_code: str, k: int, bits: int) -> str:
             // Clock
             always #5 clk = ~clk;
 
-            integer fd, count, i, op_val, status;
-            integer a_val, b_val, exp_r, exp_z, exp_n, exp_c;
+            integer count, i, op_val, status;
+            // Operands arrive as {data_width}-bit strings (serialize_vectors_bits) and
+            // are read with %b into registers as wide as the ports: reading %d into
+            // a 32-bit integer garbled every operand above 2^31-1.
+            reg [{data_width - 1}:0] a_val, b_val;
 
             initial begin
                 clk = 0; rst = 1;
@@ -433,8 +436,7 @@ def _harness_verilog(llm_code: str, k: int, bits: int) -> str:
                 status = $fscanf('h8000_0000, "%d", count);
 
                 for (i = 0; i < count; i = i + 1) begin
-                    status = $fscanf('h8000_0000, "%d %d %d %d %d %d %d",
-                                     op_val, a_val, b_val, exp_r, exp_z, exp_n, exp_c);
+                    status = $fscanf('h8000_0000, "%d %b %b", op_val, a_val, b_val);
 
                     a = a_val;
                     b = b_val;
@@ -586,7 +588,7 @@ def _harness_vhdl(llm_code: str, k: int, bits: int) -> str:
                 read(v_line, v_count);
 
                 for i in 1 to v_count loop
-                    -- "OP A B", A and B as {data_width}-bit strings (serialize_vectors_vhdl)
+                    -- "OP A B", A and B as {data_width}-bit strings (serialize_vectors_bits)
                     readline(vector_file, v_line);
                     read(v_line, v_op);
                     read(v_line, v_a);
