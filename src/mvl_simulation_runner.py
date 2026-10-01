@@ -451,7 +451,7 @@ class MVLSimulationRunner:
             return self.tools.get('gcc') or self.tools.get('clang')
         elif lang == 'python':
             return self.tools.get('python')
-        elif lang == 'verilog':
+        elif lang in ('verilog', 'systemverilog'):
             return self.tools.get('iverilog') and self.tools.get('vvp')
         elif lang == 'vhdl':
             return self.tools.get('ghdl')
@@ -510,10 +510,12 @@ class MVLSimulationRunner:
                 py = self.tools.get('python_cmd') or sys.executable
                 cmd = [py, '-m', 'py_compile', str(path)]
                 proc = subprocess.run(cmd, capture_output=True, timeout=30)
-            elif lang == 'verilog':
+            elif lang in ('verilog', 'systemverilog'):
                 work_dir = path.parent / ('_syntax_' + path.stem)
                 work_dir.mkdir(parents=True, exist_ok=True)
-                cmd = [self.tools.get('iverilog_cmd', 'iverilog'),
+                # -g2012 as in _run_verilog, so a file is judged by the same rules
+                # it is simulated with (and SystemVerilog is accepted at all)
+                cmd = [self.tools.get('iverilog_cmd', 'iverilog'), '-g2012',
                        '-o', str(work_dir / 'a.out'), str(path)]
                 proc = subprocess.run(cmd, capture_output=True, timeout=30,
                                       env=self.tools.get('iverilog_env', os.environ.copy()))
@@ -569,13 +571,14 @@ class MVLSimulationRunner:
                 '.c': 'c',
                 '.py': 'python',
                 '.v': 'verilog',
+                '.sv': 'systemverilog',
                 '.vhd': 'vhdl',
                 '.cpp': 'systemc',
             }.get(ext, 'unknown')
 
         if not self.can_run(language):
             # Build diagnostic message
-            if language == 'verilog':
+            if language in ('verilog', 'systemverilog'):
                 candidates = self.tools.get('iverilog_candidates', [])
                 if candidates:
                     hint = (
@@ -619,6 +622,11 @@ class MVLSimulationRunner:
             return self._run_python(file_path, stdin_data=stdin_data)
         elif language == 'verilog':
             return self._run_verilog(file_path, stdin_data=stdin_data)
+        elif language == 'systemverilog':
+            # Icarus Verilog with -g2012, exactly as for Verilog
+            result = self._run_verilog(file_path, stdin_data=stdin_data)
+            result['language'] = 'systemverilog'
+            return result
         elif language == 'vhdl':
             return self._run_vhdl(file_path, vector_file=vector_file)
         elif language == 'systemc':

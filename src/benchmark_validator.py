@@ -31,6 +31,13 @@ except ImportError:
     from error_classifier import ErrorPatternClassifier
 
 
+# Source extension per language the validator can run. SystemVerilog goes through
+# the Verilog toolchain (Icarus with -g2012) and the Verilog harness.
+LANG_EXT = {'c': '.c', 'python': '.py', 'verilog': '.v', 'systemverilog': '.sv',
+            'vhdl': '.vhd', 'systemc': '.cpp'}
+LANG_OF_EXT = {ext: lang for lang, ext in LANG_EXT.items()}
+
+
 def _decode_bit_strings(output: str) -> str:
     """"A=0b0101" -> "A=5".
 
@@ -241,8 +248,7 @@ class BenchmarkValidator:
         """Full validation pipeline: compile → run → parse → compare."""
         fp = Path(file_path)
         if language is None:
-            language = {'.c': 'c', '.py': 'python', '.v': 'verilog', '.vhd': 'vhdl', '.cpp': 'systemc'
-                        }.get(fp.suffix.lower(), 'unknown')
+            language = LANG_OF_EXT.get(fp.suffix.lower(), 'unknown')
 
         report = ValidationReport(
             file_path=str(fp),
@@ -340,7 +346,7 @@ class BenchmarkValidator:
 
         # Step 3: Write harness to a temp file and run
         lang = language.lower()
-        ext = {'c': '.c', 'python': '.py', 'verilog': '.v', 'vhdl': '.vhd', 'systemc': '.cpp'}[lang]
+        ext = LANG_EXT[lang]
 
         tmp_dir = tempfile.mkdtemp(prefix='mvl_stratb_')
         harness_path = os.path.join(tmp_dir, f'harness{ext}')
@@ -429,7 +435,7 @@ class BenchmarkValidator:
         an unchecked failure stays a compile error.
         """
         import os
-        ext = {'c': '.c', 'python': '.py', 'verilog': '.v', 'vhdl': '.vhd', 'systemc': '.cpp'}[lang]
+        ext = LANG_EXT[lang]
         path = os.path.join(tmp_dir, f'original{ext}')
         with open(path, 'w', encoding='utf-8') as f:
             f.write(code)
@@ -458,8 +464,7 @@ class BenchmarkValidator:
         """
         fp = Path(file_path)
         if language is None:
-            language = {'.c': 'c', '.py': 'python', '.v': 'verilog', '.vhd': 'vhdl', '.cpp': 'systemc'
-                        }.get(fp.suffix.lower(), 'unknown')
+            language = LANG_OF_EXT.get(fp.suffix.lower(), 'unknown')
 
         # Run both strategies
         report_a = self.validate(file_path, k, bits, language)

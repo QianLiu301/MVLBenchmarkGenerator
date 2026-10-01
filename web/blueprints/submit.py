@@ -1,23 +1,37 @@
 """Public submission: form, manifest template/schema, status page with the pipeline steps."""
 import json
+from pathlib import Path
 
 from flask import (Blueprint, Response, abort, jsonify, render_template, request)
 
 from library import submissions
 from library.db import session_scope
-from library.models import LANGUAGES, MODULE_TYPES, PIPELINE_STEPS
+from library.models import LANGUAGE_EXT, LANGUAGES, MODULE_TYPES, PIPELINE_STEPS
 
 bp = Blueprint('submit', __name__)
 
-_ALLOWED_EXT = ('.c', '.py', '.v', '.vhd')
+# every language the library can verify; the form and the schema read the same table
+_ALLOWED_EXT = tuple(LANGUAGE_EXT.values())
 
 
 @bp.route('/submit')
 def form():
     return render_template('submit/form.html', module_labels=MODULE_TYPES,
-                           language_labels=LANGUAGES, steps=PIPELINE_STEPS,
+                           language_labels=LANGUAGES, language_ext=LANGUAGE_EXT, steps=PIPELINE_STEPS,
                            schema_json=json.dumps(submissions.MANIFEST_SCHEMA),
-                           template_json=json.dumps(submissions.MANIFEST_TEMPLATE, indent=2))
+                           template_json=json.dumps(submissions.MANIFEST_TEMPLATE, indent=2),
+                           example=_example())
+
+
+# A complete submission that passes every check (tests/test_submit_example.py keeps it so)
+_EXAMPLE_DIR = Path(__file__).resolve().parent.parent / 'static' / 'examples' / 'alu_k3_8t'
+
+
+def _example():
+    manifest = (_EXAMPLE_DIR / 'manifest.json').read_text(encoding='utf-8')
+    code_name = json.loads(manifest)['files'][0]['filename']
+    return {'manifest': manifest, 'code_name': code_name,
+            'code': (_EXAMPLE_DIR / code_name).read_text(encoding='utf-8')}
 
 
 @bp.route('/submit/manifest-template.json')
@@ -45,7 +59,7 @@ def api_submit():
             manifest_raw = data
             continue
         if not name.lower().endswith(_ALLOWED_EXT):
-            return jsonify({'ok': False, 'errors': [f"{name}: only .c .py .v .vhd files (and manifest.json) are accepted"]}), 400
+            return jsonify({'ok': False, 'errors': [f"{name}: only {' '.join(_ALLOWED_EXT)} files (and manifest.json) are accepted"]}), 400
         if len(data) > submissions.MAX_FILE_BYTES:
             return jsonify({'ok': False, 'errors': [f"{name}: larger than {submissions.MAX_FILE_BYTES // 1024} KB"]}), 400
         try:

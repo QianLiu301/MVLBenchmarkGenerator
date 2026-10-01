@@ -17,14 +17,49 @@
     {% for key, label in steps %}<li><span class="st">{{ loop.index }}</span>{{ label }}</li>{% endfor %}
 </ol>
 
+<div class="card example-card">
+    <div class="section-title"><i data-lucide="lightbulb" class="icon"></i> A complete example</div>
+    <p class="prose small" style="margin:0 0 10px">
+        A benchmark is a <strong>specification</strong> plus <strong>implementations</strong> of it. Here the
+        specification is <a href="{{ url_for('library.detail', slug='alu_k3_8t') }}" class="mono">alu_k3_8t</a>:
+        an ALU for ternary numbers with 8 digits (0 to 3<sup>8</sup>−1 = 6560) and six operations that wrap
+        around modulo 3<sup>8</sup>. To add your implementation of it, you upload two files:
+    </p>
+    <ol class="example-points small">
+        <li><strong><span class="mono">manifest.json</span> says what it is:</strong> the specification
+            (<span class="mono">k_value</span> 3 and <span class="mono">bitwidth</span> 8 give the name
+            <span class="mono">alu_k3_8t</span>), your source files and their language, and who you are.</li>
+        <li><strong>The source file does the computing:</strong> a function
+            <span class="mono">alu_exec(a, b, op)</span> that returns the result and the flags Z, N, C.
+            Our tests call it directly (<a href="{{ url_for('library.format') }}#harness">interfaces for every language</a>).</li>
+        <li><strong>Its own tests print one line each:</strong>
+            <span class="mono">Test 1: ADD A=0 B=0 -&gt; R=0 Z=1 N=0 C=0</span>. Every line is recomputed
+            with the reference model.</li>
+    </ol>
+    <div class="example-files">
+        <div>
+            <div class="example-file-head"><span class="mono">manifest.json</span>
+                <a href="{{ url_for('static', filename='examples/alu_k3_8t/manifest.json') }}" download class="btn btn-outline btn-sm"><i data-lucide="download" class="icon-sm icon"></i> Download</a></div>
+            <pre class="bibtex example-code">{{ example.manifest }}</pre>
+        </div>
+        <div>
+            <div class="example-file-head"><span class="mono">{{ example.code_name }}</span>
+                <a href="{{ url_for('static', filename='examples/alu_k3_8t/' ~ example.code_name) }}" download class="btn btn-outline btn-sm"><i data-lucide="download" class="icon-sm icon"></i> Download</a></div>
+            <pre class="bibtex example-code">{{ example.code }}</pre>
+        </div>
+    </div>
+    <p class="small muted" style="margin:10px 0 0">This example passes every check. Replace the code with your own design,
+        put your name in the manifest, and drop both files below. Any of {{ language_labels.values()|join(', ') }} works the same way.</p>
+</div>
+
 <div class="home-two">
     <div class="card">
         <div class="section-title"><i data-lucide="upload-cloud" class="icon"></i> Files</div>
         <label class="dropzone" id="dropzone">
-            <input type="file" id="fileInput" multiple accept=".json,.c,.py,.v,.vhd">
+            <input type="file" id="fileInput" multiple accept=".json,{{ language_ext.values()|join(',') }}">
             <i data-lucide="file-plus-2" class="icon-lg icon"></i>
             <div style="margin-top:8px"><strong>Drop files here</strong> or click to choose</div>
-            <div class="small">manifest.json · .c · .py · .v · .vhd — max 512 KB each</div>
+            <div class="small">manifest.json · {{ language_ext.values()|join(' · ') }} — max 512 KB each</div>
         </label>
         <ul class="file-list" id="fileList"></ul>
         <ul class="problems" id="problems"></ul>
@@ -49,9 +84,12 @@
 {% endblock %}
 {% block scripts %}
 <script id="schema" type="application/json">{{ schema_json|safe }}</script>
+<script id="langExt" type="application/json">{{ language_ext|tojson }}</script>
 <script>
 (function () {
     const schema = JSON.parse(document.getElementById('schema').textContent);
+    const langExt = JSON.parse(document.getElementById('langExt').textContent);   // {language: '.ext'}
+    const allowedExt = new Set(['.json', ...Object.values(langExt)]);
     const files = new Map();
     const $ = id => document.getElementById(id);
     const dz = $('dropzone'), input = $('fileInput'), list = $('fileList'), problems = $('problems'), btn = $('submitBtn'), hint = $('submitHint');
@@ -101,8 +139,7 @@
             const declared = new Set((manifest.files || []).map(f => f.filename));
             declared.forEach(n => { if (!files.has(n)) errs.push(`file '${n}' is declared but not added`); });
             files.forEach((_, n) => { if (n !== 'manifest.json' && !declared.has(n)) errs.push(`'${n}' is not declared in manifest.files`); });
-            const ext = { c: '.c', python: '.py', verilog: '.v', vhdl: '.vhd' };
-            (manifest.files || []).forEach(f => { if (f.language && ext[f.language] && !f.filename.endsWith(ext[f.language])) errs.push(`'${f.filename}': language ${f.language} expects ${ext[f.language]}`); });
+            (manifest.files || []).forEach(f => { if (f.language && langExt[f.language] && !f.filename.endsWith(langExt[f.language])) errs.push(`'${f.filename}': language ${f.language} expects ${langExt[f.language]}`); });
             if (manifest.source === 'llm-generated' && !(manifest.generator && manifest.generator.model)) errs.push('generator.model is required for llm-generated');
             if (!errs.length && declared.size) oks.push(`${declared.size} source file(s) declared and present`);
         }
@@ -121,7 +158,8 @@
     function add(fileList) {
         [...fileList].forEach(f => {
             const name = f.name.split(/[\\/]/).pop();
-            if (!/\.(json|c|py|v|vhd)$/i.test(name)) { problems.innerHTML += `<li class="err">${esc(name)}: unsupported type</li>`; return; }
+            const dot = name.lastIndexOf('.');
+            if (dot < 0 || !allowedExt.has(name.slice(dot).toLowerCase())) { problems.innerHTML += `<li class="err">${esc(name)}: unsupported type</li>`; return; }
             if (f.size > 512 * 1024) { problems.innerHTML += `<li class="err">${esc(name)}: larger than 512 KB</li>`; return; }
             f.text().then(text => { files.set(name, { name, size: f.size, text, blob: f }); render(); });
         });

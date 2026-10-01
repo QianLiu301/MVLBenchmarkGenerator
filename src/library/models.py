@@ -35,9 +35,9 @@ PUBLISHED = 'published'
 # Also the display order wherever a list of languages is shown: dicts keep
 # insertion order, and pages iterate over these.
 LANGUAGES = {'python': 'Python', 'c': 'C', 'systemc': 'SystemC',
-             'verilog': 'Verilog', 'vhdl': 'VHDL'}
+             'verilog': 'Verilog', 'systemverilog': 'SystemVerilog', 'vhdl': 'VHDL'}
 LANGUAGE_EXT = {'python': '.py', 'c': '.c', 'systemc': '.cpp',
-                'verilog': '.v', 'vhdl': '.vhd'}
+                'verilog': '.v', 'systemverilog': '.sv', 'vhdl': '.vhd'}
 SOURCES = {
     'llm-generated': 'LLM-generated',
     'human-authored': 'Human-authored',

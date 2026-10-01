@@ -1,0 +1,14 @@
+{
+  "manifest_version": 1,
+  "module_type": "alu",
+  "k_value": 3,
+  "bitwidth": 8,
+  "operations": ["ADD", "SUB", "MUL", "NEG", "INC", "DEC"],
+  "description": "Ternary ALU with 8 digits; every operation wraps around modulo 3^8.",
+  "files": [
+    {"filename": "alu_k3_8t.py", "language": "python"}
+  ],
+  "source": "human-authored",
+  "submitter": {"name": "Ada Example", "email": "ada@example.org", "affiliation": "Example University"},
+  "license": "CC-BY-4.0"
+}

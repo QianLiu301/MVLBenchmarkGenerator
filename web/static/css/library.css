@@ -523,3 +523,12 @@ table.rules td { vertical-align: top; }
 table.rules code { font-size: .8rem; }
 .prose h3 { font-size: 1rem; margin: 18px 0 6px; }
 .prose table.defs { margin-bottom: 8px; }
+
+/* Submit page: the complete example */
+.example-card { margin-bottom: 20px; }
+.example-points { margin: 0 0 14px 18px; line-height: 1.6; }
+.example-points li { margin-bottom: 4px; }
+.example-files { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 14px; }
+.example-file-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 6px; font-size: .85rem; }
+.example-code { margin: 0; max-height: 360px; overflow: auto; font-size: .74rem; white-space: pre; }
+@media (max-width: 860px) { .example-files { grid-template-columns: minmax(0, 1fr); } }

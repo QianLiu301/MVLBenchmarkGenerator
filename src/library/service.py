@@ -122,6 +122,7 @@ _TEST_INDICATORS = {
     'c': ['printf', 'test', 'assert'],
     'python': ['print', 'test', 'assert'],
     'verilog': ['$display', 'initial begin', '#'],
+    'systemverilog': ['$display', 'initial begin', '#'],
     'vhdl': ['assert', 'report', 'wait for'],
     'systemc': ['printf', 'test', 'assert'],
 }
@@ -452,7 +453,7 @@ IMPL_FILTERS = ('language', 'source', 'verified', 'model')
 
 
 _Q_LANGUAGES = {'c': 'c', 'python': 'python', 'py': 'python', 'verilog': 'verilog', 'vhdl': 'vhdl',
-                'systemc': 'systemc'}
+                'systemc': 'systemc', 'systemverilog': 'systemverilog', 'sv': 'systemverilog'}
 _Q_LABELS = {'k_value': 'k = {}', 'bitwidth': '{} digits', 'module_type': '{}',
              'logic_family': '{}', 'language': '{}', 'verified': '{}'}
 

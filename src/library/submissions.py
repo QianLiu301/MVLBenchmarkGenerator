@@ -47,7 +47,8 @@ MANIFEST_SCHEMA = {
         "files": {"type": "array", "minItems": 1, "maxItems": MAX_FILES,
                   "items": {"type": "object", "required": ["filename", "language"],
                             "additionalProperties": False,
-                            "properties": {"filename": {"type": "string", "pattern": r"^[A-Za-z0-9_.-]+\.(c|py|v|vhd)$"},
+                            "properties": {"filename": {"type": "string", "pattern": r"^[A-Za-z0-9_.-]+\.("
+                                                        + '|'.join(e.lstrip('.') for e in LANGUAGE_EXT.values()) + r")$"},
                                            "language": {"type": "string", "enum": list(LANGUAGES.keys())},
                                            "notes": {"type": "string", "maxLength": 1000}}}},
         "source": {"type": "string", "enum": ["human-authored", "llm-generated", "reference"]},
@@ -166,6 +167,7 @@ _FORBIDDEN = {
     'c': [r'\bsystem\s*\(', r'\bfork\s*\(', r'\bexec[lv]p?\s*\(', r'#include\s*<windows\.h>', r'\bfopen\s*\('],
     'python': [r'\bimport\s+os\b', r'\bimport\s+subprocess\b', r'\bimport\s+socket\b', r'\bopen\s*\(', r'\b__import__\b', r'\beval\s*\(', r'\bexec\s*\('],
     'verilog': [r'\$system\b', r'\$fopen\b', r'\$fwrite\b'],
+    'systemverilog': [r'\$system\b', r'\$fopen\b', r'\$fwrite\b', r'\bimport\s+"DPI'],
     'vhdl': [r'\bfile_open\b', r'\btextio\b.*\bfile\b'],
     'systemc': [r'\bsystem\s*\(', r'\bpopen\s*\(', r'\bfork\s*\(', r'\bexec[lv]p?\s*\(',
                 r'#include\s*<windows\.h>', r'\bfopen\s*\(', r'\b[io]?fstream\b'],
@@ -174,6 +176,7 @@ _REQUIRED = {
     'c': (r'\bint\s+main\s*\(', 'a main() function'),
     'python': (r'__main__', 'an if __name__ == "__main__" block'),
     'verilog': (r'\bmodule\s+\w+', 'a module declaration'),
+    'systemverilog': (r'\bmodule\s+\w+', 'a module declaration'),
     'vhdl': (r'\bentity\s+\w+\s+is\b', 'an entity declaration'),
     'systemc': (r'\bint\s+sc_main\s*\(', 'an sc_main() testbench'),
 }

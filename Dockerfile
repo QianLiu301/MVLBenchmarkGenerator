@@ -63,6 +63,14 @@ from mvl_simulation_runner import MVLSimulationRunner as R; \
 s = R('/app')._systemc_status(); print('SystemC probe:', s); \
 print('SystemC OK' if s['ok'] else '*** WARNING: SystemC unavailable: ' + s['reason'])"
 
+# SystemVerilog submissions are compiled by Icarus in IEEE 1800-2012 mode. Old
+# Icarus releases (10.x) reject always_ff/always_comb, so prove the installed
+# one accepts them; like SystemC, a failure is reported but does not stop the build.
+RUN printf 'module t; logic [3:0] x = 0; logic clk = 0;\n always_ff @(posedge clk) x <= x + 1;\n always_comb begin end\n initial begin $display("SystemVerilog OK"); $finish; end\nendmodule\n' > /tmp/sv_probe.sv && \
+    (iverilog -g2012 -o /tmp/sv_probe.vvp /tmp/sv_probe.sv && vvp /tmp/sv_probe.vvp) || \
+    echo "*** WARNING: iverilog cannot compile SystemVerilog (-g2012)"; \
+    rm -f /tmp/sv_probe.sv /tmp/sv_probe.vvp
+
 # Create output directories
 RUN mkdir -p /app/output/mvl_code/gemini \
              /app/output/mvl_code/mistral \

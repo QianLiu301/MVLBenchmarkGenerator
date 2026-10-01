@@ -24,7 +24,7 @@ def generate_harness(language: str, k: int, bits: int, llm_code: str) -> str:
 
     Parameters
     ----------
-    language : 'c', 'python', 'verilog', 'vhdl'
+    language : 'c', 'python', 'verilog', 'systemverilog', 'vhdl', 'systemc'
     k, bits  : ALU configuration (needed for module names in HDL)
     llm_code : Raw LLM-generated source code
 
@@ -37,7 +37,8 @@ def generate_harness(language: str, k: int, bits: int, llm_code: str) -> str:
         return _harness_c(llm_code, k, bits)
     elif lang == 'python':
         return _harness_python(llm_code, k, bits)
-    elif lang == 'verilog':
+    elif lang in ('verilog', 'systemverilog'):
+        # same module interface; Icarus compiles both with -g2012
         return _harness_verilog(llm_code, k, bits)
     elif lang == 'vhdl':
         return _harness_vhdl(llm_code, k, bits)

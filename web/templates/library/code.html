@@ -31,7 +31,7 @@
     </div>
 </div>
 
-<pre class="code" style="max-height:none"><code id="src" class="language-{{ {'c': 'c', 'python': 'python', 'verilog': 'verilog', 'vhdl': 'vhdl', 'systemc': 'cpp'}[i.language] }}">{{ i.code }}</code></pre>
+<pre class="code" style="max-height:none"><code id="src" class="language-{{ {'c': 'c', 'python': 'python', 'verilog': 'verilog', 'systemverilog': 'verilog', 'vhdl': 'vhdl', 'systemc': 'cpp'}.get(i.language, 'plaintext') }}">{{ i.code }}</code></pre>
 
 {% set a = report.strategy_a or {} %}
 {% set bb = report.strategy_b or {} %}
