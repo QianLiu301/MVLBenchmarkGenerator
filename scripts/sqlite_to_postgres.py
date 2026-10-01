@@ -7,6 +7,9 @@ state of 2026-09-22.
     python scripts/sqlite_to_postgres.py            # compare only, change nothing
     python scripts/sqlite_to_postgres.py --write    # back up Postgres, then copy
 
+The SQLite file was removed from the repository afterwards; to run this again,
+restore it from history first: git checkout be8dba5 -- data/library.db
+
 --write first saves every Postgres table to output/backups/ as JSON. It then
 replaces benchmarks, implementations, review_events and news in one transaction,
 so a failure leaves Postgres as it was. Submissions are kept: SQLite has none,

@@ -6,11 +6,10 @@ DATABASE_URL set   -> Postgres (a hosted database). Connections are NOT pooled: 
                       keeps it awake around the clock. That is what exhausted the Neon
                       free allowance on 2026-09-22 — the traffic was negligible, the
                       idle connection was not.
-DATABASE_URL unset -> SQLite at data/library.db. The file ships with the application,
-                      which suits a read-mostly library: browsing, downloads and the
-                      API need no writes. Writes (submissions, approvals, download
-                      counters) live only until the next deploy, because the container
-                      filesystem is replaced.
+DATABASE_URL unset -> an empty SQLite file at data/library.db, for local development
+                      and tests. The library itself lives in Postgres; from 2026-09-22
+                      to 2026-10-01 a copy shipped with the app while the Neon quota
+                      was exhausted, and was removed once the site ran on Neon again.
 """
 import os
 from contextlib import contextmanager
@@ -57,6 +56,11 @@ def get_engine():
         _Session = sessionmaker(bind=_engine, expire_on_commit=False, future=True)
         backend = 'postgres' if url.startswith('postgresql') else 'sqlite'
         print(f"[library] database: {backend}")
+        if backend == 'sqlite' and os.environ.get('RENDER'):
+            # Render sets RENDER; there, SQLite means DATABASE_URL is missing and the
+            # site is about to serve an empty library
+            print('[library] *** WARNING: DATABASE_URL is not set on Render; '
+                  'the site is running on an EMPTY database', flush=True)
     return _engine
 
 
