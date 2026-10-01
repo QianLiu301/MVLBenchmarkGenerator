@@ -29,9 +29,12 @@ _Session = None
 def _database_url() -> str:
     url = os.environ.get('DATABASE_URL', '').strip()
     if url:
-        # Heroku/Neon style "postgres://" is not accepted by SQLAlchemy 2.x
-        if url.startswith('postgres://'):
-            url = 'postgresql://' + url[len('postgres://'):]
+        # Whatever form the URL is pasted in -- "postgres://" (Heroku style, refused by
+        # SQLAlchemy 2.x), "postgresql://", or "postgresql+psycopg://" as Neon's console
+        # offers it, which needs psycopg 3 -- use the driver that is installed, psycopg2.
+        scheme, sep, rest = url.partition('://')
+        if sep and scheme.split('+')[0] in ('postgres', 'postgresql'):
+            url = 'postgresql+psycopg2://' + rest
         return url
     project_root = Path(__file__).resolve().parent.parent.parent
     data_dir = project_root / 'data'
