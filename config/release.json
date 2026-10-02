@@ -1,11 +1,11 @@
 {
-  "_comment": "Library data release shown on /cite, in CITATION.bib and in every archive. `authors` credits the library itself (the Zenodo record), which is not the same as the paper's author list in citation.bib. Fill `doi` with the DOI Zenodo reserves for the release; leave it empty until then.",
-  "version": "1.0",
-  "date": "2026-09-22",
+  "_comment": "Library data release shown on /cite, in CITATION.bib and in every archive. `authors` credits the library itself (the Zenodo record), which is not the same as the paper's author list in citation.bib; in double-blind review mode they are shown as 'Anonymous'. Release 1.1 is a separate Zenodo record created anonymously for the ISMVL 2027 review (release 1.0 is 10.5281/zenodo.22895517, with author names). Fill `doi` with the DOI Zenodo reserves for the release; leave it empty until then.",
+  "version": "1.1",
+  "date": "2026-10-02",
   "authors": [
     "Rolf Drechsler",
     "Qian Liu"
   ],
-  "doi": "10.5281/zenodo.22895517",
-  "zenodo_url": "https://zenodo.org/records/22895517"
+  "doi": "10.5281/zenodo.23101296",
+  "zenodo_url": "https://zenodo.org/records/23101296"
 }
