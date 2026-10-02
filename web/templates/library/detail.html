@@ -102,11 +102,11 @@
         </summary>
         <dl class="record" style="padding:8px 0 12px">
             <dt>Strength</dt><dd class="mono">{{ i.verification_strength or 'self-reported' }}</dd>
-            <dt>Result</dt><dd>{{ i.golden_passed }}/{{ i.golden_compared }} vectors match the golden model
+            <dt>Result</dt><dd>{{ i.golden_passed }}/{{ i.golden_compared }} vectors match the reference model
                 {% if meta.strategy_a %}<span class="muted small">· self-reported {{ meta.strategy_a.passed }}/{{ meta.strategy_a.compared }}{% if meta.strategy_b and meta.strategy_b.compared %} · injected {{ meta.strategy_b.passed }}/{{ meta.strategy_b.compared }}{% endif %}</span>{% endif %}</dd>
             <dt>Simulation</dt><dd>{{ 'compiles and runs' if i.sim_status == 'pass' else i.sim_status }}</dd>
             <dt>Tools</dt><dd class="mono">{% for t, v in (meta.tools or {}).items() %}{{ t }} {{ v }}{{ ', ' if not loop.last }}{% else %}—{% endfor %}</dd>
-            <dt>Golden model</dt><dd class="mono">v{{ meta.golden_model or '1.0' }} ({{ b.logic_type }}, k={{ b.k_value }}, n={{ b.bitwidth }})</dd>
+            <dt>Reference model</dt><dd class="mono">v{{ meta.golden_model or '1.0' }} ({{ b.logic_type }}, k={{ b.k_value }}, n={{ b.bitwidth }})</dd>
             <dt>SHA-256</dt><dd class="mono small">{{ i.sha256 }}</dd>
             <dt>Verified at</dt><dd>{{ i.verified_at.strftime('%Y-%m-%d %H:%M UTC') if i.verified_at else '—' }}</dd>
             <dt>Log</dt><dd><a href="{{ url_for('library.view_log', slug=b.slug, impl_id=i.id) }}" target="_blank" rel="noopener">simulation log</a> · <a href="{{ url_for('library.view_code', slug=b.slug, impl_id=i.id) }}">mismatch details</a></dd>

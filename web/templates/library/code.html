@@ -19,9 +19,9 @@
         <div class="small muted">
             {{ i.language_label }} · {{ i.source_label }}{% if i.model_responded and not anonymous %} · <span class="mono">{{ i.model_responded }}</span>{% endif %}
             · {{ i.loc }} lines · {{ i.test_vectors }} test vectors ·
-            {% if i.golden_status == 'PASS' %}<span class="tag ok">golden model PASS {{ i.golden_passed }}/{{ i.golden_compared }}</span>
+            {% if i.golden_status == 'PASS' %}<span class="tag ok">reference model PASS {{ i.golden_passed }}/{{ i.golden_compared }}</span>
             {% elif i.golden_status == 'unverified' %}<span class="tag">unverified</span>
-            {% else %}<span class="tag err">golden model {{ i.golden_status.replace('_',' ') }}</span>{% endif %}
+            {% else %}<span class="tag err">reference model {{ i.golden_status.replace('_',' ') }}</span>{% endif %}
         </div>
     </div>
     <div class="detail-actions">
