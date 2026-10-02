@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Password required — MVL Benchmark Library{% endblock %}
+{% block content %}
+<div class="card login-box">
+    <h1><i data-lucide="lock" class="icon"></i> Password required</h1>
+    <p class="small muted">The library is open to reviewers only for the time being. Please enter the password you were given.</p>
+    <form method="post" action="{{ url_for('auth.site_login') }}">
+        <input type="hidden" name="next" value="{{ next_url }}">
+        <input type="password" name="password" placeholder="Password" autocomplete="current-password" autofocus required>
+        <button type="submit" class="btn btn-primary" style="width:100%">Enter</button>
+    </form>
+</div>
+{% endblock %}

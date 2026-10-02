@@ -202,3 +202,22 @@ def test_robots_txt(client):
     text = r.get_data(as_text=True)
     assert 'Disallow: /library?' in text and 'Disallow: /api/' in text
     assert 'Disallow: /benchmark' not in text
+
+
+def test_site_password(app, monkeypatch):
+    """SITE_PASSWORD closes the whole site; unset, the site is public."""
+    from blueprints import auth
+    c = app.test_client()
+    monkeypatch.setattr(auth, 'SITE_PASSWORD', 'test-site-pw')
+    r = c.get('/library')
+    assert r.status_code == 302 and '/site-login' in r.headers['Location']
+    assert c.get('/api/v1/benchmarks').status_code == 401
+    assert c.get('/api/status').status_code == 200          # health check stays open
+    assert c.get('/robots.txt').status_code == 200
+    assert c.post('/site-login', data={'password': 'wrong', 'next': '/library'}).status_code == 200
+    r = c.post('/site-login', data={'password': 'test-site-pw', 'next': '/library'})
+    assert r.status_code == 302 and r.headers['Location'].endswith('/library')
+    assert c.get('/library').status_code == 200
+    assert c.get('/generate').status_code == 302              # the generator keeps its own password
+    monkeypatch.setattr(auth, 'SITE_PASSWORD', '')
+    assert app.test_client().get('/library').status_code == 200
