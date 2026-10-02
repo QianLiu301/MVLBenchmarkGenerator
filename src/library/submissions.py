@@ -18,7 +18,7 @@ from sqlalchemy import select
 
 from . import service
 from .db import session_scope
-from .models import (LANGUAGE_EXT, LANGUAGES, MODULE_TYPES, PIPELINE_STEPS,
+from .models import (LANGUAGE_EXT, LANGUAGES, MODULE_TYPES, PIPELINE_STEPS, PIPELINE_STEPS_SHOWN,
                      Submission, Implementation)
 
 MAX_FILE_BYTES = 512 * 1024
@@ -413,21 +413,21 @@ def outcome(sub: Submission) -> Dict:
                 'why': sub.decision_reason or 'No reason recorded.',
                 'next': 'Address the reason above and submit again; every submission gets a fresh review.'}
     if sub.status == 'failed' and failed:
-        step_no = [k for k, _ in PIPELINE_STEPS].index(failed) + 1
+        step_no = [k for k, _ in PIPELINE_STEPS_SHOWN].index(failed) + 1   # as numbered on the page
         hints = {
             'schema': 'Correct manifest.json (the problems are listed under step 1) and upload again.',
             'lint': 'Remove the flagged construct or fix the file (step 2 log), then submit again.',
             'simulation': 'Fix the implementation so that it compiles, runs to completion and matches the reference '
                           'model on every vector (see the mismatch list under step 3), then submit again.',
-            'dedup': 'This exact file is already in the library (see step 6). Submit a different implementation.',
+            'dedup': 'This exact file is already in the library (see step 4). Submit a different implementation.',
         }
         return {'label': f'Rejected automatically at step {step_no} ({names[failed]})', 'tone': 'err',
                 'why': (steps.get(failed) or {}).get('log', '').strip().splitlines()[0] if (steps.get(failed) or {}).get('log') else 'see the step log',
                 'next': hints.get(failed, 'See the step log, then submit again.')}
     if sub.status == 'awaiting_review':
         return {'label': 'Awaiting maintainer decision', 'tone': 'warn',
-                'why': 'All automated checks (steps 1–6) passed.',
+                'why': f'All automated checks (steps 1–{len(PIPELINE_STEPS_SHOWN) - 1}) passed.',
                 'next': 'A maintainer decides within 14 days. Bookmark this page; no e-mail is sent.'}
     return {'label': 'Automated checks running', 'tone': 'warn',
-            'why': 'Steps 1–6 are being executed.',
+            'why': f'Steps 1–{len(PIPELINE_STEPS_SHOWN) - 1} are being executed.',
             'next': 'This page refreshes itself. Typical duration: 1–5 minutes (up to 10 for VHDL).'}

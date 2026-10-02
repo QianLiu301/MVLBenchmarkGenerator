@@ -4,7 +4,7 @@ from flask import (Blueprint, abort, flash, redirect, render_template, request, 
 from blueprints.auth import require_access
 from library import submissions
 from library.db import session_scope
-from library.models import LANGUAGES, News, PIPELINE_STEPS, Submission
+from library.models import LANGUAGES, News, PIPELINE_STEPS_SHOWN, Submission
 from datetime import datetime
 from sqlalchemy import select
 
@@ -20,7 +20,7 @@ def queue():
         counts = {st: len(submissions.list_submissions(s, st))
                   for st in ('awaiting_review', 'running', 'queued', 'failed', 'approved', 'rejected')}
         return render_template('admin/queue.html', subs=subs, status=status, counts=counts,
-                               steps=PIPELINE_STEPS)
+                               steps=PIPELINE_STEPS_SHOWN)
 
 
 @bp.route('/<int:sub_id>')
@@ -30,7 +30,7 @@ def review(sub_id):
         sub = s.get(Submission, sub_id)
         if sub is None:
             abort(404)
-        return render_template('admin/review.html', sub=sub, steps=PIPELINE_STEPS,
+        return render_template('admin/review.html', sub=sub, steps=PIPELINE_STEPS_SHOWN,
                                language_labels=LANGUAGES)
 
 

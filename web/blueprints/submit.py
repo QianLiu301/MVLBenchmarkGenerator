@@ -6,7 +6,7 @@ from flask import (Blueprint, Response, abort, jsonify, render_template, request
 
 from library import submissions
 from library.db import session_scope
-from library.models import LANGUAGE_EXT, LANGUAGES, MODULE_TYPES, PIPELINE_STEPS
+from library.models import LANGUAGE_EXT, LANGUAGES, MODULE_TYPES, PIPELINE_STEPS_SHOWN
 
 bp = Blueprint('submit', __name__)
 
@@ -17,7 +17,7 @@ _ALLOWED_EXT = tuple(LANGUAGE_EXT.values())
 @bp.route('/submit')
 def form():
     return render_template('submit/form.html', module_labels=MODULE_TYPES,
-                           language_labels=LANGUAGES, language_ext=LANGUAGE_EXT, steps=PIPELINE_STEPS,
+                           language_labels=LANGUAGES, language_ext=LANGUAGE_EXT, steps=PIPELINE_STEPS_SHOWN,
                            schema_json=json.dumps(submissions.MANIFEST_SCHEMA),
                            template_json=json.dumps(submissions.MANIFEST_TEMPLATE, indent=2),
                            example=_example())
@@ -88,7 +88,7 @@ def status(token):
         sub = submissions.get_by_token(s, token)
         if sub is None:
             abort(404)
-        return render_template('submit/status.html', sub=sub, steps=PIPELINE_STEPS,
+        return render_template('submit/status.html', sub=sub, steps=PIPELINE_STEPS_SHOWN,
                                language_labels=LANGUAGES, outcome=submissions.outcome(sub))
 
 

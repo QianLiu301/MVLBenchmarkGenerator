@@ -23,7 +23,7 @@
     {% include "submit/_steps.html" %}
     {% if sub.results %}
     <div class="table-wrap" style="margin-top:10px"><table class="bench" style="min-width:0">
-        <thead><tr><th>File</th><th>Simulation</th><th>Golden model</th><th class="num">Vectors</th><th>Strength</th><th>SHA-256</th></tr></thead>
+        <thead><tr><th>File</th><th>Simulation</th><th>Reference model</th><th class="num">Vectors</th><th>Strength</th><th>SHA-256</th></tr></thead>
         <tbody>
         {% for name, r in sub.results.items() %}
         <tr>

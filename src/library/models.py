@@ -53,12 +53,17 @@ GOLDEN_MODEL_VERSION = '1.1'
 PIPELINE_STEPS = [
     ('schema', 'Schema'),
     ('lint', 'Lint'),
-    ('simulation', 'Simulation vs golden'),
+    ('simulation', 'Simulation vs reference model'),
     ('formal', 'Formal (optional)'),
     ('llm_review', 'LLM review'),
     ('dedup', 'Dedup'),
     ('approval', 'Maintainer approval'),
 ]
+# The steps a submitter sees: 'formal' and 'llm_review' have places in the pipeline
+# (always 'skipped') but no back-end yet, so step bars and step numbers leave them
+# out; the review-process page explains them as reserved.
+NOT_ENABLED_STEPS = ('formal', 'llm_review')
+PIPELINE_STEPS_SHOWN = [s for s in PIPELINE_STEPS if s[0] not in NOT_ENABLED_STEPS]
 STEP_STATES = ('pending', 'running', 'pass', 'fail', 'skipped')
 
 

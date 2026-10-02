@@ -133,7 +133,8 @@ def structure_label(k: int, n: int) -> str:
     if info['category'] == 'extension_field':
         return f"GF({k})[x]/(x{str(n).translate(_SUP)})"
     return f"Z/{k}{str(n).translate(_SUP)}Z"
-RADIX_NAMES = {2: 'binary', 3: 'ternary', 4: 'quaternary', 5: 'quinary', 6: 'senary', 7: 'septenary'}
+RADIX_NAMES = {2: 'binary', 3: 'ternary', 4: 'quaternary', 5: 'quinary', 6: 'senary', 7: 'septenary',
+               8: 'octal', 9: 'nonary'}
 
 _TEST_INDICATORS = {
     'c': ['printf', 'test', 'assert'],
