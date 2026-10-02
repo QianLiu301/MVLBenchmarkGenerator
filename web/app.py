@@ -156,6 +156,29 @@ def index():
     return redirect(url_for('generate_page'))
 
 
+_ROBOTS = """\
+# Specification pages, the browse page and the documentation are for indexing.
+# Filtered or sorted listings (endless URL combinations with nothing new on
+# them), downloads, logs, the API and the private pages are not.
+User-agent: *
+Disallow: /library?
+Disallow: /library/download
+Disallow: /*/download
+Disallow: /*/log
+Disallow: /api/
+Disallow: /generate
+Disallow: /admin
+Disallow: /login
+Disallow: /submission/
+Allow: /
+"""
+
+
+@app.route('/robots.txt')
+def robots_txt():
+    return Response(_ROBOTS, mimetype='text/plain')
+
+
 @app.route('/api/status')
 def api_status():
     """Get system status"""

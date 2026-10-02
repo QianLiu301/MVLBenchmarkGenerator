@@ -184,3 +184,12 @@ def test_docs_pages_render(client):
     assert 'Getting started' in home and 'How it is verified' in home       # path cards
     docs = client.get('/docs').get_data(as_text=True)
     assert 'Benchmark format' in docs and 'Review process' in docs
+
+
+def test_robots_txt(client):
+    """Crawlers may index specification pages, not every filter combination."""
+    r = client.get('/robots.txt')
+    assert r.status_code == 200 and r.mimetype == 'text/plain'
+    text = r.get_data(as_text=True)
+    assert 'Disallow: /library?' in text and 'Disallow: /api/' in text
+    assert 'Disallow: /benchmark' not in text
