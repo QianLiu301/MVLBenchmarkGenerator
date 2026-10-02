@@ -89,8 +89,12 @@ def test_filters(client):
     assert client.get('/api/v1/benchmarks?verified=1').get_json()['count'] == 2
     failed = client.get('/api/v1/benchmarks?verified=0').get_json()
     assert failed['count'] == 1 and failed['benchmarks'][0]['slug'] == 'alu_k3_8t'
-    assert client.get('/api/v1/benchmarks?model=codestral-latest').get_json()['count'] == 1
-    assert client.get('/api/v1/benchmarks?model=nope').get_json()['count'] == 0
+    from library.review_mode import ANONYMOUS_REVIEW
+    if ANONYMOUS_REVIEW:     # the model filter is ignored while models are withheld
+        assert client.get('/api/v1/benchmarks?model=codestral-latest').get_json()['count'] == 2
+    else:
+        assert client.get('/api/v1/benchmarks?model=codestral-latest').get_json()['count'] == 1
+        assert client.get('/api/v1/benchmarks?model=nope').get_json()['count'] == 0
 
 
 def test_search_shorthands(client):
@@ -124,7 +128,8 @@ def test_full_and_detail_carry_verification(client):
     assert impls['c']['vectors_compared'] == 42
     assert impls['c']['golden_model_version'] == '1.1'
     assert impls['vhdl']['verified'] is False and impls['vhdl']['golden_model'] == 'RUNTIME_ERROR'
-    assert impls['vhdl']['model'] == 'codestral-latest'
+    from library.review_mode import ANONYMOUS_REVIEW
+    assert impls['vhdl']['model'] == (None if ANONYMOUS_REVIEW else 'codestral-latest')
     assert impls['c']['sha256'] and impls['c']['download_url'].endswith('/download')
 
     full = client.get('/api/v1/benchmarks?full=1').get_json()
@@ -140,7 +145,11 @@ def test_stats(client):
     d = client.get('/api/v1/stats').get_json()
     assert d['benchmarks'] == 2 and d['implementations'] == 3 and d['verified'] == 2
     assert d['format_version'] and d['golden_model_version']
-    assert any(m['label'] == 'codestral-latest' for m in d['models'])
+    from library.review_mode import ANONYMOUS_REVIEW
+    if ANONYMOUS_REVIEW:
+        assert d['models'] == []
+    else:
+        assert any(m['label'] == 'codestral-latest' for m in d['models'])
     assert 'k_value' in d['facets']
 
 

@@ -6,8 +6,8 @@
     <h1>Statistics</h1>
     <p>
         What the collection contains, how it is spread over the parameters, and how much of it is
-        backed by a passing check. Counts are live. How each generation model fares on the same
-        specifications is on the <a href="{{ url_for('library.models') }}">generation models</a> page.
+        backed by a passing check. Counts are live.{% if not anonymous %} How each generation model fares on the same
+        specifications is on the <a href="{{ url_for('library.models') }}">generation models</a> page.{% endif %}
     </p>
 
     <h2>Coverage</h2>

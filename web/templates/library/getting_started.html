@@ -25,8 +25,9 @@
     <h2>2. What is in an archive</h2>
 <pre class="bibtex">{{ slug }}/
   spec.json            parameters, operations, per-file verification record, SHA-256
-  {{ slug }}.c          implementations; several per language carry source and id
-  {{ slug }}.py           in the name, e.g. {{ slug }}_gemini_106.v
+{% if anonymous %}  {{ slug }}.c          implementations; several per language carry their id
+  {{ slug }}.py           in the name, e.g. {{ slug }}_106.v{% else %}  {{ slug }}.c          implementations; several per language carry source and id
+  {{ slug }}.py           in the name, e.g. {{ slug }}_gemini_106.v{% endif %}
   {{ slug }}.v
   {{ slug }}.vhd
 LICENSE.txt            CC BY 4.0
@@ -76,8 +77,8 @@ ghdl -r --std=08 {{ entity }}_tb --stop-time=10ms</pre>
         both the ones it prints itself and injected golden vectors (all operand pairs when
         k<sup>n</sup> ≤ 256, otherwise 50 seeded random pairs plus edge cases). The record on each
         entry lists the tool versions, the vector count and the seed, so a run can be repeated.
-        Implementations that <em>failed</em> are kept when they come from the project's own LLM
-        pipeline — see <a href="{{ url_for('library.models') }}">generation models</a> — and are
+        Implementations that <em>failed</em> are kept when they come from the project's own
+        pipeline{% if not anonymous %} — see <a href="{{ url_for('library.models') }}">generation models</a> —{% endif %} and are
         never presented as correct.
     </p>
 

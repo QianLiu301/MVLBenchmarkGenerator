@@ -48,7 +48,7 @@
             <dt>Implementations</dt><dd>{{ stats.implementations }}</dd>
             <dt>Verified</dt><dd><a href="{{ url_for('library.browse', verified='1') }}">{{ stats.verified }}</a> <span class="muted small">({{ stats.verified_pct }} %)</span></dd>
             <dt>Languages</dt><dd>{{ language_labels|length }}</dd>
-            <dt>Generation models</dt><dd><a href="{{ url_for('library.models') }}">{{ model_count }}</a></dd>
+            {% if not anonymous %}<dt>Generation models</dt><dd><a href="{{ url_for('library.models') }}">{{ model_count }}</a></dd>{% endif %}
             {% if stats.benchmarks %}
             <dt>Radix k</dt><dd>{{ stats.k_min }} – {{ stats.k_max }}</dd>
             <dt>Digits</dt><dd>{{ stats.digits_min }} – {{ stats.digits_max }}</dd>

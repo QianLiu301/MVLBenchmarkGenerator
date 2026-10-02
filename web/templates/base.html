@@ -34,7 +34,7 @@
                         <a href="{{ url_for('library.getting_started') }}">Getting started</a>
                         <a href="{{ url_for('library.format') }}">Benchmark format v{{ format_version }}</a>
                         <a href="{{ url_for('library.review') }}">Review process</a>
-                        <a href="{{ url_for('library.models') }}">Generation models</a>
+                        {% if not anonymous %}<a href="{{ url_for('library.models') }}">Generation models</a>{% endif %}
                         <a href="{{ url_for('library.statistics') }}">Statistics</a>
                         <a href="{{ url_for('library.api_docs') }}">API</a>
                     </div>
@@ -74,8 +74,10 @@
     <footer class="site-footer">
         <div class="container footer-inner">
             <div class="footer-authors">
+                {% if anonymous %}{{ anonymous_notice }}{% else %}
                 <a href="https://de.linkedin.com/in/rolf-drechsler-2304a98" target="_blank" rel="noopener">Rolf Drechsler</a>,
                 <a href="https://www.linkedin.com/in/qian-liu-0707482bb/" target="_blank" rel="noopener">Qian Liu</a>
+                {% endif %}
             </div>
             <div class="footer-links">
                 <a href="{{ url_for('library.cite') }}">Cite</a>
@@ -101,6 +103,9 @@
                 <button class="modal-close" id="legalClose" aria-label="Close"><i data-lucide="x" class="icon"></i></button>
             </div>
             <div class="legal-content">
+                {% if anonymous %}
+                <p>{{ anonymous_notice }} The institution, contact and the persons responsible for the content are given here again after the review.</p>
+                {% else %}
                 <p><strong>Information provided according to §5 German Telemedia Act (TMG)</strong></p>
                 <h3>Institution</h3>
                 <p><strong>University of Bremen</strong><br>Faculty 3<br>Group of Computer Architecture (AGRA)<br>Bibliothekstr. 5<br>28359 Bremen<br>Germany</p>
@@ -108,6 +113,7 @@
                 <p><a href="mailto:drechsler@uni-bremen.de">drechsler@uni-bremen.de</a><br><a href="mailto:qialiu@uni-bremen.de">qialiu@uni-bremen.de</a></p>
                 <h3>Responsible for Content (according to §55(2) RStV)</h3>
                 <p>Prof. Dr. Rolf Drechsler<br>Qian Liu</p>
+                {% endif %}
                 <h3>Research Disclaimer</h3>
                 <p>This website and the associated tools are provided exclusively for academic research and educational purposes. The benchmark specifications, generated source code and verification artifacts are experimental in nature and are provided without any warranty. They must not be used in safety-critical or production environments without independent verification and validation.</p>
                 <h3>Licensing</h3>

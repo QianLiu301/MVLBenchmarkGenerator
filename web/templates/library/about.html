@@ -18,12 +18,13 @@
         file checksums — so that results can be reproduced.
     </p>
     <p>
-        The library is maintained by the Group of Computer Architecture (AGRA) at the University of Bremen and is open
-        to contributions from the MVL community. Whether you design ternary arithmetic, study Galois-field hardware or
+        {% if not anonymous %}The library is maintained by the Group of Computer Architecture (AGRA) at the University of Bremen and is open
+        to contributions from the MVL community.{% else %}The library is open to contributions from the MVL community.{% endif %}
+        Whether you design ternary arithmetic, study Galois-field hardware or
         evaluate verification tools, we invite you to <a href="{{ url_for('library.browse') }}">browse</a>,
         <a href="{{ url_for('library.browse', mode='download') }}">download</a> and <a href="{{ url_for('submit.form') }}">contribute</a> benchmarks.
-        Submissions pass an automated review pipeline followed by maintainer approval; new benchmarks can also be derived
-        with our <a href="{{ url_for('generate_page') }}">LLM-based generator</a>.
+        Submissions pass an automated review pipeline followed by maintainer approval{% if not anonymous %}; new benchmarks can also be derived
+        with our <a href="{{ url_for('generate_page') }}">LLM-based generator</a>{% endif %}.
     </p>
 
     <h2>What makes an entry</h2>
@@ -34,8 +35,8 @@
             Galois-field arithmetic) when k = q is a prime power such as 4. The exact definitions and the
             reference model are in the <a href="{{ url_for('library.format') }}">format</a>.</li>
         <li><strong>Implementation</strong> — one source file realising the specification. Several
-            implementations may exist per language, e.g. produced by different LLMs, so that models
-            can be compared on identical specifications.</li>
+            implementations may exist per language{% if not anonymous %}, e.g. produced by different LLMs, so that models
+            can be compared on identical specifications{% endif %}.</li>
         <li><strong>Verification record</strong> — the implementation is compiled and simulated
             (gcc, CPython, Icarus Verilog, GHDL); every test vector it prints is compared digit-wise
             with an independent, deterministic golden model, and a second run injects golden vectors
@@ -48,8 +49,8 @@
     <p>
         Naming, the manifest, the test-output convention and the verification record are specified in the
         <a href="{{ url_for('library.format') }}">benchmark format v1.0</a>. Contributors are listed on the
-        <a href="{{ url_for('library.acknowledgements') }}">Acknowledgements</a> page, and the pass rates of the
-        generation models by language and family on the <a href="{{ url_for('library.models') }}">Models</a> page.
+        <a href="{{ url_for('library.acknowledgements') }}">Acknowledgements</a> page{% if not anonymous %}, and the pass rates of the
+        generation models by language and family on the <a href="{{ url_for('library.models') }}">Models</a> page{% endif %}.
     </p>
 
     <h2>License and citation</h2>
@@ -62,9 +63,11 @@
 
     <h2>Authors</h2>
     <p>
+        {% if anonymous %}{{ anonymous_notice }}{% else %}
         <a href="https://de.linkedin.com/in/rolf-drechsler-2304a98" target="_blank" rel="noopener">Prof. Dr. Rolf Drechsler</a> and
         <a href="https://www.linkedin.com/in/qian-liu-0707482bb/" target="_blank" rel="noopener">Qian Liu</a>,
         Group of Computer Architecture (AGRA), University of Bremen.
+        {% endif %}
     </p>
 </div>
 {% endblock %}

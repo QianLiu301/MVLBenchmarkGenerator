@@ -22,7 +22,7 @@
     <div class="detail-actions">
         <a href="{{ url_for('library.download_benchmark', slug=b.slug) }}" class="btn btn-primary"><i data-lucide="download" class="icon"></i> Download all files</a>
         <a href="{{ url_for('library.spec_json', slug=b.slug) }}" class="btn btn-outline"><i data-lucide="file-json" class="icon"></i> spec.json</a>
-        <a href="{{ url_for('generate_page') }}?module_type={{ b.module_type }}&k={{ b.k_value }}&bits={{ b.bitwidth }}" class="btn btn-outline"><i data-lucide="sparkles" class="icon"></i> Generate similar</a>
+        {% if not anonymous %}<a href="{{ url_for('generate_page') }}?module_type={{ b.module_type }}&k={{ b.k_value }}&bits={{ b.bitwidth }}" class="btn btn-outline"><i data-lucide="sparkles" class="icon"></i> Generate similar</a>{% endif %}
     </div>
 </div>
 
@@ -70,7 +70,7 @@
         {% for i in impls if i.language == lang %}
         <div class="impl-head">
             <div>
-                <span class="mono">{{ i.filename }}</span> · {{ i.source_label }}{% if i.model_responded %} · <span class="mono">{{ i.model_responded }}</span>{% endif %}
+                <span class="mono">{{ i.filename }}</span> · {{ i.source_label }}{% if i.model_responded and not anonymous %} · <span class="mono">{{ i.model_responded }}</span>{% endif %}
                 · {{ i.loc }} lines · {{ i.test_vectors }} test vectors
                 {% if i.golden_status == 'PASS' %}<span class="tag ok"><i data-lucide="check" class="icon-sm icon"></i> PASS {{ i.golden_passed }}/{{ i.golden_compared }}</span>
                 {% elif i.golden_status == 'unverified' %}<span class="tag">unverified</span>
@@ -127,7 +127,8 @@
         <tr>
             <td class="mono">{{ i.filename }}</td>
             <td><span class="tag">{{ i.source_label }}</span></td>
-            <td>{% if i.source == 'llm-generated' %}<span class="mono">{{ i.model_responded or i.model_requested or '—' }}</span>{% if i.provider %} <span class="muted small">({{ i.provider }})</span>{% endif %}
+            <td>{% if anonymous %}<span class="muted small">withheld for review</span>
+                {% elif i.source == 'llm-generated' %}<span class="mono">{{ i.model_responded or i.model_requested or '—' }}</span>{% if i.provider %} <span class="muted small">({{ i.provider }})</span>{% endif %}
                 {% else %}{{ i.submitter_name or '—' }}{% if i.submitter_affiliation %} <span class="muted small">· {{ i.submitter_affiliation }}</span>{% endif %}{% endif %}</td>
             <td class="mono small">{{ (i.prompt_hash[:16] ~ '…') if i.prompt_hash else '—' }}</td>
             <td class="num">{{ i.created_at.strftime('%Y-%m-%d') }}</td>
@@ -144,7 +145,7 @@
     {% if events %}
     <ul class="timeline">
         {% for e in events %}
-        <li><span class="when">{{ e.created_at.strftime('%Y-%m-%d %H:%M') }}</span><span><strong>{{ e.action }}</strong> by {{ e.actor }}{% if e.detail %} — {{ e.detail }}{% endif %}</span></li>
+        <li><span class="when">{{ e.created_at.strftime('%Y-%m-%d %H:%M') }}</span><span><strong>{{ e.action }}</strong> by {{ e.actor }}{% if e.detail and not anonymous %} — {{ e.detail }}{% endif %}</span></li>
         {% endfor %}
     </ul>
     {% else %}

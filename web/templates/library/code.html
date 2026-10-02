@@ -17,7 +17,7 @@
     <div>
         <h1 class="mono" style="font-size:1.3rem">{{ i.filename }}</h1>
         <div class="small muted">
-            {{ i.language_label }} · {{ i.source_label }}{% if i.model_responded %} · <span class="mono">{{ i.model_responded }}</span>{% endif %}
+            {{ i.language_label }} · {{ i.source_label }}{% if i.model_responded and not anonymous %} · <span class="mono">{{ i.model_responded }}</span>{% endif %}
             · {{ i.loc }} lines · {{ i.test_vectors }} test vectors ·
             {% if i.golden_status == 'PASS' %}<span class="tag ok">golden model PASS {{ i.golden_passed }}/{{ i.golden_compared }}</span>
             {% elif i.golden_status == 'unverified' %}<span class="tag">unverified</span>

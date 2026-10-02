@@ -127,7 +127,9 @@ def _inject_globals():
     from library import service
     from library.models import GOLDEN_MODEL_VERSION
     css = Path(__file__).parent / 'static' / 'css' / 'library.css'
+    from library.review_mode import ANONYMOUS_REVIEW, ANONYMOUS_NOTICE
     return {'is_authed': is_authed(),
+            'anonymous': ANONYMOUS_REVIEW, 'anonymous_notice': ANONYMOUS_NOTICE,
             'site_status': _site_status(),
             'format_version': service.FORMAT_VERSION,
             'golden_version': GOLDEN_MODEL_VERSION,
@@ -146,8 +148,18 @@ benchmark_validator = BenchmarkValidator(project_root=str(PROJECT_ROOT))
 @app.route('/generate')
 @require_access
 def generate_page():
-    """The LLM generator tool (password-protected: it spends API credits)."""
-    return send_from_directory('templates', 'index.html')
+    """The LLM generator tool (password-protected: it spends API credits).
+
+    index.html is a static page, not a template; in double-blind review mode the
+    blocks it marks <!-- identity --> … <!-- /identity --> are replaced by a notice.
+    """
+    from library.review_mode import ANONYMOUS_REVIEW, ANONYMOUS_NOTICE
+    if not ANONYMOUS_REVIEW:
+        return send_from_directory('templates', 'index.html')
+    import re
+    page = (Path(__file__).parent / 'templates' / 'index.html').read_text(encoding='utf-8')
+    page = re.sub(r'<!-- identity\b.*?<!-- /identity -->', f'<p>{ANONYMOUS_NOTICE}</p>', page, flags=re.S)
+    return Response(page, mimetype='text/html')
 
 
 @app.route('/app')
@@ -182,10 +194,11 @@ def robots_txt():
 @app.route('/api/status')
 def api_status():
     """Get system status"""
+    from library.review_mode import ANONYMOUS_REVIEW
     return jsonify({
         'status': 'ok',
         'tools': simulation_runner.get_tools_status(),
-        'llm_providers': [
+        'llm_providers': [] if ANONYMOUS_REVIEW else [
             'gemini', 'mistral', 'deepseek', 'openai',
             'qwen', 'gptoss', 'glm', 'together', 'local'
         ]

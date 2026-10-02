@@ -5,8 +5,10 @@
 <div class="prose">
     <h1>Cite the MVL Benchmark Library</h1>
     <p>
+        {% if anonymous %}The citation of the associated paper is withheld for double-blind review; until then,
+        please cite the library as below and the archived data release.{% else %}
         If you use benchmarks from this library in your work, please cite the paper that introduced
-        the generation and verification pipeline. Individual benchmark pages provide the same entry
+        the generation and verification pipeline.{% endif %} Individual benchmark pages provide the same entry
         with the benchmark's permanent URL added in a <code>note</code> field.
     </p>
     <p>{{ citation_text }}</p>
@@ -34,11 +36,13 @@
         {% if release.doi %}<a href="{{ release.doi_url }}" class="btn btn-outline btn-sm" target="_blank" rel="noopener"><i data-lucide="archive" class="icon"></i> Zenodo record</a>{% endif %}
     </div>
 
+    {% if not anonymous %}
     <h2>Paper</h2>
     <p>
         {{ citation_text }}
         <a href="https://www.dfki.de/en/web/research/projects-and-publications/publication/17116" target="_blank" rel="noopener">Publication page</a>
     </p>
+    {% endif %}
 
     <h2>License</h2>
     <p>

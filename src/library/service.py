@@ -16,6 +16,7 @@ from typing import Dict, Iterable, List, Optional, Tuple
 from sqlalchemy import func, or_, select
 
 from .db import session_scope
+from .review_mode import ANONYMOUS_REVIEW
 from .models import (Benchmark, Implementation, LANGUAGES, LANGUAGE_EXT,
                      LICENSE_ID, MODULE_TYPES, ReviewEvent, SOURCES,
                      GOLDEN_MODEL_VERSION)
@@ -33,8 +34,22 @@ CITATION_FILE = PROJECT_ROOT / 'config' / 'citation.bib'
 FORMAT_VERSION = '1.0'
 
 
+_ANONYMOUS_BIBTEX = """@misc{mvlbenchmarklibrary,
+  author    = {Anonymous},
+  title     = {MVL Benchmark Library},
+  year      = {2026},
+  url       = {https://llm-mvl.com}
+}
+"""   # no note field: benchmark pages append their own note
+
+
 def citation_bibtex() -> str:
-    """The BibTeX entry, byte-identical everywhere it is shown (config/citation.bib, comments stripped)."""
+    """The BibTeX entry, byte-identical everywhere it is shown (config/citation.bib, comments stripped).
+
+    In double-blind review mode an anonymous entry replaces it: config/citation.bib
+    names the authors and an earlier paper of theirs."""
+    if ANONYMOUS_REVIEW:
+        return _ANONYMOUS_BIBTEX
     try:
         text = CITATION_FILE.read_text(encoding='utf-8')
     except OSError:
@@ -50,8 +65,8 @@ def _citation_field(name: str) -> str:
 
 def citation_text() -> str:
     """One-line human-readable citation derived from the same file."""
-    return (f"{_citation_field('author')}. \"{_citation_field('title')}\". "
-            f"{_citation_field('booktitle')}, {_citation_field('year')}.")
+    venue = ', '.join(v for v in (_citation_field('booktitle'), _citation_field('year')) if v)
+    return f"{_citation_field('author')}. \"{_citation_field('title')}\". {venue}."
 
 
 RELEASE_FILE = PROJECT_ROOT / 'config' / 'release.json'
@@ -67,8 +82,10 @@ def release_info() -> Dict:
     return {
         'version': data.get('version') or FORMAT_VERSION,
         'date': data.get('date') or '',
-        # the library's authors; the paper's author list lives in citation.bib
-        'authors': data.get('authors') or [_citation_field('author')],
+        # the library's authors; the paper's author list lives in citation.bib.
+        # The DOI stays in review mode (reviewers check the records against it).
+        'authors': (['Anonymous'] if ANONYMOUS_REVIEW
+                    else data.get('authors') or [_citation_field('author')]),
         'doi': doi,
         'doi_url': f"https://doi.org/{doi}" if doi else '',
         'zenodo_url': (data.get('zenodo_url') or '').strip(),
@@ -552,7 +569,7 @@ def _apply_filters(stmt, filters: Dict):
         elif verified in ('0', 0, 'false'):
             # "did not pass": the spec has an implementation that failed the check
             sub = sub.where(Implementation.golden_status != 'PASS')
-        if model:
+        if model and not ANONYMOUS_REVIEW:     # no filtering by model while models are withheld
             sub = sub.where(Implementation.model_responded == model)
         stmt = stmt.where(Benchmark.id.in_(sub))
     q = (filters.get('q') or '').strip()
@@ -637,6 +654,8 @@ def facets(session) -> Dict:
                Implementation.model_responded.isnot(None))
         .group_by(Implementation.model_responded)
         .order_by(func.count().desc())).all()]
+    if ANONYMOUS_REVIEW:
+        out['model'] = []
     return out
 
 
@@ -745,6 +764,10 @@ def contributors(session) -> Dict:
                Implementation.source == 'llm-generated')
         .group_by(Implementation.provider, Implementation.model_responded)
         .order_by(Implementation.provider)).all()
+    if ANONYMOUS_REVIEW:
+        # the only named contributor so far is an author; the model list belongs
+        # to the separate paper on generation
+        return {'people': [], 'models': []}
     return {'people': people,
             'models': [{'provider': p, 'model': m, 'count': c} for p, m, c in models]}
 
@@ -919,10 +942,17 @@ def bibtex(benchmark: Optional[Benchmark] = None) -> str:
     return body + ',\n' + note + '\n}\n'
 
 
+def _generator_fields(i: Implementation) -> Dict:
+    """Provider and model of an implementation; withheld in double-blind review mode."""
+    if ANONYMOUS_REVIEW:
+        return {'provider': None, 'model': None}
+    return {'provider': i.provider, 'model': i.model_responded or i.model_requested}
+
+
 def spec_json(benchmark: Benchmark) -> str:
     impls = [{
         'filename': i.filename, 'language': i.language, 'source': i.source,
-        'provider': i.provider, 'model': i.model_responded or i.model_requested,
+        **_generator_fields(i),
         'sha256': i.sha256, 'loc': i.loc, 'test_vectors': i.test_vectors,
         'simulation': i.sim_status, 'golden_model': i.golden_status,
         'verification_strength': i.verification_strength,
@@ -971,8 +1001,7 @@ def api_benchmark(benchmark: Benchmark, base_url: str = 'https://llm-mvl.com',
             'filename': i.filename,
             'language': i.language,
             'source': i.source,
-            'provider': i.provider,
-            'model': i.model_responded or i.model_requested,
+            **_generator_fields(i),
             'loc': i.loc,
             'sha256': i.sha256,
             'simulation': i.sim_status,
@@ -1007,9 +1036,12 @@ def build_zip(benchmarks: Iterable[Benchmark], filters: Optional[Dict] = None,
                 name = impl.filename
                 same_lang = [i for i in impls if i.language == impl.language]
                 if len(same_lang) > 1:
-                    tag = (impl.provider or impl.source or 'x').replace('/', '-')
                     stem, ext = os.path.splitext(name)
-                    name = f"{stem}_{tag}_{impl.id}{ext}"
+                    if ANONYMOUS_REVIEW:       # the provider in the name would reveal the model
+                        name = f"{stem}_{impl.id}{ext}"
+                    else:
+                        tag = (impl.provider or impl.source or 'x').replace('/', '-')
+                        name = f"{stem}_{tag}_{impl.id}{ext}"
                 zf.writestr(f"{bm.slug}/{name}", impl.code)
                 files.append({'path': f"{bm.slug}/{name}", 'sha256': impl.sha256, 'language': impl.language,
                               'golden_model': impl.golden_status, 'implementation_id': impl.id})
@@ -1142,7 +1174,9 @@ def selection_zip(session, sel: Dict) -> Tuple[Optional[bytes], Optional[str]]:
     newest = session.execute(
         select(func.max(Implementation.created_at))
         .where(Implementation.benchmark_id.in_([b.id for b in rows]))).scalar() or datetime.min
-    key = hashlib.sha256(json.dumps({'sel': sel, 'n': len(rows), 'newest': newest.isoformat()},
+    # the review mode changes the archive's contents (citation, model names, file names)
+    key = hashlib.sha256(json.dumps({'sel': sel, 'n': len(rows), 'newest': newest.isoformat(),
+                                     'anonymous': ANONYMOUS_REVIEW},
                                     sort_keys=True).encode()).hexdigest()[:24]
     _ZIP_CACHE_DIR.mkdir(parents=True, exist_ok=True)
     path = _ZIP_CACHE_DIR / f"{key}.zip"

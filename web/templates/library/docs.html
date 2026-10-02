@@ -26,11 +26,13 @@
         <p>The seven steps of the pipeline, what each one checks, what makes a submission fail,
            the 14-day maintainer decision and what a verified badge does and does not claim.</p>
     </a>
+    {% if not anonymous %}
     <a class="doc-card" href="{{ url_for('library.models') }}">
         <h2><i data-lucide="bar-chart-3" class="icon"></i> Generation models</h2>
         <p>Pass rates of the models that produced the implementations, by language, by algebraic
            family and by failure class — all on identical specifications.</p>
     </a>
+    {% endif %}
     <a class="doc-card" href="{{ url_for('library.statistics') }}">
         <h2><i data-lucide="pie-chart" class="icon"></i> Statistics</h2>
         <p>Coverage over radix and digit count, verification rates per language and family, how

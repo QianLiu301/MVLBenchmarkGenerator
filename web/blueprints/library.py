@@ -247,6 +247,9 @@ def statistics():
 
 @bp.route('/models')
 def models():
+    from library.review_mode import ANONYMOUS_REVIEW
+    if ANONYMOUS_REVIEW:       # the comparison of models belongs to a separate paper
+        abort(404)
     with session_scope() as s:
         return render_template('library/models.html', matrix=service.model_matrix(s),
                                golden_version=GOLDEN_MODEL_VERSION, **_LABELS)
@@ -336,8 +339,10 @@ def api_v1_stats():
     with session_scope() as s:
         data = service.stats(s)
         data['facets'] = service.facets(s)
-        data['models'] = [{k: m[k] for k in ('label', 'provider', 'total', 'verified', 'pct')}
-                          for m in service.model_matrix(s)['models']]
+        from library.review_mode import ANONYMOUS_REVIEW
+        data['models'] = [] if ANONYMOUS_REVIEW else [
+            {k: m[k] for k in ('label', 'provider', 'total', 'verified', 'pct')}
+            for m in service.model_matrix(s)['models']]
     data['api_version'] = service.API_VERSION
     data['release'] = service.release_info()
     data['format_version'] = service.FORMAT_VERSION
