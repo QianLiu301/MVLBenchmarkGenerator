@@ -6,10 +6,16 @@ DATABASE_URL set   -> Postgres (a hosted database). Connections are NOT pooled: 
                       keeps it awake around the clock. That is what exhausted the Neon
                       free allowance on 2026-09-22 — the traffic was negligible, the
                       idle connection was not.
-DATABASE_URL unset -> an empty SQLite file at data/library.db, for local development
-                      and tests. The library itself lives in Postgres; from 2026-09-22
-                      to 2026-10-01 a copy shipped with the app while the Neon quota
-                      was exhausted, and was removed once the site ran on Neon again.
+DATABASE_URL unset -> SQLite at data/library.db, which ships with the application.
+                      The library is read-mostly (browsing, downloads, API), so the
+                      file serves it well and has no quota. Writes (submissions,
+                      approvals, download counters) last only until the next deploy,
+                      because the container filesystem is replaced.
+
+History: Neon ran out of compute hours on 2026-09-22 (an idle pooled connection,
+fixed with NullPool) and of network transfer on 2026-10-02 (list pages loaded the
+code and logs of every implementation, fixed by deferring those columns in
+models.py). Each time the site went back to the bundled file.
 """
 import os
 from contextlib import contextmanager
@@ -35,16 +41,20 @@ def _database_url() -> str:
         if sep and scheme.split('+')[0] in ('postgres', 'postgresql'):
             url = 'postgresql+psycopg2://' + rest
         return url
-    project_root = Path(__file__).resolve().parent.parent.parent
-    data_dir = project_root / 'data'
+    return f"sqlite:///{_sqlite_path().as_posix()}"
+
+
+def _sqlite_path() -> Path:
+    data_dir = Path(__file__).resolve().parent.parent.parent / 'data'
     data_dir.mkdir(exist_ok=True)
-    return f"sqlite:///{(data_dir / 'library.db').as_posix()}"
+    return data_dir / 'library.db'
 
 
 def get_engine():
     global _engine, _Session
     if _engine is None:
         url = _database_url()
+        missing = url.startswith('sqlite') and not _sqlite_path().exists()
         kwargs = {'pool_pre_ping': True, 'future': True}
         if url.startswith('sqlite'):
             kwargs['connect_args'] = {'check_same_thread': False}
@@ -56,11 +66,10 @@ def get_engine():
         _Session = sessionmaker(bind=_engine, expire_on_commit=False, future=True)
         backend = 'postgres' if url.startswith('postgresql') else 'sqlite'
         print(f"[library] database: {backend}")
-        if backend == 'sqlite' and os.environ.get('RENDER'):
-            # Render sets RENDER; there, SQLite means DATABASE_URL is missing and the
-            # site is about to serve an empty library
-            print('[library] *** WARNING: DATABASE_URL is not set on Render; '
-                  'the site is running on an EMPTY database', flush=True)
+        if missing:
+            # no Postgres and no bundled file: the site is about to serve an empty library
+            print('[library] *** WARNING: neither DATABASE_URL nor data/library.db; '
+                  'the library is EMPTY', flush=True)
     return _engine
 
 

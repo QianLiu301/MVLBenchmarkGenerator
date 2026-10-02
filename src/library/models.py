@@ -14,7 +14,7 @@ from datetime import datetime
 
 from sqlalchemy import (BigInteger, Column, DateTime, ForeignKey, Integer, JSON, String,
                         Text, UniqueConstraint)
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import deferred, relationship
 
 from .db import Base
 
@@ -118,7 +118,13 @@ class Implementation(Base):
                           nullable=False, index=True)
     language = Column(String(16), nullable=False, index=True)
     filename = Column(String(128), nullable=False)
-    code = Column(Text, nullable=False)
+    # The three large columns (code ~10 KB, log ~8 KB, report ~2 KB per row) are
+    # deferred: loaded only when a page actually reads them. List pages load every
+    # implementation of every benchmark just for the language badges; with these
+    # columns included a browse page moved ~5 MB from the database, and crawlers
+    # walking the filter URLs used Neon's whole 5 GB monthly transfer in a day
+    # (2026-10-02).
+    code = deferred(Column(Text, nullable=False))
     sha256 = Column(String(64), nullable=False, index=True)
     source = Column(String(24), nullable=False, default='llm-generated', index=True)
     provider = Column(String(32))
@@ -140,8 +146,8 @@ class Implementation(Base):
     # Verification record
     verification_strength = Column(String(48))   # "random(N=50, seed=42)" / "exhaustive" / "bounded-formal"
     verification_meta = Column(JSON)             # {tools: {gcc: "15.2.0"...}, golden_model: "1.0", strategies: {...}}
-    verification_report = Column(JSON)           # ValidationReport.summary() (strategy A) + strategy B summary
-    verification_log = Column(Text)              # raw simulator output (truncated)
+    verification_report = deferred(Column(JSON))  # ValidationReport.summary() (strategy A) + strategy B summary
+    verification_log = deferred(Column(Text))     # raw simulator output (truncated)
     verified_at = Column(DateTime)
 
     # Provenance
