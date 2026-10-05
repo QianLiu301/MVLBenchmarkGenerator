@@ -1,7 +1,10 @@
 """Submission pipeline: manifest schema → lint → simulation vs golden → formal →
 LLM review → dedup → maintainer approval.
 
-A submission is a manifest.json plus one code file per language. Steps 1–6 run
+A submission is a manifest.json plus code files in any language. Files in a
+language with a checker (models.LANGUAGES) must pass the reference-model check;
+files in any other language are linted as text only and, if a maintainer approves
+them, published marked 'no checker' (never counted as verified). Steps 1–6 run
 automatically in a background thread right after upload; the last step is a
 human decision in /admin. Every step records status + log so the submitter's
 status page and the admin queue show the same evidence.
@@ -18,12 +21,17 @@ from sqlalchemy import select
 
 from . import service
 from .db import session_scope
-from .models import (LANGUAGE_EXT, LANGUAGES, MODULE_TYPES, PIPELINE_STEPS, PIPELINE_STEPS_SHOWN,
-                     Submission, Implementation)
+from .models import (LANGUAGE_EXT, LANGUAGES, MAX_LANGUAGE_NAME, MODULE_TYPES, NO_CHECKER, PIPELINE_STEPS,
+                     PIPELINE_STEPS_SHOWN, Submission, Implementation, checked_language)
 
 MAX_FILE_BYTES = 512 * 1024
 MAX_FILES = 8
 OPERATIONS = ['ADD', 'SUB', 'MUL', 'NEG', 'INC', 'DEC']
+FILENAME_PATTERN = r"^[A-Za-z0-9_.-]+\.[A-Za-z0-9]{1,10}$"
+# A file with one of these extensions is checked in that language; it cannot be
+# declared as a language without a checker (.cpp is also plain C++, so not listed).
+_CHECKED_EXT = {'.py': 'python', '.c': 'c', '.v': 'verilog', '.sv': 'systemverilog',
+                '.vhd': 'vhdl', '.vhdl': 'vhdl'}
 
 # JSON Schema (draft-07 subset) — also served to the browser for pre-validation.
 MANIFEST_SCHEMA = {
@@ -47,9 +55,10 @@ MANIFEST_SCHEMA = {
         "files": {"type": "array", "minItems": 1, "maxItems": MAX_FILES,
                   "items": {"type": "object", "required": ["filename", "language"],
                             "additionalProperties": False,
-                            "properties": {"filename": {"type": "string", "pattern": r"^[A-Za-z0-9_.-]+\.("
-                                                        + '|'.join(e.lstrip('.') for e in LANGUAGE_EXT.values()) + r")$"},
-                                           "language": {"type": "string", "enum": list(LANGUAGES.keys())},
+                            "properties": {"filename": {"type": "string", "pattern": FILENAME_PATTERN},
+                                           "language": {"type": "string", "minLength": 1,
+                                                        "maxLength": MAX_LANGUAGE_NAME,
+                                                        "pattern": r"^[A-Za-z][A-Za-z0-9+#._ -]*$"},
                                            "notes": {"type": "string", "maxLength": 1000}}}},
         "source": {"type": "string", "enum": ["human-authored", "llm-generated", "reference"]},
         "generator": {"type": "object", "additionalProperties": False,
@@ -151,9 +160,13 @@ def validate_manifest(manifest: Dict, files: Dict[str, str]) -> List[str]:
         if name not in declared:
             errs.append(f"uploaded file '{name}' is not declared in manifest.files")
     for f in manifest['files']:
-        ext = LANGUAGE_EXT[f['language']]
-        if not f['filename'].endswith(ext):
-            errs.append(f"file '{f['filename']}': language {f['language']} expects extension {ext}")
+        lang = checked_language(f['language'])
+        ext = '.' + f['filename'].rsplit('.', 1)[-1].lower()
+        if lang and not f['filename'].endswith(LANGUAGE_EXT[lang]):
+            errs.append(f"file '{f['filename']}': language {f['language']} expects extension {LANGUAGE_EXT[lang]}")
+        elif not lang and ext in _CHECKED_EXT:
+            errs.append(f"file '{f['filename']}': {ext} files are checked as {LANGUAGES[_CHECKED_EXT[ext]]}"
+                        f" — declare that language, or use the usual extension of {f['language']}")
     if manifest.get('source') == 'llm-generated' and not (manifest.get('generator') or {}).get('model'):
         errs.append("generator.model is required when source is llm-generated")
     return errs
@@ -190,6 +203,8 @@ def lint_file(name: str, code: str, language: str) -> List[str]:
         errs.append(f"{name}: binary content")
     if re.search(r'[^\x09\x0a\x0d\x20-\x7e -￿]', code):
         errs.append(f"{name}: control characters")
+    if language not in _REQUIRED:      # no checker: the file is never compiled or run
+        return errs
     req, what = _REQUIRED[language]
     if not re.search(req, code):
         errs.append(f"{name}: expected {what}")
@@ -213,6 +228,9 @@ def _set_step(sub: Submission, step: str, status: str, log: str = '', detail=Non
 def create_submission(manifest: Dict, files: Dict[str, str]) -> Tuple[Optional[str], List[str]]:
     """Validate schema (step 1) synchronously, store, and start the async steps."""
     errs = validate_manifest(manifest, files)
+    if not errs:   # 'Verilog', 'py' … → the checker's key; other languages keep their declared name
+        for f in manifest['files']:
+            f['language'] = checked_language(f['language']) or f['language'].strip()
     with session_scope() as s:
         sub = Submission(
             token=secrets.token_urlsafe(12), manifest=manifest, files=files,
@@ -273,7 +291,17 @@ def run_pipeline(sub_id: int):
         results = {}
         logs = []
         all_ok = True
+        unchecked = []
         for f in manifest['files']:
+            if f['language'] not in LANGUAGES:
+                results[f['filename']] = {'golden_status': NO_CHECKER, 'sim_status': 'unverified',
+                                          'golden_passed': 0, 'golden_compared': 0,
+                                          'sha256': service.sha256(files[f['filename']]),
+                                          'verification_meta': {'checker': None}}
+                unchecked.append(f['filename'])
+                logs.append(f"{f['filename']}: no checker for {f['language']} — not compiled or simulated; "
+                            f"if approved, published marked 'no checker'")
+                continue
             with contextlib.redirect_stdout(io.StringIO()):
                 m = service.verify_code(files[f['filename']], f['language'], manifest['k_value'],
                                         manifest['bitwidth'], validator)
@@ -289,8 +317,9 @@ def run_pipeline(sub_id: int):
                 f" — injected-vector harness did not run ({b_status}); see the harness interface in the format, section 4"
             logs.append(f"{f['filename']}: sim={m['sim_status']} golden={m['golden_status']} "
                         f"{m['golden_passed']}/{m['golden_compared']} [{m['verification_strength']}]{note}")
+        sim_status = 'skipped' if len(unchecked) == len(manifest['files']) else ('pass' if all_ok else 'fail')
         update(lambda sub: (setattr(sub, 'results', results),
-                            _set_step(sub, 'simulation', 'pass' if all_ok else 'fail', '\n'.join(logs))))
+                            _set_step(sub, 'simulation', sim_status, '\n'.join(logs))))
         if not all_ok:
             update(lambda sub: setattr(sub, 'status', 'failed'))
             _skip_rest(sub_id, after='simulation')
@@ -356,7 +385,7 @@ def approve(sub_id: int, reason: str, actor: str = 'maintainer') -> str:
             if metrics.get('verified_at'):
                 metrics['verified_at'] = datetime.fromisoformat(metrics['verified_at'])
             impl = service.add_implementation(
-                s, bm, f['language'], sub.files[f['filename']],
+                s, bm, f['language'], sub.files[f['filename']], ext='.' + f['filename'].rsplit('.', 1)[-1],
                 source=m.get('source', 'human-authored'), provider=gen.get('provider') or None,
                 model_requested=gen.get('model') or None, model_responded=gen.get('model') or None,
                 prompt_hash=gen.get('prompt_sha256') or None, metrics=metrics, submitter=submitter,
@@ -425,8 +454,12 @@ def outcome(sub: Submission) -> Dict:
                 'why': (steps.get(failed) or {}).get('log', '').strip().splitlines()[0] if (steps.get(failed) or {}).get('log') else 'see the step log',
                 'next': hints.get(failed, 'See the step log, then submit again.')}
     if sub.status == 'awaiting_review':
+        unchecked = sorted({f['language'] for f in (sub.manifest or {}).get('files', [])
+                            if f['language'] not in LANGUAGES})
+        note = (f" There is no checker for {', '.join(unchecked)}: those files were not simulated and, "
+                f"if approved, are published marked 'no checker'.") if unchecked else ''
         return {'label': 'Awaiting maintainer decision', 'tone': 'warn',
-                'why': f'All automated checks (steps 1–{len(PIPELINE_STEPS_SHOWN) - 1}) passed.',
+                'why': f'All automated checks (steps 1–{len(PIPELINE_STEPS_SHOWN) - 1}) passed.{note}',
                 'next': 'A maintainer decides within 14 days. Bookmark this page; no e-mail is sent.'}
     return {'label': 'Automated checks running', 'tone': 'warn',
             'why': f'Steps 1–{len(PIPELINE_STEPS_SHOWN) - 1} are being executed.',

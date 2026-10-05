@@ -19,7 +19,7 @@ from .db import session_scope
 from .review_mode import ANONYMOUS_REVIEW
 from .models import (Benchmark, Implementation, LANGUAGES, LANGUAGE_EXT,
                      LICENSE_ID, MODULE_TYPES, ReviewEvent, SOURCES,
-                     GOLDEN_MODEL_VERSION)
+                     GOLDEN_MODEL_VERSION, NO_CHECKER)
 
 try:
     from galois_field import resolve_logic_type
@@ -252,8 +252,8 @@ def count_test_vectors(code: str, language: str) -> int:
     return sum(1 for line in code.split('\n') if any(i in line.lower() for i in inds))
 
 
-def filename_for(slug: str, language: str) -> str:
-    return f"{slug}{LANGUAGE_EXT.get(language, '.txt')}"
+def filename_for(slug: str, language: str, ext: Optional[str] = None) -> str:
+    return f"{slug}{LANGUAGE_EXT.get(language) or ext or '.txt'}"
 
 
 def sha256(text: str) -> str:
@@ -420,7 +420,7 @@ def add_implementation(session, benchmark: Benchmark, language: str, code: str, 
                        model_requested: str = None, model_responded: str = None,
                        prompt_hash: str = None, metrics: Optional[Dict] = None,
                        submitter: Optional[Dict] = None, notes: str = '',
-                       status: str = 'published') -> Optional[Implementation]:
+                       status: str = 'published', ext: Optional[str] = None) -> Optional[Implementation]:
     """Insert one implementation; returns None if identical code is already stored."""
     digest = sha256(code)
     for existing in benchmark.implementations:
@@ -431,7 +431,7 @@ def add_implementation(session, benchmark: Benchmark, language: str, code: str, 
     impl = Implementation(
         benchmark=benchmark,
         language=language,
-        filename=filename_for(benchmark.slug, language),
+        filename=filename_for(benchmark.slug, language, ext),
         code=code,
         sha256=digest,
         source=source,
@@ -569,7 +569,9 @@ def _apply_filters(stmt, filters: Dict):
             sub = sub.where(Implementation.golden_status == 'PASS')
         elif verified in ('0', 0, 'false'):
             # "did not pass": the spec has an implementation that failed the check
-            sub = sub.where(Implementation.golden_status != 'PASS')
+            sub = sub.where(Implementation.golden_status.notin_(('PASS', NO_CHECKER)))
+        elif verified == 'n':
+            sub = sub.where(Implementation.golden_status == NO_CHECKER)
         if model and not ANONYMOUS_REVIEW:     # no filtering by model while models are withheld
             sub = sub.where(Implementation.model_responded == model)
         stmt = stmt.where(Benchmark.id.in_(sub))
@@ -644,9 +646,15 @@ def facets(session) -> Dict:
         select(func.count(func.distinct(Implementation.benchmark_id)), func.count())
         .join(Benchmark, Benchmark.id == Implementation.benchmark_id)
         .where(Implementation.status == 'published', pub,
-               Implementation.golden_status != 'PASS')).one()
+               Implementation.golden_status.notin_(('PASS', NO_CHECKER)))).one()
     out['verified'] = [{'value': '1', 'specs': specs_v, 'impls': impls_v},
                        {'value': '0', 'specs': specs_u, 'impls': impls_u}]
+    specs_n, impls_n = session.execute(
+        select(func.count(func.distinct(Implementation.benchmark_id)), func.count())
+        .join(Benchmark, Benchmark.id == Implementation.benchmark_id)
+        .where(Implementation.status == 'published', pub, Implementation.golden_status == NO_CHECKER)).one()
+    if impls_n:
+        out['verified'].append({'value': 'n', 'specs': specs_n, 'impls': impls_n})
     out['model'] = [{'value': v, 'specs': sp, 'impls': im} for v, sp, im in session.execute(
         select(Implementation.model_responded,
                func.count(func.distinct(Implementation.benchmark_id)), func.count())
@@ -694,11 +702,16 @@ def home_categories(session) -> Dict:
     languages = [{'label': label, 'count': lang_rows[code]['impls'],
                   'url_args': {'language': code}}
                  for code, label in LANGUAGES.items() if code in lang_rows]
+    languages += [{'label': code, 'count': row['impls'], 'url_args': {'language': code}}
+                  for code, row in sorted(lang_rows.items()) if code not in LANGUAGES]
     ver = by_value(f['verified'])
     verification = [{'label': 'Verified', 'count': ver.get('1', {}).get('impls', 0),
                      'url_args': {'verified': '1'}},
                     {'label': 'Did not pass', 'count': ver.get('0', {}).get('impls', 0),
                      'url_args': {'verified': '0'}}]
+    if 'n' in ver:
+        verification.append({'label': 'No checker for the language', 'count': ver['n']['impls'],
+                             'url_args': {'verified': 'n'}})
     sources = [{'label': SOURCES.get(r['value'], r['value']), 'count': r['impls'],
                 'url_args': {'source': r['value']}} for r in f['source']]
     models = [{'label': r['value'], 'count': r['impls'], 'url_args': {'model': r['value']}}
@@ -995,7 +1008,7 @@ def api_benchmark(benchmark: Benchmark, base_url: str = 'https://llm-mvl.com',
     out['implementation_count'] = len(impls)
     out['verified_count'] = sum(1 for i in impls if i.golden_status == 'PASS')
     present = {i.language for i in impls}
-    out['languages'] = [l for l in LANGUAGES if l in present]
+    out['languages'] = [l for l in LANGUAGES if l in present] + sorted(present - set(LANGUAGES))
     if with_implementations:
         out['implementations'] = [{
             'id': i.id,

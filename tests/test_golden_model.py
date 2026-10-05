@@ -37,7 +37,7 @@ from golden_model import (GoldenModel, OP_ADD, OP_SUB, OP_MUL, OP_NEG,    # noqa
                           OP_INC, OP_DEC)
 
 MODULAR_CASES = [(2, 8), (3, 4), (3, 8), (5, 4), (6, 4), (7, 3), (2, 14), (3, 14), (7, 14)]
-FIELD_CASES = [(4, 1), (4, 2), (4, 4), (4, 8), (4, 14)]
+FIELD_CASES = [(4, 1), (4, 2), (4, 4), (4, 8), (4, 14), (8, 2), (8, 4), (8, 8), (9, 2), (9, 4), (9, 8)]
 OPS = [OP_ADD, OP_SUB, OP_MUL, OP_NEG, OP_INC, OP_DEC]
 
 
@@ -206,7 +206,7 @@ def test_field_family_matches_polynomial_ring(k, n):
             assert r.zero == (r.result == 0)
 
 
-@pytest.mark.parametrize('k,n', [(4, 2), (4, 3)])
+@pytest.mark.parametrize('k,n', [(4, 2), (4, 3), (8, 2), (9, 2)])
 def test_field_family_ring_axioms(k, n):
     g = GoldenModel(k, n)
     mod = k ** n

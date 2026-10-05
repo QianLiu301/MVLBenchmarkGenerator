@@ -135,7 +135,7 @@
                     <div class="badges">
                     {% for lang, st in b.language_status().items() %}
                         {% set of_lang = b.published_implementations|selectattr('language', 'equalto', lang)|list %}
-                        <span class="badge {{ st }}" title="{{ language_labels[lang] }}: {{ {'verified': 'verified against the reference model', 'pending': 'pending review', 'unverified': 'did not pass the reference-model check'}[st] }}{% if of_lang|length > 1 %} · {{ of_lang|length }} implementations{% endif %}"><span class="dot"></span>{{ language_labels[lang] }}</span>
+                        <span class="badge {{ st }}" title="{{ language_labels[lang] }}: {{ {'verified': 'verified against the reference model', 'pending': 'pending review', 'unchecked': 'no checker for this language yet', 'unverified': 'did not pass the reference-model check'}[st] }}{% if of_lang|length > 1 %} · {{ of_lang|length }} implementations{% endif %}"><span class="dot"></span>{{ language_labels[lang] }}</span>
                     {% endfor %}
                     </div>
                 </td>
@@ -146,7 +146,7 @@
     </table>
     </div>
     <div class="table-foot">
-        <span class="legend-line"><span class="badge verified"><span class="dot"></span>Teal badge</span> verified against the reference model · <span class="badge pending"><span class="dot"></span>Amber badge</span> pending review · <span class="badge unverified"><span class="dot"></span>Grey badge</span> did not pass</span>
+        <span class="legend-line"><span class="badge verified"><span class="dot"></span>Teal badge</span> verified against the reference model · <span class="badge pending"><span class="dot"></span>Amber badge</span> pending review · <span class="badge unverified"><span class="dot"></span>Grey badge</span> did not pass · <span class="badge unchecked"><span class="dot"></span>Dashed badge</span> no checker for the language yet</span>
         <a href="{{ url_for('library.browse', module_type=module) if module else url_for('library.browse') }}">View all benchmarks</a>
     </div>
     {% else %}

@@ -61,7 +61,7 @@
         <button role="tab" data-tab="{{ lang }}" class="{{ 'active' if loop.first }}">
             {{ language_labels[lang] }}{% if of_lang|length > 1 %} <span class="muted">×{{ of_lang|length }}</span>{% endif %}
             {% set ok = of_lang|selectattr('golden_status', 'equalto', 'PASS')|list|length %}
-            <span class="badge {{ 'verified' if ok else ('pending' if of_lang[0].golden_status == 'unverified' else 'unverified') }}"><span class="dot"></span>{{ ok }}/{{ of_lang|length }}</span>
+            <span class="badge {{ 'verified' if ok else of_lang[0].state }}"><span class="dot"></span>{{ ok }}/{{ of_lang|length }}</span>
         </button>
         {% endfor %}
     </div>
@@ -74,6 +74,7 @@
                 · {{ i.loc }} lines · {{ i.test_vectors }} test vectors
                 {% if i.golden_status == 'PASS' %}<span class="tag ok"><i data-lucide="check" class="icon-sm icon"></i> PASS {{ i.golden_passed }}/{{ i.golden_compared }}</span>
                 {% elif i.golden_status == 'unverified' %}<span class="tag">unverified</span>
+                {% elif i.golden_status == 'NO_CHECKER' %}<span class="tag" title="no checker exists for {{ i.language_label }} yet">no checker</span>
                 {% else %}<span class="tag err"><i data-lucide="x" class="icon-sm icon"></i> {{ i.golden_status.replace('_', ' ') }}</span>{% endif %}
             </div>
             <div class="detail-actions">
@@ -98,8 +99,13 @@
     <details {{ 'open' if loop.first }} style="margin-bottom:8px">
         <summary style="cursor:pointer;font-weight:600;display:flex;gap:10px;align-items:center;padding:6px 0">
             <span class="mono">{{ i.filename }}</span>
-            {% if i.golden_status == 'PASS' %}<span class="tag ok">PASS</span>{% elif i.golden_status == 'unverified' %}<span class="tag">unverified</span>{% else %}<span class="tag err">{{ i.golden_status.replace('_',' ') }}</span>{% endif %}
+            {% if i.golden_status == 'PASS' %}<span class="tag ok">PASS</span>{% elif i.golden_status == 'unverified' %}<span class="tag">unverified</span>{% elif i.golden_status == 'NO_CHECKER' %}<span class="tag">no checker</span>{% else %}<span class="tag err">{{ i.golden_status.replace('_',' ') }}</span>{% endif %}
         </summary>
+        {% if i.golden_status == 'NO_CHECKER' %}
+        <p class="small" style="padding:8px 0 12px;margin:0">Not verified: the library has no checker for {{ i.language_label }} yet, so this file
+            was neither compiled nor simulated. It was published after a maintainer's review and is not counted as verified.
+            It will be checked once a checker for the language exists.<br><span class="muted">SHA-256 <span class="mono">{{ i.sha256 }}</span></span></p>
+        {% else %}
         <dl class="record" style="padding:8px 0 12px">
             <dt>Strength</dt><dd class="mono">{{ i.verification_strength or 'self-reported' }}</dd>
             <dt>Result</dt><dd>{{ i.golden_passed }}/{{ i.golden_compared }} vectors match the reference model
@@ -111,6 +117,7 @@
             <dt>Verified at</dt><dd>{{ i.verified_at.strftime('%Y-%m-%d %H:%M UTC') if i.verified_at else '—' }}</dd>
             <dt>Log</dt><dd><a href="{{ url_for('library.view_log', slug=b.slug, impl_id=i.id) }}" target="_blank" rel="noopener">simulation log</a> · <a href="{{ url_for('library.view_code', slug=b.slug, impl_id=i.id) }}">mismatch details</a></dd>
         </dl>
+        {% endif %}
     </details>
     {% else %}
     <p class="muted small">No implementations to verify.</p>

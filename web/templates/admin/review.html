@@ -28,10 +28,10 @@
         {% for name, r in sub.results.items() %}
         <tr>
             <td class="mono">{{ name }}</td>
-            <td><span class="tag {{ 'ok' if r.sim_status == 'pass' else 'err' }}">{{ r.sim_status }}</span></td>
-            <td><span class="tag {{ 'ok' if r.golden_status == 'PASS' else 'err' }}">{{ r.golden_status.replace('_',' ') }}</span></td>
-            <td class="num">{{ r.golden_passed }}/{{ r.golden_compared }}</td>
-            <td class="mono small">{{ r.verification_strength }}</td>
+            <td>{% if r.golden_status == 'NO_CHECKER' %}<span class="tag">not run</span>{% else %}<span class="tag {{ 'ok' if r.sim_status == 'pass' else 'err' }}">{{ r.sim_status }}</span>{% endif %}</td>
+            <td><span class="tag {{ 'ok' if r.golden_status == 'PASS' else ('' if r.golden_status == 'NO_CHECKER' else 'err') }}">{{ 'no checker' if r.golden_status == 'NO_CHECKER' else r.golden_status.replace('_',' ') }}</span></td>
+            <td class="num">{% if r.golden_status == 'NO_CHECKER' %}—{% else %}{{ r.golden_passed }}/{{ r.golden_compared }}{% endif %}</td>
+            <td class="mono small">{{ r.verification_strength or '—' }}</td>
             <td class="mono small">{{ r.sha256[:16] }}…</td>
         </tr>
         {% endfor %}

@@ -34,10 +34,37 @@ MODULE_ICONS = {'alu': 'cpu', 'register': 'database', 'cpu-risc-v': 'microchip'}
 PUBLISHED = 'published'
 # Also the display order wherever a list of languages is shown: dicts keep
 # insertion order, and pages iterate over these.
-LANGUAGES = {'python': 'Python', 'c': 'C', 'systemc': 'SystemC',
-             'verilog': 'Verilog', 'systemverilog': 'SystemVerilog', 'vhdl': 'VHDL'}
+# These are the languages with a checker (compiler/simulator + harness); a
+# submission may use any other language, which is published marked 'no checker'.
+
+
+class _Labels(dict):
+    """Language labels; a language without a checker is shown under its own name."""
+    def __missing__(self, key):
+        return key
+
+
+LANGUAGES = _Labels({'python': 'Python', 'c': 'C', 'systemc': 'SystemC',
+                     'verilog': 'Verilog', 'systemverilog': 'SystemVerilog', 'vhdl': 'VHDL'})
 LANGUAGE_EXT = {'python': '.py', 'c': '.c', 'systemc': '.cpp',
                 'verilog': '.v', 'systemverilog': '.sv', 'vhdl': '.vhd'}
+_LANGUAGE_ALIASES = {'py': 'python', 'python3': 'python', 'sv': 'systemverilog',
+                     'system verilog': 'systemverilog', 'vhd': 'vhdl'}
+MAX_LANGUAGE_NAME = 16
+# golden_status of a file in a language without a checker: never compiled or simulated
+NO_CHECKER = 'NO_CHECKER'
+
+
+def checked_language(name: str):
+    """The LANGUAGES key that `name` denotes ('Verilog', 'py' …), or None if no checker exists."""
+    n = (name or '').strip().lower()
+    if n in LANGUAGES:
+        return n
+    for key, label in LANGUAGES.items():
+        if label.lower() == n:
+            return key
+    return _LANGUAGE_ALIASES.get(n)
+
 SOURCES = {
     'llm-generated': 'LLM-generated',
     'human-authored': 'Human-authored',
@@ -104,12 +131,12 @@ class Benchmark(Base):
         return [i for i in self.implementations if i.status == 'published']
 
     def language_status(self):
-        """{language: 'verified' | 'pending' | 'unverified'} for the browse badges."""
+        """{language: 'verified' | 'pending' | 'unchecked' | 'unverified'} for the browse badges."""
         out = {}
         for i in self.published_implementations:
             cur = out.get(i.language)
-            st = 'verified' if i.golden_status == 'PASS' else ('pending' if i.golden_status == 'unverified' else 'unverified')
-            rank = {'verified': 2, 'pending': 1, 'unverified': 0}
+            st = i.state
+            rank = {'verified': 3, 'pending': 2, 'unchecked': 1, 'unverified': 0}
             if cur is None or rank[st] > rank[cur]:
                 out[i.language] = st
         return out
@@ -182,11 +209,13 @@ class Implementation(Base):
 
     @property
     def state(self) -> str:
-        """verified / pending / unverified — the three legend states."""
+        """verified / pending / unchecked / unverified — the legend states."""
         if self.golden_status == 'PASS':
             return 'verified'
         if self.golden_status == 'unverified':
             return 'pending'
+        if self.golden_status == NO_CHECKER:
+            return 'unchecked'
         return 'unverified'
 
 

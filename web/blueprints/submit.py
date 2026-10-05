@@ -1,5 +1,6 @@
 """Public submission: form, manifest template/schema, status page with the pipeline steps."""
 import json
+import re
 from pathlib import Path
 
 from flask import (Blueprint, Response, abort, jsonify, render_template, request)
@@ -10,8 +11,8 @@ from library.models import LANGUAGE_EXT, LANGUAGES, MODULE_TYPES, PIPELINE_STEPS
 
 bp = Blueprint('submit', __name__)
 
-# every language the library can verify; the form and the schema read the same table
-_ALLOWED_EXT = tuple(LANGUAGE_EXT.values())
+# Any language is accepted (files are stored as text; only languages with a checker
+# are compiled and run); the manifest names each file's language.
 
 
 @bp.route('/submit')
@@ -58,8 +59,9 @@ def api_submit():
         if name.lower() == 'manifest.json':
             manifest_raw = data
             continue
-        if not name.lower().endswith(_ALLOWED_EXT):
-            return jsonify({'ok': False, 'errors': [f"{name}: only {' '.join(_ALLOWED_EXT)} files (and manifest.json) are accepted"]}), 400
+        if not re.match(submissions.FILENAME_PATTERN, name):
+            return jsonify({'ok': False, 'errors': [f"{name}: file names need an extension and only "
+                                                    f"letters, digits, '_', '.' and '-'"]}), 400
         if len(data) > submissions.MAX_FILE_BYTES:
             return jsonify({'ok': False, 'errors': [f"{name}: larger than {submissions.MAX_FILE_BYTES // 1024} KB"]}), 400
         try:

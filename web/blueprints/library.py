@@ -228,7 +228,7 @@ def format():
 
 @bp.route('/review-process')
 def review():
-    return render_template('library/review.html')
+    return render_template('library/review.html', **_LABELS)
 
 
 @bp.route('/acknowledgements')
