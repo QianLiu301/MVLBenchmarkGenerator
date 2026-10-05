@@ -55,8 +55,8 @@
     </div>
     <p class="small muted" style="margin:10px 0 0">This example passes every check. Replace the code with your own design,
         put your name in the manifest, and drop both files below. Any of {{ language_labels.values()|join(', ') }} works the same way.
-        Files in any other language are accepted too: they cannot be simulated yet, so they are published marked
-        <em>no checker</em> after a maintainer's review and are not counted as verified.</p>
+        Files in any other language are accepted too; they cannot be simulated yet, so after a maintainer's
+        review they are published as not verified.</p>
 </details>
 
 <div class="home-two">
@@ -79,7 +79,7 @@
         <div class="section-title"><i data-lucide="book-open" class="icon"></i> What the manifest needs</div>
         <ul class="prose" style="font-size:.88rem">
             <li><span class="mono">module_type</span>, <span class="mono">k_value</span>, <span class="mono">bitwidth</span>, <span class="mono">operations</span> — define the spec; the name is derived (<span class="mono">alu_k3_8t</span>).</li>
-            <li><span class="mono">files[]</span> — filename + language for every uploaded source file. Checked against the reference model: {{ language_labels.values()|join(', ') }}. Any other language (e.g. <span class="mono">Chisel</span>, <span class="mono">Haskell</span>) is published marked <em>no checker</em>.</li>
+            <li><span class="mono">files[]</span> — filename + language for every uploaded source file. Checked against the reference model: {{ language_labels.values()|join(', ') }}. Any other language (e.g. <span class="mono">Chisel</span>, <span class="mono">Haskell</span>) is accepted and published as not verified.</li>
             <li><span class="mono">source</span> — <span class="mono">human-authored</span>, <span class="mono">llm-generated</span> (then <span class="mono">generator.model</span> is required) or <span class="mono">reference</span>.</li>
             <li><span class="mono">submitter</span> — name, e-mail, affiliation; shown as provenance.</li>
             <li><span class="mono">license</span> — must be <span class="mono">CC-BY-4.0</span>: by submitting you agree to publish under this license.</li>

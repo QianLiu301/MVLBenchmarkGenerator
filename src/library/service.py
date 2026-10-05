@@ -19,7 +19,7 @@ from .db import session_scope
 from .review_mode import ANONYMOUS_REVIEW
 from .models import (Benchmark, Implementation, LANGUAGES, LANGUAGE_EXT,
                      LICENSE_ID, MODULE_TYPES, ReviewEvent, SOURCES,
-                     GOLDEN_MODEL_VERSION, NO_CHECKER)
+                     GOLDEN_MODEL_VERSION)
 
 try:
     from galois_field import resolve_logic_type
@@ -569,9 +569,7 @@ def _apply_filters(stmt, filters: Dict):
             sub = sub.where(Implementation.golden_status == 'PASS')
         elif verified in ('0', 0, 'false'):
             # "did not pass": the spec has an implementation that failed the check
-            sub = sub.where(Implementation.golden_status.notin_(('PASS', NO_CHECKER)))
-        elif verified == 'n':
-            sub = sub.where(Implementation.golden_status == NO_CHECKER)
+            sub = sub.where(Implementation.golden_status != 'PASS')
         if model and not ANONYMOUS_REVIEW:     # no filtering by model while models are withheld
             sub = sub.where(Implementation.model_responded == model)
         stmt = stmt.where(Benchmark.id.in_(sub))
@@ -646,15 +644,9 @@ def facets(session) -> Dict:
         select(func.count(func.distinct(Implementation.benchmark_id)), func.count())
         .join(Benchmark, Benchmark.id == Implementation.benchmark_id)
         .where(Implementation.status == 'published', pub,
-               Implementation.golden_status.notin_(('PASS', NO_CHECKER)))).one()
+               Implementation.golden_status != 'PASS')).one()
     out['verified'] = [{'value': '1', 'specs': specs_v, 'impls': impls_v},
                        {'value': '0', 'specs': specs_u, 'impls': impls_u}]
-    specs_n, impls_n = session.execute(
-        select(func.count(func.distinct(Implementation.benchmark_id)), func.count())
-        .join(Benchmark, Benchmark.id == Implementation.benchmark_id)
-        .where(Implementation.status == 'published', pub, Implementation.golden_status == NO_CHECKER)).one()
-    if impls_n:
-        out['verified'].append({'value': 'n', 'specs': specs_n, 'impls': impls_n})
     out['model'] = [{'value': v, 'specs': sp, 'impls': im} for v, sp, im in session.execute(
         select(Implementation.model_responded,
                func.count(func.distinct(Implementation.benchmark_id)), func.count())
@@ -709,9 +701,6 @@ def home_categories(session) -> Dict:
                      'url_args': {'verified': '1'}},
                     {'label': 'Did not pass', 'count': ver.get('0', {}).get('impls', 0),
                      'url_args': {'verified': '0'}}]
-    if 'n' in ver:
-        verification.append({'label': 'No checker for the language', 'count': ver['n']['impls'],
-                             'url_args': {'verified': 'n'}})
     sources = [{'label': SOURCES.get(r['value'], r['value']), 'count': r['impls'],
                 'url_args': {'source': r['value']}} for r in f['source']]
     models = [{'label': r['value'], 'count': r['impls'], 'url_args': {'model': r['value']}}

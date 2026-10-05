@@ -33,7 +33,7 @@
                 <td>Compiles; the run exits normally; <strong>100 % of vectors in A and B match the reference model</strong> — result and Z/N/C flags.</td>
                 <td>Compile error; runtime error, crash or timeout; any single mismatching vector (<code>LOGIC_ERROR</code>); no parsable test output (<code>NO_OUTPUT</code>); the strategy-B harness cannot be built or run because the <a href="{{ url_for('library.format') }}#harness">harness interface</a> is not met.</td>
                 <td>Compiler/simulator log; the mismatching vectors (operation, a, b, obtained, expected); the strength label (<code>exhaustive</code> / <code>random(N, seed)</code> / <code>self-reported</code>).
-                    A file in a language without a checker is not run: it is marked <code>no checker</code> and this step does not reject it.</td></tr>
+                    A file in a language without a checker is not run, and this step does not reject it.</td></tr>
             <tr><td class="num">4</td><td>Formal (optional)</td>
                 <td>Reserved for equivalence checking of RTL against a reference.</td>
                 <td colspan="2">Not enabled yet — always <code>skipped</code>, never a reason for rejection.</td>
@@ -87,7 +87,7 @@
         Implementations may be written in any language. The reference-model check runs for
         {{ language_labels.values()|join(', ') }}. A file in any other language passes steps 1, 2 and 4 like any
         file (step 2 only as text), is not compiled or simulated in step 3, and — if a maintainer approves it —
-        is published with a dashed <em>no checker</em> badge. It is never counted as verified, and a file
+        is published as not verified. It is never counted as verified, and a file
         with the extension of a checked language (<code>.c</code>, <code>.py</code>, <code>.v</code>,
         <code>.sv</code>, <code>.vhd</code>) cannot be declared as another language. When a checker for a
         language is added, its files are checked and their badges change accordingly.

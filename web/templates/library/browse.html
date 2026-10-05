@@ -20,7 +20,7 @@
                 <span>
                     {%- if kind == 'k' %}k = {{ r.value }} · {{ radix_names.get(r.value, '') }}
                     {%- elif kind == 'digits' %}{{ r.value }} digits
-                    {%- elif kind == 'verified' %}{{ {'1': 'Verified', '0': 'Not verified', 'n': 'No checker'}.get(r.value|string, r.value) }}
+                    {%- elif kind == 'verified' %}{{ 'Verified' if r.value|string == '1' else 'Not verified' }}
                     {%- else %}{{ labels.get(r.value, r.value) }}{% endif -%}
                 </span>
                 <span class="n" title="{{ r.specs }} specs{% if dual %} · {{ r.impls }} implementations{% endif %}">{{ r.specs }}{% if dual %} · {{ r.impls }}{% endif %}</span>
@@ -174,7 +174,6 @@
             <span><span class="dot full"></span>verified</span>
             <span><span class="dot half"></span>pending</span>
             <span><span class="dot none"></span>unverified</span>
-            <span><span class="dot dashed"></span>no checker</span>
             <span class="muted">Hover a badge for the verification strength.</span>
         </div>
         {% if pages > 1 %}

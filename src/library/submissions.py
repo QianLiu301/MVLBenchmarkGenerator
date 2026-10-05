@@ -4,7 +4,7 @@ LLM review → dedup → maintainer approval.
 A submission is a manifest.json plus code files in any language. Files in a
 language with a checker (models.LANGUAGES) must pass the reference-model check;
 files in any other language are linted as text only and, if a maintainer approves
-them, published marked 'no checker' (never counted as verified). Steps 1–6 run
+them, published as not verified (golden_status NO_CHECKER). Steps 1–6 run
 automatically in a background thread right after upload; the last step is a
 human decision in /admin. Every step records status + log so the submitter's
 status page and the admin queue show the same evidence.
@@ -300,7 +300,7 @@ def run_pipeline(sub_id: int):
                                           'verification_meta': {'checker': None}}
                 unchecked.append(f['filename'])
                 logs.append(f"{f['filename']}: no checker for {f['language']} — not compiled or simulated; "
-                            f"if approved, published marked 'no checker'")
+                            f"if approved, published as not verified")
                 continue
             with contextlib.redirect_stdout(io.StringIO()):
                 m = service.verify_code(files[f['filename']], f['language'], manifest['k_value'],
@@ -457,7 +457,7 @@ def outcome(sub: Submission) -> Dict:
         unchecked = sorted({f['language'] for f in (sub.manifest or {}).get('files', [])
                             if f['language'] not in LANGUAGES})
         note = (f" There is no checker for {', '.join(unchecked)}: those files were not simulated and, "
-                f"if approved, are published marked 'no checker'.") if unchecked else ''
+                f"if approved, are published as not verified.") if unchecked else ''
         return {'label': 'Awaiting maintainer decision', 'tone': 'warn',
                 'why': f'All automated checks (steps 1–{len(PIPELINE_STEPS_SHOWN) - 1}) passed.{note}',
                 'next': 'A maintainer decides within 14 days. Bookmark this page; no e-mail is sent.'}

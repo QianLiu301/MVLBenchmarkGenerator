@@ -74,7 +74,7 @@
                 · {{ i.loc }} lines · {{ i.test_vectors }} test vectors
                 {% if i.golden_status == 'PASS' %}<span class="tag ok"><i data-lucide="check" class="icon-sm icon"></i> PASS {{ i.golden_passed }}/{{ i.golden_compared }}</span>
                 {% elif i.golden_status == 'unverified' %}<span class="tag">unverified</span>
-                {% elif i.golden_status == 'NO_CHECKER' %}<span class="tag" title="no checker exists for {{ i.language_label }} yet">no checker</span>
+                {% elif i.golden_status == 'NO_CHECKER' %}<span class="tag" title="no checker exists for {{ i.language_label }} yet">not verified</span>
                 {% else %}<span class="tag err"><i data-lucide="x" class="icon-sm icon"></i> {{ i.golden_status.replace('_', ' ') }}</span>{% endif %}
             </div>
             <div class="detail-actions">
@@ -99,7 +99,7 @@
     <details {{ 'open' if loop.first }} style="margin-bottom:8px">
         <summary style="cursor:pointer;font-weight:600;display:flex;gap:10px;align-items:center;padding:6px 0">
             <span class="mono">{{ i.filename }}</span>
-            {% if i.golden_status == 'PASS' %}<span class="tag ok">PASS</span>{% elif i.golden_status == 'unverified' %}<span class="tag">unverified</span>{% elif i.golden_status == 'NO_CHECKER' %}<span class="tag">no checker</span>{% else %}<span class="tag err">{{ i.golden_status.replace('_',' ') }}</span>{% endif %}
+            {% if i.golden_status == 'PASS' %}<span class="tag ok">PASS</span>{% elif i.golden_status == 'unverified' %}<span class="tag">unverified</span>{% elif i.golden_status == 'NO_CHECKER' %}<span class="tag">not verified</span>{% else %}<span class="tag err">{{ i.golden_status.replace('_',' ') }}</span>{% endif %}
         </summary>
         {% if i.golden_status == 'NO_CHECKER' %}
         <p class="small" style="padding:8px 0 12px;margin:0">Not verified: the library has no checker for {{ i.language_label }} yet, so this file
