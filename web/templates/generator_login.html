@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Password required — MVL Benchmark Generator</title>
+    <meta name="robots" content="noindex">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/library.css', v=asset_version) }}">
+    <script src="https://cdn.jsdelivr.net/npm/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+</head>
+<body>
+    {# Login for the generator on its own: no library header, links or footer #}
+    <main class="container">
+        <div class="card login-box">
+            <h1><i data-lucide="lock" class="icon"></i> MVL Benchmark Generator</h1>
+            <p class="small muted">The generator is open to reviewers only for the time being. Please enter the password you were given.</p>
+            {% with messages = get_flashed_messages(with_categories=true) %}
+            {% for category, message in messages %}<p class="small" style="color:var(--err-fg)">{{ message }}</p>{% endfor %}
+            {% endwith %}
+            <form method="post" action="{{ action }}">
+                <input type="hidden" name="next" value="{{ next_url }}">
+                <input type="password" name="password" placeholder="Password" autocomplete="current-password" autofocus required>
+                <button type="submit" class="btn btn-primary" style="width:100%">Enter</button>
+            </form>
+        </div>
+    </main>
+    <script>if (window.lucide) lucide.createIcons();</script>
+</body>
+</html>

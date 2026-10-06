@@ -3559,7 +3559,8 @@
     <script>
         (function () {
             if (window.lucide) lucide.createIcons();
-            const menu = document.getElementById('userMenu'); const btn = menu.querySelector('button');
+            const menu = document.getElementById('userMenu'); if (!menu) return;
+            const btn = menu.querySelector('button');
             btn.addEventListener('click', e => { e.stopPropagation(); btn.setAttribute('aria-expanded', menu.classList.toggle('open')); });
             document.addEventListener('click', () => menu.classList.remove('open'));
         })();

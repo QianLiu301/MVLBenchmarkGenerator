@@ -71,11 +71,17 @@ def test_separate_generator_password(app, monkeypatch):
     assert lib.post('/api/generate', json={'llm': 'gemini'}).status_code == 401
 
     gen = app.test_client()
+    login = gen.get('/site-login?next=/generate').get_data(as_text=True)
+    assert 'Library' not in login and 'library' not in login.replace('library.css', '')
     gen.post('/site-login', data={'password': 'test-gen', 'next': '/generate'})
-    assert gen.get('/generate').status_code == 200
-    assert gen.get('/library').status_code == 200
+    page = gen.get('/generate').get_data(as_text=True)
+    assert 'href="/library"' not in page and 'class="brand"' not in page and 'Maintainer' not in page
+    r = gen.get('/library')                                  # the library stays out of sight
+    assert r.status_code == 302 and r.headers['Location'].endswith('/generate')
+    assert gen.get('/api/v1/benchmarks').status_code == 404
     assert gen.get('/admin/').status_code == 302
     assert gen.post('/api/generate', json={'llm': 'deepseek'}).status_code == 403
 
     lib.post('/login', data={'password': 'test-gen', 'next': '/generate'})   # a library reviewer given both
-    assert lib.get('/generate').status_code == 200
+    page = lib.get('/generate').get_data(as_text=True)
+    assert 'href="/library"' in page                         # keeps the full navigation

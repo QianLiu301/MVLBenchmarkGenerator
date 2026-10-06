@@ -63,6 +63,18 @@ def can_generate() -> bool:
     return bool(review_password()) and review_password() == SITE_PASSWORD and bool(session.get('site_ok'))
 
 
+def generator_only() -> bool:
+    """A reviewer of the generator paper: signed in with GENERATOR_PASSWORD only. The
+    generator is then shown on its own, without the library around it."""
+    return bool(session.get('gen_ok')) and not session.get('site_ok') and not is_authed()
+
+
+# What a generator-only session may reach: the page, the API calls it makes, sign-out.
+_GENERATOR_PATHS = ('/generate', '/logout', '/api/status', '/api/tools', '/api/check-tools',
+                    '/api/generate', '/api/generate-stream', '/api/validate', '/api/validate-b',
+                    '/api/validate-both', '/api/run-simulation', '/api/download-zip')
+
+
 def require_generator(view):
     @wraps(view)
     def wrapped(*args, **kwargs):
@@ -90,14 +102,17 @@ def login():
         flash('Incorrect password. Please try again.', 'error')
     if is_authed() or (can_generate() and next_url.startswith('/generate')):
         return redirect(next_url)
+    if next_url.startswith('/generate'):
+        return render_template('generator_login.html', next_url=next_url, action=url_for('auth.login'))
     return render_template('login.html', next_url=next_url)
 
 
 @bp.route('/logout')
 def logout():
+    gen_only = generator_only()
     session.pop('authed', None)
     session.pop('gen_ok', None)
-    return redirect(url_for('library.home'))
+    return redirect(url_for('generate_page') if gen_only else url_for('library.home'))
 
 
 # ----------------------------------------------------------------------------
@@ -120,7 +135,13 @@ def site_gate():
     path = request.path
     if path in _SITE_OPEN or path.startswith('/static/'):
         return None
-    if session.get('site_ok') or session.get('gen_ok') or is_authed():   # any login opens the site
+    if generator_only():                            # generator reviewers see the generator alone
+        if path in _GENERATOR_PATHS:
+            return None
+        if path.startswith('/api/'):
+            return jsonify({'error': 'Not available.'}), 404
+        return redirect(url_for('generate_page'))
+    if session.get('site_ok') or is_authed():      # the maintainer login opens the site too
         return None
     if path.startswith('/api/'):
         return jsonify({'error': 'This site is password-protected.'}), 401
@@ -143,4 +164,6 @@ def site_login():
             session.permanent = True
             return redirect(next_url)
         flash('Incorrect password. Please try again.', 'error')
+    if next_url.startswith('/generate'):     # the generator's reviewers never see the library's name
+        return render_template('generator_login.html', next_url=next_url, action=url_for('auth.site_login'))
     return render_template('site_login.html', next_url=next_url)

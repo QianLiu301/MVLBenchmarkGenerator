@@ -80,7 +80,8 @@ from benchmark_validator import BenchmarkValidator
 
 sys.path.insert(0, str(Path(__file__).parent))          # web/ — for blueprints
 from library.db import init_db
-from blueprints.auth import bp as auth_bp, can_generate, is_authed, require_access, require_generator
+from blueprints.auth import (bp as auth_bp, can_generate, generator_only, is_authed, require_access,
+                              require_generator)
 from blueprints.library import bp as library_bp
 from blueprints.submit import bp as submit_bp
 from blueprints.admin import bp as admin_bp
@@ -154,14 +155,18 @@ def generate_page():
     blocks it marks <!-- identity --> … <!-- /identity --> are replaced by a notice.
     """
     from library.review_mode import ANONYMOUS_REVIEW, ANONYMOUS_NOTICE
+    import re
     if not ANONYMOUS_REVIEW and is_authed():
         return send_from_directory('templates', 'index.html')
-    import re
     page = (Path(__file__).parent / 'templates' / 'index.html').read_text(encoding='utf-8')
     if ANONYMOUS_REVIEW:
         page = re.sub(r'<!-- identity\b.*?<!-- /identity -->', f'<p>{ANONYMOUS_NOTICE}</p>', page, flags=re.S)
     if not is_authed():   # reviewers: no DeepSeek (privately paid account)
         page = page.replace('<option value="deepseek">DeepSeek</option>', '')
+    if generator_only():  # generator reviewers: no library brand, links or maintainer menu
+        page = re.sub(r'<a href="/" class="brand".*?</a>', '', page, count=1, flags=re.S)
+        page = re.sub(r'<nav>.*?</nav>', '<nav><a href="/generate" class="active">Generate</a>'
+                      '<a href="/logout">Sign out</a></nav>', page, count=1, flags=re.S)
     return Response(page, mimetype='text/html')
 
 
