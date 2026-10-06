@@ -16,7 +16,7 @@ models, which belongs to a separate paper. With ANONYMOUS_REVIEW on:
 
 Set ANONYMOUS_REVIEW = False after the review to restore all of it.
 """
-ANONYMOUS_REVIEW = True
+ANONYMOUS_REVIEW = False
 
 # What visitors see where names were
 ANONYMOUS_NOTICE = 'Author information withheld for double-blind review.'
