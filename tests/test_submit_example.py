@@ -11,6 +11,8 @@ import sys
 import contextlib
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / 'src'))
 
@@ -53,5 +55,36 @@ def test_wrong_flag_fails():
     assert broken != code
     with contextlib.redirect_stdout(io.StringIO()):
         m = service.verify_code(broken, f['language'], manifest['k_value'], manifest['bitwidth'])
+    assert m['golden_status'] == 'LOGIC_ERROR'
+    assert m['verification_meta']['strategy_b']['flag_errors'] > 0
+
+
+# The same ALU in the two languages that only contributions use so far (the release has
+# none). They are kept beside the Verilog example so that their checkers are exercised
+# end to end: manifest, lint, both runs, and a wrong flag that must be caught.
+_OTHER_LANGUAGES = [
+    ('alu_k3_8t.sv', 'systemverilog', 'c = (a < b);', "c = 1'b0;"),
+    ('alu_k3_8t.cpp', 'systemc', 'c = (x < y);', 'c = false;'),
+]
+
+
+@pytest.mark.parametrize('filename,language,borrow,no_borrow', _OTHER_LANGUAGES)
+def test_other_language_example_verifies(filename, language, borrow, no_borrow):
+    from library import service, submissions
+    manifest, _ = _example()
+    code = (EXAMPLE / filename).read_text(encoding='utf-8')
+    manifest = dict(manifest, files=[{'filename': filename, 'language': language}])
+    assert submissions.validate_manifest(manifest, {filename: code}) == []
+    assert submissions.lint_file(filename, code, language) == []
+    with contextlib.redirect_stdout(io.StringIO()):
+        m = service.verify_code(code, language, manifest['k_value'], manifest['bitwidth'])
+    assert m['golden_status'] == 'PASS', m['verification_meta']
+    assert m['verification_meta']['strategy_a']['compared'] == 24
+    assert m['verification_meta']['strategy_b']['compared'] == 116
+
+    broken = code.replace(borrow, no_borrow)              # SUB never reports a borrow
+    assert broken != code
+    with contextlib.redirect_stdout(io.StringIO()):
+        m = service.verify_code(broken, language, manifest['k_value'], manifest['bitwidth'])
     assert m['golden_status'] == 'LOGIC_ERROR'
     assert m['verification_meta']['strategy_b']['flag_errors'] > 0
