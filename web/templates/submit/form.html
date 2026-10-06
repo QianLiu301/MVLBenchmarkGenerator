@@ -78,7 +78,7 @@
     <div class="card">
         <div class="section-title"><i data-lucide="book-open" class="icon"></i> What the manifest needs</div>
         <ul class="prose" style="font-size:.88rem">
-            <li><span class="mono">module_type</span>, <span class="mono">k_value</span>, <span class="mono">bitwidth</span>, <span class="mono">operations</span> — define the spec; the name is derived (<span class="mono">alu_k3_8t</span>).</li>
+            <li><span class="mono">module_type</span>, <span class="mono">k_value</span>, <span class="mono">bitwidth</span>, <span class="mono">operations</span> — define the spec; the name is derived (<span class="mono">alu_k3_8t</span>). A new <span class="mono">k_value</span> or <span class="mono">bitwidth</span> creates a new spec on approval. Any kind of design may be submitted (e.g. <span class="mono">register</span>, <span class="mono">multiplier</span>); only <span class="mono">alu</span> has a reference model so far, so other designs are published as not verified.</li>
             <li><span class="mono">files[]</span> — filename + language for every uploaded source file. Checked against the reference model: {{ language_labels.values()|join(', ') }}. Any other language (e.g. <span class="mono">Chisel</span>, <span class="mono">Haskell</span>) is accepted and published as not verified.</li>
             <li><span class="mono">source</span> — <span class="mono">human-authored</span>, <span class="mono">llm-generated</span> (then <span class="mono">generator.model</span> is required) or <span class="mono">reference</span>.</li>
             <li><span class="mono">submitter</span> — name, e-mail, affiliation; shown as provenance.</li>

@@ -25,7 +25,7 @@
                 <td>One line per problem, with the JSON path.</td></tr>
             <tr><td class="num">2</td><td>Lint</td>
                 <td>Static checks on each source file.</td>
-                <td>≤ 512 KB; UTF-8 text without control characters; for a language with a checker, also: contains a <code>main()</code> / <code>__main__</code> block / <code>module</code> / <code>entity</code>; no <code>system()</code>, process spawning, file or network I/O, <code>eval</code>/<code>exec</code>.</td>
+                <td>≤ 512 KB; UTF-8 text without control characters; for a file that will be executed (a language with a checker and a kind of design with a reference model), also: contains a <code>main()</code> / <code>__main__</code> block / <code>module</code> / <code>entity</code>; no <code>system()</code>, process spawning, file or network I/O, <code>eval</code>/<code>exec</code>.</td>
                 <td>Any violation.</td>
                 <td>File name and the matched construct.</td></tr>
             <tr><td class="num">3</td><td>Simulation vs reference model</td>
@@ -82,7 +82,14 @@
         submissions are never published with a failed verification.
     </p>
 
-    <h2 id="other-languages">Languages without a checker</h2>
+    <h2 id="other-languages">Languages and designs without a checker</h2>
+    <p>
+        Any kind of design may be submitted, not only arithmetic-logic units. The reference model
+        covers the ALU so far; a file for another kind of design (a register file, a multiplier, …)
+        is handled like a file in a language without a checker, as described below, until a
+        reference model for that kind of design exists. A submission with a radix or word length
+        that the library does not have yet creates a new specification when it is approved.
+    </p>
     <p>
         Implementations may be written in any language. The reference-model check runs for
         {{ language_labels.values()|join(', ') }}. A file in any other language passes steps 1, 2 and 4 like any

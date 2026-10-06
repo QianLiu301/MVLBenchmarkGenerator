@@ -135,7 +135,7 @@
                     <div class="badges">
                     {% for lang, st in b.language_status().items() %}
                         {% set of_lang = b.published_implementations|selectattr('language', 'equalto', lang)|list %}
-                        <span class="badge {{ st }}" title="{{ language_labels[lang] }}: {{ {'verified': 'verified against the reference model', 'pending': 'pending review', 'unchecked': 'not verified: no checker for this language yet', 'unverified': 'did not pass the reference-model check'}[st] }}{% if of_lang|length > 1 %} · {{ of_lang|length }} implementations{% endif %}"><span class="dot"></span>{{ language_labels[lang] }}</span>
+                        <span class="badge {{ st }}" title="{{ language_labels[lang] }}: {{ {'verified': 'verified against the reference model', 'pending': 'pending review', 'unchecked': 'not verified: not checked yet', 'unverified': 'did not pass the reference-model check'}[st] }}{% if of_lang|length > 1 %} · {{ of_lang|length }} implementations{% endif %}"><span class="dot"></span>{{ language_labels[lang] }}</span>
                     {% endfor %}
                     </div>
                 </td>

@@ -21,8 +21,9 @@ from sqlalchemy import select
 
 from . import service
 from .db import session_scope
-from .models import (LANGUAGE_EXT, LANGUAGES, MAX_LANGUAGE_NAME, MODULE_TYPES, NO_CHECKER, PIPELINE_STEPS,
-                     PIPELINE_STEPS_SHOWN, Submission, Implementation, checked_language)
+from .models import (CHECKED_MODULE_TYPES, LANGUAGE_EXT, LANGUAGES, MAX_LANGUAGE_NAME, MAX_MODULE_TYPE,
+                     NO_CHECKER, PIPELINE_STEPS, PIPELINE_STEPS_SHOWN, Submission,
+                     Implementation, checked_language)
 
 MAX_FILE_BYTES = 512 * 1024
 MAX_FILES = 8
@@ -43,11 +44,13 @@ MANIFEST_SCHEMA = {
     "additionalProperties": False,
     "properties": {
         "manifest_version": {"const": 1},
-        "module_type": {"type": "string", "enum": list(MODULE_TYPES.keys())},
+        # any kind of design; only CHECKED_MODULE_TYPES are simulated against the reference model
+        "module_type": {"type": "string", "minLength": 2, "maxLength": MAX_MODULE_TYPE,
+                        "pattern": r"^[a-z][a-z0-9-]*$"},
         "k_value": {"type": "integer", "minimum": 2, "maximum": 16},
         "bitwidth": {"type": "integer", "minimum": 1, "maximum": 64},
         "operations": {"type": "array", "minItems": 1, "uniqueItems": True,
-                       "items": {"type": "string", "enum": OPERATIONS}},
+                       "items": {"type": "string", "pattern": r"^[A-Za-z][A-Za-z0-9_]{0,15}$"}},
         "params": {"type": "object", "additionalProperties": False,
                    "properties": {"register_count": {"type": "integer", "minimum": 1},
                                   "pipeline_stages": {"type": "integer", "minimum": 1}}},
@@ -167,6 +170,10 @@ def validate_manifest(manifest: Dict, files: Dict[str, str]) -> List[str]:
         elif not lang and ext in _CHECKED_EXT:
             errs.append(f"file '{f['filename']}': {ext} files are checked as {LANGUAGES[_CHECKED_EXT[ext]]}"
                         f" — declare that language, or use the usual extension of {f['language']}")
+    if manifest['module_type'] in CHECKED_MODULE_TYPES:
+        for op in manifest['operations']:
+            if op not in OPERATIONS:
+                errs.append(f"operation '{op}': an {manifest['module_type']} has the operations {', '.join(OPERATIONS)}")
     if manifest.get('source') == 'llm-generated' and not (manifest.get('generator') or {}).get('model'):
         errs.append("generator.model is required when source is llm-generated")
     return errs
@@ -195,7 +202,12 @@ _REQUIRED = {
 }
 
 
-def lint_file(name: str, code: str, language: str) -> List[str]:
+def is_checked(manifest: Dict, language: str) -> bool:
+    """A file is simulated only if its language has a checker and its kind of design a reference model."""
+    return language in LANGUAGES and manifest.get('module_type') in CHECKED_MODULE_TYPES
+
+
+def lint_file(name: str, code: str, language: str, executed: bool = True) -> List[str]:
     errs = []
     if len(code.encode('utf-8')) > MAX_FILE_BYTES:
         errs.append(f"{name}: larger than {MAX_FILE_BYTES // 1024} KB")
@@ -203,7 +215,7 @@ def lint_file(name: str, code: str, language: str) -> List[str]:
         errs.append(f"{name}: binary content")
     if re.search(r'[^\x09\x0a\x0d\x20-\x7e -￿]', code):
         errs.append(f"{name}: control characters")
-    if language not in _REQUIRED:      # no checker: the file is never compiled or run
+    if not executed or language not in _REQUIRED:      # never compiled or run: text checks only
         return errs
     req, what = _REQUIRED[language]
     if not re.search(req, code):
@@ -279,7 +291,8 @@ def run_pipeline(sub_id: int):
         # --- 2. lint --------------------------------------------------------
         lint_errs = []
         for f in manifest['files']:
-            lint_errs += lint_file(f['filename'], files[f['filename']], f['language'])
+            lint_errs += lint_file(f['filename'], files[f['filename']], f['language'],
+                                   executed=is_checked(manifest, f['language']))
         if lint_errs:
             update(lambda sub: (_set_step(sub, 'lint', 'fail', '\n'.join(lint_errs)), setattr(sub, 'status', 'failed')))
             _skip_rest(sub_id, after='lint')
@@ -293,13 +306,15 @@ def run_pipeline(sub_id: int):
         all_ok = True
         unchecked = []
         for f in manifest['files']:
-            if f['language'] not in LANGUAGES:
+            if not is_checked(manifest, f['language']):
                 results[f['filename']] = {'golden_status': NO_CHECKER, 'sim_status': 'unverified',
                                           'golden_passed': 0, 'golden_compared': 0,
                                           'sha256': service.sha256(files[f['filename']]),
                                           'verification_meta': {'checker': None}}
                 unchecked.append(f['filename'])
-                logs.append(f"{f['filename']}: no checker for {f['language']} — not compiled or simulated; "
+                why = (f"no checker for {f['language']}" if f['language'] not in LANGUAGES
+                       else f"no reference model for the design '{manifest['module_type']}' yet")
+                logs.append(f"{f['filename']}: {why} — not compiled or simulated; "
                             f"if approved, published as not verified")
                 continue
             with contextlib.redirect_stdout(io.StringIO()):
@@ -375,6 +390,9 @@ def approve(sub_id: int, reason: str, actor: str = 'maintainer') -> str:
         spec = service.describe_spec(m['module_type'], m['k_value'], m['bitwidth'], m['operations'], m.get('params'))
         if m.get('description'):
             spec['description'] = m['description']
+            if m['module_type'] not in CHECKED_MODULE_TYPES:
+                spec['description'] += (' No reference model exists for this kind of design yet; its '
+                                        'implementations are published without a check.')
         bm = service.get_or_create_benchmark(s, spec)
         gen = m.get('generator') or {}
         submitter = m.get('submitter') or {}
@@ -454,10 +472,16 @@ def outcome(sub: Submission) -> Dict:
                 'why': (steps.get(failed) or {}).get('log', '').strip().splitlines()[0] if (steps.get(failed) or {}).get('log') else 'see the step log',
                 'next': hints.get(failed, 'See the step log, then submit again.')}
     if sub.status == 'awaiting_review':
-        unchecked = sorted({f['language'] for f in (sub.manifest or {}).get('files', [])
-                            if f['language'] not in LANGUAGES})
-        note = (f" There is no checker for {', '.join(unchecked)}: those files were not simulated and, "
-                f"if approved, are published as not verified.") if unchecked else ''
+        m = sub.manifest or {}
+        unchecked = sorted({f['language'] for f in m.get('files', []) if f['language'] not in LANGUAGES})
+        if m.get('module_type') not in CHECKED_MODULE_TYPES:
+            note = (f" There is no reference model for the design '{m.get('module_type')}' yet: the files were "
+                    f"not simulated and, if approved, are published as not verified.")
+        elif unchecked:
+            note = (f" There is no checker for {', '.join(unchecked)}: those files were not simulated and, "
+                    f"if approved, are published as not verified.")
+        else:
+            note = ''
         return {'label': 'Awaiting maintainer decision', 'tone': 'warn',
                 'why': f'All automated checks (steps 1–{len(PIPELINE_STEPS_SHOWN) - 1}) passed.{note}',
                 'next': 'A maintainer decides within 14 days. Bookmark this page; no e-mail is sent.'}

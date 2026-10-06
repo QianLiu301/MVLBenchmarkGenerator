@@ -64,3 +64,37 @@ def test_filename_and_state():
     assert Implementation(golden_status=NO_CHECKER).state == 'unchecked'
     assert Implementation(golden_status='PASS').state == 'verified'
     assert Implementation(golden_status='LOGIC_ERROR').state == 'unverified'
+
+
+# ---- kinds of design without a reference model --------------------------------------------
+
+REGFILE_C = 'unsigned regs[16];\nvoid write_reg(int i, unsigned v) { regs[i] = v; }\n'
+
+
+def test_any_kind_of_design_is_accepted():
+    m = _manifest([{'filename': 'regfile_k3_8t.c', 'language': 'c'}])
+    m['module_type'] = 'register'
+    m['operations'] = ['READ', 'WRITE']
+    assert submissions.validate_manifest(m, {'regfile_k3_8t.c': REGFILE_C}) == []
+    assert not submissions.is_checked(m, 'c')
+    # not executed, so no main() is required and only the text is checked
+    assert submissions.lint_file('regfile_k3_8t.c', REGFILE_C, 'c', executed=False) == []
+    assert submissions.lint_file('regfile_k3_8t.c', REGFILE_C, 'c')        # an executed C file needs main()
+
+
+def test_alu_keeps_its_operations():
+    m = _manifest([{'filename': 'alu_k3_8t.v', 'language': 'verilog'}])
+    m['operations'] = ['ADD', 'READ']
+    errs = submissions.validate_manifest(m, {'alu_k3_8t.v': 'module m; endmodule'})
+    assert errs and "operation 'READ'" in errs[0]
+    assert submissions.is_checked(_manifest([]), 'verilog')
+
+
+def test_spec_of_an_unchecked_design():
+    from library import service
+    spec = service.describe_spec('register', 3, 8, ['READ', 'WRITE'])
+    assert spec['slug'] == 'regfile_k3_8t'
+    assert 'No reference model' in spec['description']
+    b = __import__('library.models', fromlist=['Benchmark']).Benchmark(module_type='register', mod_value=6561,
+                                                                       logic_family='modular', operations=[])
+    assert service.op_definitions(b) == []

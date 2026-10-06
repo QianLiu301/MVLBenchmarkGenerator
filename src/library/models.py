@@ -28,6 +28,12 @@ MODULE_TYPES = {
     'cpu-risc-v': 'Processor',
 }
 MODULE_ICONS = {'alu': 'cpu', 'register': 'database', 'cpu-risc-v': 'microchip'}
+# Kinds of design the reference model and the harness cover. Any other kind may be
+# submitted too (MODULE_TYPES only gives labels): it is not simulated and, if a
+# maintainer approves it, is published as not checked, like a language without a
+# checker, until a reference model for it exists.
+CHECKED_MODULE_TYPES = ('alu',)
+MAX_MODULE_TYPE = 32
 
 # Publication status of specs/implementations. 'published' == "approved" in the
 # review pipeline; there is no separate approved value.
@@ -198,6 +204,13 @@ class Implementation(Base):
     @property
     def language_label(self):
         return LANGUAGES.get(self.language, self.language)
+
+    @property
+    def unchecked_reason(self) -> str:
+        """Why a NO_CHECKER entry was not checked, in words for its page."""
+        if self.benchmark is not None and self.benchmark.module_type not in CHECKED_MODULE_TYPES:
+            return 'no reference model for this kind of design yet'
+        return f'no checker for {self.language_label} yet'
 
     @property
     def source_label(self):

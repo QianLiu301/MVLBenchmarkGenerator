@@ -18,7 +18,7 @@ from sqlalchemy import func, or_, select
 from .db import session_scope
 from .review_mode import ANONYMOUS_REVIEW
 from .models import (Benchmark, Implementation, LANGUAGES, LANGUAGE_EXT,
-                     LICENSE_ID, MODULE_TYPES, ReviewEvent, SOURCES,
+                     LICENSE_ID, MODULE_TYPES, ReviewEvent, SOURCES, CHECKED_MODULE_TYPES,
                      GOLDEN_MODEL_VERSION)
 
 try:
@@ -192,6 +192,9 @@ def describe_spec(module_type: str, k: int, bitwidth: int, operations: List[str]
                      f"{info['tables']['irreducible_poly'] if info.get('tables') else ''}); ADD/SUB/NEG act digit-wise, "
                      f"MUL is the polynomial product truncated to {bitwidth} digits, INC/DEC add/subtract 1 in digit 0; "
                      f"carry and negative are always 0.")
+    if module_type not in CHECKED_MODULE_TYPES:
+        semantics = ("No reference model exists for this kind of design yet; its implementations are "
+                     "published without a check.")
     description = (f"{MODULE_TYPES.get(module_type, module_type)} over {label} with k = {k} logic values per digit "
                    f"and {bitwidth} digits per operand. Operations: {ops}. {semantics}")
     return {
@@ -211,6 +214,8 @@ def describe_spec(module_type: str, k: int, bitwidth: int, operations: List[str]
 
 def op_definitions(b: Benchmark) -> List[Dict]:
     """Mathematical definition of every operation, for the Spec block."""
+    if b.module_type not in CHECKED_MODULE_TYPES:
+        return []          # the reference model defines ALU operations only
     M = b.mod_value
     half = M // 2
     if b.logic_family == 'modular':
@@ -672,7 +677,8 @@ def home_categories(session) -> Dict:
     by_value = lambda rows: {str(r['value']): r for r in rows}
 
     modules = []
-    for value, label in MODULE_TYPES.items():
+    known = dict(MODULE_TYPES, **{v: v for v in counts if v not in MODULE_TYPES})   # contributed kinds too
+    for value, label in known.items():
         n = counts.get(value, 0)
         modules.append({'label': label, 'count': n if n else None,
                         'note': None if n else 'planned',
@@ -745,7 +751,8 @@ def module_counts(session) -> List[Dict]:
     rows = session.execute(select(Benchmark.module_type, func.count()).where(Benchmark.status == 'published')
                            .group_by(Benchmark.module_type)).all()
     counts = {v: n for v, n in rows}
-    return [{'value': m, 'label': label, 'specs': counts.get(m, 0)} for m, label in MODULE_TYPES.items()]
+    known = dict(MODULE_TYPES, **{v: v for v in counts if v not in MODULE_TYPES})   # contributed kinds too
+    return [{'value': m, 'label': label, 'specs': counts.get(m, 0)} for m, label in known.items()]
 
 
 def contributors(session) -> Dict:

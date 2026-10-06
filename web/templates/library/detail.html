@@ -74,7 +74,7 @@
                 · {{ i.loc }} lines · {{ i.test_vectors }} test vectors
                 {% if i.golden_status == 'PASS' %}<span class="tag ok"><i data-lucide="check" class="icon-sm icon"></i> PASS {{ i.golden_passed }}/{{ i.golden_compared }}</span>
                 {% elif i.golden_status == 'unverified' %}<span class="tag">unverified</span>
-                {% elif i.golden_status == 'NO_CHECKER' %}<span class="tag" title="no checker exists for {{ i.language_label }} yet">not verified</span>
+                {% elif i.golden_status == 'NO_CHECKER' %}<span class="tag" title="{{ i.unchecked_reason }}">not verified</span>
                 {% else %}<span class="tag err"><i data-lucide="x" class="icon-sm icon"></i> {{ i.golden_status.replace('_', ' ') }}</span>{% endif %}
             </div>
             <div class="detail-actions">
@@ -102,9 +102,9 @@
             {% if i.golden_status == 'PASS' %}<span class="tag ok">PASS</span>{% elif i.golden_status == 'unverified' %}<span class="tag">unverified</span>{% elif i.golden_status == 'NO_CHECKER' %}<span class="tag">not verified</span>{% else %}<span class="tag err">{{ i.golden_status.replace('_',' ') }}</span>{% endif %}
         </summary>
         {% if i.golden_status == 'NO_CHECKER' %}
-        <p class="small" style="padding:8px 0 12px;margin:0">Not verified: the library has no checker for {{ i.language_label }} yet, so this file
+        <p class="small" style="padding:8px 0 12px;margin:0">Not verified: there is {{ i.unchecked_reason }}, so this file
             was neither compiled nor simulated. It was published after a maintainer's review and is not counted as verified.
-            It will be checked once a checker for the language exists.<br><span class="muted">SHA-256 <span class="mono">{{ i.sha256 }}</span></span></p>
+            It will be checked once that exists.<br><span class="muted">SHA-256 <span class="mono">{{ i.sha256 }}</span></span></p>
         {% else %}
         <dl class="record" style="padding:8px 0 12px">
             <dt>Strength</dt><dd class="mono">{{ i.verification_strength or 'self-reported' }}</dd>
