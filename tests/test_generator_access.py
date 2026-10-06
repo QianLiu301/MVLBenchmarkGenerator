@@ -58,3 +58,24 @@ def test_wrong_password(app):
     c.post('/login', data={'password': 'nope', 'next': '/generate'})
     r = c.post('/api/generate', json={'llm': 'gemini'})
     assert r.status_code in (302, 401)
+
+
+def test_separate_generator_password(app, monkeypatch):
+    """GENERATOR_PASSWORD set: the site password no longer opens the generator; the
+    generator password opens the site and the generator, never the maintainer area."""
+    monkeypatch.setenv('GENERATOR_PASSWORD', 'test-gen')
+    lib = app.test_client()
+    lib.post('/site-login', data={'password': 'test-review', 'next': '/'})
+    assert lib.get('/library').status_code == 200
+    assert lib.get('/generate').status_code == 302
+    assert lib.post('/api/generate', json={'llm': 'gemini'}).status_code == 401
+
+    gen = app.test_client()
+    gen.post('/site-login', data={'password': 'test-gen', 'next': '/generate'})
+    assert gen.get('/generate').status_code == 200
+    assert gen.get('/library').status_code == 200
+    assert gen.get('/admin/').status_code == 302
+    assert gen.post('/api/generate', json={'llm': 'deepseek'}).status_code == 403
+
+    lib.post('/login', data={'password': 'test-gen', 'next': '/generate'})   # a library reviewer given both
+    assert lib.get('/generate').status_code == 200

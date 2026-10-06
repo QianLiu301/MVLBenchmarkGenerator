@@ -47,9 +47,11 @@ def require_access(view):
 # Reviewer access to the generator only (not to the maintainer area)
 # ----------------------------------------------------------------------------
 # Reviewers use the generator with the review password: GENERATOR_PASSWORD if it is
-# set, otherwise the whole-site SITE_PASSWORD (defined below). Their session opens
-# /generate and its API, never the review queue, and cannot call DeepSeek, which
-# runs on a privately paid account. Unset both and only the maintainer login works.
+# set, otherwise the whole-site SITE_PASSWORD (defined below). With a separate
+# GENERATOR_PASSWORD the two groups of reviewers are kept apart: the site password
+# opens the library but not the generator; the generator password opens both (the
+# generator page links to the library). Neither opens the review queue, and reviewer
+# sessions cannot call DeepSeek, which runs on a privately paid account.
 def review_password() -> str:
     return os.environ.get('GENERATOR_PASSWORD', '').strip() or SITE_PASSWORD
 
@@ -118,7 +120,7 @@ def site_gate():
     path = request.path
     if path in _SITE_OPEN or path.startswith('/static/'):
         return None
-    if session.get('site_ok') or is_authed():      # the maintainer login opens the site too
+    if session.get('site_ok') or session.get('gen_ok') or is_authed():   # any login opens the site
         return None
     if path.startswith('/api/'):
         return jsonify({'error': 'This site is password-protected.'}), 401
@@ -128,11 +130,16 @@ def site_gate():
 @bp.route('/site-login', methods=['GET', 'POST'])
 def site_login():
     next_url = _safe_next(request.values.get('next', ''))
-    if not SITE_PASSWORD or session.get('site_ok'):
+    if not SITE_PASSWORD or session.get('site_ok') or session.get('gen_ok'):
         return redirect(next_url)
     if request.method == 'POST':
-        if hmac.compare_digest(request.form.get('password', ''), SITE_PASSWORD):
+        supplied = request.form.get('password', '')
+        if hmac.compare_digest(supplied, SITE_PASSWORD):
             session['site_ok'] = True
+            session.permanent = True
+            return redirect(next_url)
+        if review_password() and hmac.compare_digest(supplied, review_password()):
+            session['gen_ok'] = True          # generator reviewers: the site and the generator
             session.permanent = True
             return redirect(next_url)
         flash('Incorrect password. Please try again.', 'error')
