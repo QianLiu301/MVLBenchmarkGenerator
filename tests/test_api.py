@@ -218,6 +218,7 @@ def test_site_password(app, monkeypatch):
     r = c.post('/site-login', data={'password': 'test-site-pw', 'next': '/library'})
     assert r.status_code == 302 and r.headers['Location'].endswith('/library')
     assert c.get('/library').status_code == 200
-    assert c.get('/generate').status_code == 302              # the generator keeps its own password
+    assert c.get('/generate').status_code == 200              # reviewers: the review password opens the generator
+    assert c.get('/admin/').status_code == 302                # but never the maintainer area
     monkeypatch.setattr(auth, 'SITE_PASSWORD', '')
     assert app.test_client().get('/library').status_code == 200

@@ -43,6 +43,35 @@ def require_access(view):
     return wrapped
 
 
+# ----------------------------------------------------------------------------
+# Reviewer access to the generator only (not to the maintainer area)
+# ----------------------------------------------------------------------------
+# Reviewers use the generator with the review password: GENERATOR_PASSWORD if it is
+# set, otherwise the whole-site SITE_PASSWORD (defined below). Their session opens
+# /generate and its API, never the review queue, and cannot call DeepSeek, which
+# runs on a privately paid account. Unset both and only the maintainer login works.
+def review_password() -> str:
+    return os.environ.get('GENERATOR_PASSWORD', '').strip() or SITE_PASSWORD
+
+
+def can_generate() -> bool:
+    if is_authed() or session.get('gen_ok'):
+        return True
+    # a reviewer who has entered the same password at the site gate is not asked again
+    return bool(review_password()) and review_password() == SITE_PASSWORD and bool(session.get('site_ok'))
+
+
+def require_generator(view):
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if not can_generate():
+            if request.path.startswith('/api/'):
+                return jsonify({'success': False, 'error': 'Sign in to use the generator.'}), 401
+            return redirect(url_for('auth.login', next=request.full_path.rstrip('?')))
+        return view(*args, **kwargs)
+    return wrapped
+
+
 @bp.route('/login', methods=['GET', 'POST'])
 def login():
     next_url = _safe_next(request.values.get('next', ''))
@@ -52,8 +81,12 @@ def login():
             session['authed'] = True
             session.permanent = True
             return redirect(next_url)
+        if review_password() and hmac.compare_digest(supplied, review_password()):
+            session['gen_ok'] = True          # generator only
+            session.permanent = True
+            return redirect(next_url)
         flash('Incorrect password. Please try again.', 'error')
-    if is_authed():
+    if is_authed() or (can_generate() and next_url.startswith('/generate')):
         return redirect(next_url)
     return render_template('login.html', next_url=next_url)
 
@@ -61,6 +94,7 @@ def login():
 @bp.route('/logout')
 def logout():
     session.pop('authed', None)
+    session.pop('gen_ok', None)
     return redirect(url_for('library.home'))
 
 

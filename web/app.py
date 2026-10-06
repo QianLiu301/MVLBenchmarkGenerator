@@ -80,7 +80,7 @@ from benchmark_validator import BenchmarkValidator
 
 sys.path.insert(0, str(Path(__file__).parent))          # web/ — for blueprints
 from library.db import init_db
-from blueprints.auth import bp as auth_bp, is_authed, require_access
+from blueprints.auth import bp as auth_bp, can_generate, is_authed, require_access, require_generator
 from blueprints.library import bp as library_bp
 from blueprints.submit import bp as submit_bp
 from blueprints.admin import bp as admin_bp
@@ -128,7 +128,7 @@ def _inject_globals():
     from library.models import GOLDEN_MODEL_VERSION
     css = Path(__file__).parent / 'static' / 'css' / 'library.css'
     from library.review_mode import ANONYMOUS_REVIEW, ANONYMOUS_NOTICE
-    return {'is_authed': is_authed(),
+    return {'is_authed': is_authed(), 'can_generate': can_generate(),
             'anonymous': ANONYMOUS_REVIEW, 'anonymous_notice': ANONYMOUS_NOTICE,
             'site_status': _site_status(),
             'format_version': service.FORMAT_VERSION,
@@ -146,7 +146,7 @@ benchmark_validator = BenchmarkValidator(project_root=str(PROJECT_ROOT))
 # ============================================================
 
 @app.route('/generate')
-@require_access
+@require_generator
 def generate_page():
     """The LLM generator tool (password-protected: it spends API credits).
 
@@ -154,12 +154,20 @@ def generate_page():
     blocks it marks <!-- identity --> … <!-- /identity --> are replaced by a notice.
     """
     from library.review_mode import ANONYMOUS_REVIEW, ANONYMOUS_NOTICE
-    if not ANONYMOUS_REVIEW:
+    if not ANONYMOUS_REVIEW and is_authed():
         return send_from_directory('templates', 'index.html')
     import re
     page = (Path(__file__).parent / 'templates' / 'index.html').read_text(encoding='utf-8')
-    page = re.sub(r'<!-- identity\b.*?<!-- /identity -->', f'<p>{ANONYMOUS_NOTICE}</p>', page, flags=re.S)
+    if ANONYMOUS_REVIEW:
+        page = re.sub(r'<!-- identity\b.*?<!-- /identity -->', f'<p>{ANONYMOUS_NOTICE}</p>', page, flags=re.S)
+    if not is_authed():   # reviewers: no DeepSeek (privately paid account)
+        page = page.replace('<option value="deepseek">DeepSeek</option>', '')
     return Response(page, mimetype='text/html')
+
+
+def _provider_blocked(provider):
+    """DeepSeek runs on a privately paid account: maintainer sessions only."""
+    return (provider or '').lower() == 'deepseek' and not is_authed()
 
 
 @app.route('/app')
@@ -220,13 +228,15 @@ def api_tools():
 
 
 @app.route('/api/generate', methods=['POST'])
-@require_access
+@require_generator
 def api_generate():
     """Generate MVL ALU code"""
     try:
         data = request.json
 
         llm_provider = data.get('llm', 'gemini')
+        if _provider_blocked(llm_provider):
+            return jsonify({'success': False, 'error': 'This provider is not available in this version.'}), 403
         model = data.get('model', None)
         module_type = data.get('module_type', 'alu')
         k_value = int(data.get('k_value', 3))
@@ -308,7 +318,7 @@ def api_generate():
 
 
 @app.route('/api/generate-stream', methods=['POST'])
-@require_access
+@require_generator
 def api_generate_stream():
     """Generate MVL ALU code with streaming output (SSE)"""
     import json
@@ -317,6 +327,8 @@ def api_generate_stream():
         data = request.json
 
         llm_provider = data.get('llm', 'gemini')
+        if _provider_blocked(llm_provider):
+            return jsonify({'success': False, 'error': 'This provider is not available in this version.'}), 403
         model = data.get('model', None)
         module_type = data.get('module_type', 'alu')
         k_value = int(data.get('k_value', 3))

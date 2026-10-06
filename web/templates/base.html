@@ -52,6 +52,10 @@
                         <a href="{{ url_for('admin.queue') }}"><i data-lucide="inbox" class="icon-sm icon"></i> Review queue</a>
                         <a href="{{ url_for('generate_page') }}"><i data-lucide="sparkles" class="icon-sm icon"></i> Generator</a>
                         <a href="{{ url_for('auth.logout') }}"><i data-lucide="log-out" class="icon-sm icon"></i> Sign out</a>
+                        {% elif can_generate %}
+                        <span>Generator access</span>
+                        <a href="{{ url_for('generate_page') }}"><i data-lucide="sparkles" class="icon-sm icon"></i> Generator</a>
+                        <a href="{{ url_for('auth.logout') }}"><i data-lucide="log-out" class="icon-sm icon"></i> Sign out</a>
                         {% else %}
                         <span>Generator and review queue are restricted</span>
                         <a href="{{ url_for('auth.login', next=request.path) }}"><i data-lucide="log-in" class="icon-sm icon"></i> Sign in</a>
