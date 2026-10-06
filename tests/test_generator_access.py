@@ -85,3 +85,15 @@ def test_separate_generator_password(app, monkeypatch):
     lib.post('/login', data={'password': 'test-gen', 'next': '/generate'})   # a library reviewer given both
     page = lib.get('/generate').get_data(as_text=True)
     assert 'href="/library"' in page                         # keeps the full navigation
+
+
+def test_sign_out_ends_every_login(app, monkeypatch):
+    """A browser that once used the site password must not keep it after signing out,
+    or a later generator-password login would still show the library around the generator."""
+    monkeypatch.setenv('GENERATOR_PASSWORD', 'test-gen')
+    c = app.test_client()
+    c.post('/site-login', data={'password': 'test-review', 'next': '/'})
+    c.get('/logout')
+    assert c.get('/library').status_code == 302
+    c.post('/site-login', data={'password': 'test-gen', 'next': '/generate'})
+    assert 'href="/library"' not in c.get('/generate').get_data(as_text=True)

@@ -112,6 +112,7 @@ def logout():
     gen_only = generator_only()
     session.pop('authed', None)
     session.pop('gen_ok', None)
+    session.pop('site_ok', None)      # signing out ends every login, the site password's too
     return redirect(url_for('generate_page') if gen_only else url_for('library.home'))
 
 
